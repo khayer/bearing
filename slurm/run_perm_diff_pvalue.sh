@@ -10,7 +10,15 @@ PERM_PREFIX="${3:-perm}"
 RESULTS_DIR="${4:-results}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BEARING_PVALUE="$SCRIPT_DIR/bearing_pvalue.py"
+# bearing_pvalue.py lives at the repo root; this script may sit in slurm/.
+# Prefer a sibling copy, else look one directory up (repo root).
+if [[ -f "$SCRIPT_DIR/bearing_pvalue.py" ]]; then
+  BEARING_PVALUE="$SCRIPT_DIR/bearing_pvalue.py"
+elif [[ -f "$SCRIPT_DIR/../bearing_pvalue.py" ]]; then
+  BEARING_PVALUE="$(cd "$SCRIPT_DIR/.." && pwd)/bearing_pvalue.py"
+else
+  BEARING_PVALUE="$SCRIPT_DIR/bearing_pvalue.py"
+fi
 
 if [[ ! -f "$BEARING_PVALUE" ]]; then
   echo "ERROR: missing script: $BEARING_PVALUE" >&2
@@ -67,14 +75,16 @@ while IFS= read -r comp; do
   fi
   
   echo "[$(date)] Computing p-values for: $comp (using ${#nulls[@]} null qcats)"
-  python "$BEARING_PVALUE" \
+  if python "$BEARING_PVALUE" \
     --qcat "$main_qcat" \
     --null-qcat "${nulls[@]}" \
     --diff \
     --out-prefix "$out_prefix" \
-    --fdr 0.05 --score-plot
-  
-  echo "[$(date)] Completed: $comp"
+    --fdr 0.05 --score-plot; then
+    echo "[$(date)] Completed: $comp"
+  else
+    echo "[$(date)] WARNING: p-value computation skipped for $comp (no bins with signal, or insufficient nulls); continuing." >&2
+  fi
   echo ""
 done <<< "$comparisons"
 

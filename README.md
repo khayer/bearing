@@ -21,6 +21,7 @@ conda activate bearing          # installs the package + bearing-* commands
 
 # HPC container -- pull the prebuilt image (built in CI, hosted on GHCR)
 bash workflow/get_container.sh          # writes ./bearing.sif
+# requires apptainer or singularity on PATH
 # or build it yourself:
 apptainer build bearing.sif Apptainer.def
 ```
