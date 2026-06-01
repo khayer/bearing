@@ -3,7 +3,7 @@
 # Snakemake submits one job per rule instance to the cluster.
 executor: slurm
 jobs: 50
-use-apptainer: true
+#use-apptainer: true
 printshellcmds: true
 rerun-incomplete: true
 default-resources:
