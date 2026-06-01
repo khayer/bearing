@@ -1,0 +1,65 @@
+# Example QCAT file structure (human-readable format)
+# This is what PCA uses: each row is a genomic bin, each column is a chromatin state in one sample
+# Epilogos 15-state model example with 3 samples across 2 regions
+
+# ===== BIN-LEVEL VIEW (what PCA actually sees) =====
+# Each row = 200bp genomic bin
+# Each column = chromatin state in one sample
+# Values = KL divergence scores (higher = more confident in that state)
+
+chrom	start	end	sample1_state1	sample1_state2	sample1_state3	sample1_state4	sample1_state5	sample2_state1	sample2_state2	sample2_state3	sample2_state4	sample2_state5	sample3_state1	sample3_state2	sample3_state3	sample3_state4	sample3_state5
+chr1	1000	1200	0.2	0.8	0.1	0.3	0.0	0.1	0.7	0.2	0.4	0.0	0.3	0.6	0.1	0.3	0.0
+chr1	1200	1400	0.3	0.6	0.2	0.2	0.1	0.2	0.8	0.1	0.3	0.0	0.2	0.8	0.0	0.2	0.0
+chr1	1400	1600	0.1	0.9	0.0	0.2	0.0	0.0	0.9	0.0	0.2	0.0	0.1	0.7	0.0	0.4	0.0
+chr1	1600	1800	0.4	0.5	0.1	0.2	0.0	0.3	0.7	0.1	0.3	0.0	0.5	0.5	0.2	0.2	0.0
+chr1	1800	2000	0.2	0.7	0.0	0.3	0.0	0.1	0.8	0.0	0.3	0.0	0.2	0.6	0.1	0.3	0.0
+region1_avg	1000	2000	0.24	0.70	0.08	0.24	0.02	0.14	0.78	0.08	0.30	0.00	0.26	0.64	0.08	0.28	0.00
+
+chr1	2000	2200	0.5	0.3	0.2	0.1	0.0	0.6	0.2	0.3	0.1	0.0	0.7	0.2	0.1	0.1	0.0
+chr1	2200	2400	0.6	0.2	0.1	0.2	0.0	0.7	0.1	0.2	0.1	0.0	0.8	0.1	0.1	0.0	0.0
+chr1	2400	2600	0.5	0.4	0.1	0.1	0.0	0.6	0.2	0.2	0.1	0.0	0.7	0.2	0.1	0.1	0.0
+region2_avg	2000	2600	0.53	0.30	0.13	0.13	0.00	0.63	0.17	0.23	0.10	0.00	0.73	0.17	0.10	0.07	0.00
+
+---
+
+# ===== WHAT THIS LOOKS LIKE IN THE PCA =====
+# The PCA flattens this into one big matrix:
+#
+# Each SAMPLE becomes a single point in PCA space (averaged across all bins and states)
+# PC1 and PC2 capture the biggest variation across samples
+#
+# Example: 3 samples produce 3 points on the PCA plot
+#   - sample1 → point A (perhaps middle)
+#   - sample2 → point B (perhaps upper-left if state2 is enriched)
+#   - sample3 → point C (perhaps lower-right if state1 is enriched)
+#
+# The ARROWS show which states matter most:
+#   - A long arrow pointing toward sample3 for "state1" = "state1 is what makes sample3 different"
+#   - Short arrow for "state5" = "state5 barely changes between samples, ignore it"
+
+---
+
+# ===== REGION-LEVEL INTERPRETATION =====
+# Notice in the example above: region2 has MUCH higher state1 across all samples
+#
+# Region 1 (bins 1-5):
+#   - All samples favor state2 (0.60-0.80)
+#   - State1 is low (0.14-0.26)
+#   - All samples similar → would cluster together on PCA
+#
+# Region 2 (bins 6-8):
+#   - All samples favor state1 (0.53-0.73)
+#   - State2 is lower (0.17-0.30)
+#   - Sample3 has even MORE state1 (0.73 vs 0.53-0.63)
+#   - This DIFFERENCE drives the PCA separation!
+
+---
+
+# ===== THE NONZERO FILTERING EFFECT =====
+# If you use --pca-nonzero-only, bins where ALL states are near zero are removed
+# In this example, all bins have at least one state >0.5, so they'd all be kept
+#
+# But in real sparse data, you might have bins like:
+#   0.0  0.0  0.0  0.0  0.0  (all zeros)
+# Those would be EXCLUDED from PCA calculation when using --pca-nonzero-only
+# This removes "background noise" and highlights signal-only differences

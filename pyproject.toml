@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bearing"
+version = "1.0.0"
+description = "Reference-model-free, per-track epigenomic attribution of continuous multi-assay chromatin signal"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Katharina E. Hayer" }]
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "pandas>=1.5",
+    "scikit-learn>=1.1",
+    "matplotlib>=3.6",
+    "seaborn>=0.12",
+    "pyyaml>=6.0",
+    "pyBigWig>=0.3.18",
+    "pysam>=0.21",
+]
+
+[project.optional-dependencies]
+hic = ["hicstraw>=1.3.1", "cooler>=0.9", "pillow>=9.0"]
+
+# Flat-layout: the pipeline scripts live at the repository root as top-level
+# modules, each exposing a main() guarded by __main__. The console scripts
+# below are a convenience for interactive use; the Snakemake workflow calls
+# the scripts by path so it works with or without an editable install.
+[tool.setuptools]
+py-modules = [
+    "bigwig_to_qcat",
+    "compare_qcat",
+    "bearing_pvalue",
+    "regional_enrichment",
+    "generate_perm_nulls",
+    "shift_bigwig",
+    "rebin_qcat",
+]
+packages = ["bearing"]
+
+[project.scripts]
+bearing-score    = "bigwig_to_qcat:main"
+bearing-compare  = "compare_qcat:main"
+bearing-pvalue   = "bearing_pvalue:main"
+bearing-regional = "regional_enrichment:main"
+bearing-perm     = "generate_perm_nulls:main"
+bearing-shift    = "shift_bigwig:main"
+bearing-rebin    = "rebin_qcat:main"

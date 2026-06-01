@@ -1,0 +1,13 @@
+# SLURM execution profile. Run:
+#   snakemake --profile workflow/profiles/slurm --use-apptainer
+# Snakemake submits one job per rule instance to the cluster.
+executor: slurm
+jobs: 50
+use-apptainer: true
+printshellcmds: true
+rerun-incomplete: true
+default-resources:
+  slurm_partition: "dbhiq,defq"
+  mem_mb: 16000
+  runtime: 240          # minutes
+  cpus_per_task: 2

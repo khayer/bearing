@@ -1,0 +1,400 @@
+# BEARING end-to-end workflow.
+#
+#   # local:
+#   snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml \
+#             --cores 16 --use-apptainer
+#   # cluster (Snakemake submits every rule to SLURM):
+#   snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml \
+#             --profile workflow/profiles/slurm
+#
+# A single `snakemake` builds the whole DAG. Hi-C phases are requested only if
+# the sample sheet defines Hi-C conditions (rows with a cool path), so the
+# pipeline runs unchanged on BEARING data without any Hi-C inputs.
+#
+# Heavy multi-file steps (scoring, compare, perm nulls, p-values) use .done
+# sentinels so Snakemake orders the phases without predicting every filename;
+# downstream rules read the actual files, which exist once the sentinel is made.
+# ASCII-only.
+
+import os
+import pandas as pd
+
+configfile: "config/config.yaml"
+container: config.get("container", "bearing.sif")
+
+BIN     = config["bearing_dir"]
+OUT     = config["outdir"]
+CATS    = config["categories"]
+CS      = config["chrom_sizes"]
+REGIONS = config["regions_file"]
+GENES   = config["genes_bed"]
+GTF     = config.get("gtf", "")
+AGR     = config.get("agr_genes_bed", "")
+BL      = os.path.join(OUT, "blacklist", "merged_blacklist.bed")
+P       = config  # parameters
+
+def script(name):     return os.path.join(BIN, name)
+def out(*parts):      return os.path.join(OUT, *parts)
+
+# ---- parse sheet ----------------------------------------------------------
+_sheet = pd.read_csv(config["samples_sheet"], sep="\t", dtype=str,
+                     comment="#").fillna("")
+BEARING_ROWS = _sheet[_sheet["bw"].str.strip() != ""]
+SAMPLES = BEARING_ROWS["sample"].tolist()
+QCATS = [r["out"] for _, r in BEARING_ROWS.iterrows()]
+
+REF = config["reference_condition"]
+CONDS = list(dict.fromkeys(BEARING_ROWS["condition"].tolist()))
+COMPARISONS = ["%s_vs_%s" % (REF, c) for c in CONDS if c != REF]
+
+# Hi-C conditions: first row per condition with a cool path (dedup).
+HIC = {}
+for _, r in _sheet.iterrows():
+    c = r["condition"]
+    if r.get("cool", "").strip() and c not in HIC:
+        HIC[c] = {"cool": r["cool"], "insul": r["insul"], "pca1": r["pca1"]}
+HAS_HIC = len(HIC) > 0
+
+def hic_arg(field, res, conds=None):
+    """Build 'COND=path COND=path ...' with {res} substituted."""
+    conds = conds or list(HIC.keys())
+    return " ".join("%s=%s" % (c, HIC[c][field].replace("{res}", str(res)))
+                    for c in conds if c in HIC)
+
+
+# ---- targets --------------------------------------------------------------
+def all_targets():
+    t = [
+        BL,
+        out("score.done"),
+        out("compare.done"),
+        out("pvalue.done"),
+        out("regional", "consolidated_enrichment.tsv"),
+        out("regional", "panel_E_heatmap.pdf"),
+        out("calibration.done"),
+        out("decomposition.done"),
+        out("benchmark", "recovery.done"),
+        out("paper_figures", "graphical_abstract_panel3.png"),
+        out("paper_figures", "fig6_panelB_igh_decomp.png"),
+    ]
+    if HAS_HIC:
+        t += [out("figures.done"),
+              out("hic", "tad.done"),
+              out("hic", "compartment.done"),
+              out("hic", "contact_isolation.done"),
+              out("hic", "crosslocus.done"),
+              out("paper_figures", "fig3_panelB_oe_grid.png"),
+              out("paper_figures", "fig4_panelA_self_contact_grid.png"),
+              out("paper_figures", "suppS7_panelB_compartment_res.png"),
+              out("hic", "bes_hic_within.done")]
+    return t
+
+rule all:
+    input: all_targets()
+
+
+# ---- derive a BEARING-only sheet for the scoring/compare/perm tools -------
+# (drops Hi-C-only rows and the Hi-C columns, which those tools do not need)
+rule bearing_sheet:
+    input: config["samples_sheet"]
+    output: out("samples.bearing.tsv")
+    run:
+        cols = ["sample", "condition", "replicate", "out", "bw"]
+        BEARING_ROWS[cols].to_csv(output[0], sep="\t", index=False)
+
+
+# ---- Phase 0: blacklist ---------------------------------------------------
+rule detect_blacklist:
+    input: sheet=out("samples.bearing.tsv")
+    output: out("blacklist", "detected_blacklist.bed")
+    threads: 4
+    resources: mem_mb=64000, runtime=1440
+    shell:
+        "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --categories {CATS} "
+        "--out {OUT}/blacklist/placeholder.qcat.bgz --detect-unmappable "
+        "--unmappable-zero-frac 0.90 --unmappable-out {output} --jobs {threads}"
+
+rule merge_blacklist:
+    input: detected=out("blacklist", "detected_blacklist.bed")
+    output: BL
+    params: ext=config.get("blacklist_external", ""), d=P["blacklist_merge_distance"]
+    shell:
+        "cat {input.detected} | sort -k1,1 -k2,2n | bedtools merge -d {params.d} "
+        "> {OUT}/blacklist/detected_merged.bed; "
+        "cat {OUT}/blacklist/detected_merged.bed <(cut -f1-3 {params.ext}) "
+        "| sort -k1,1 -k2,2n | bedtools merge > {output}"
+
+
+# ---- Phase 1: observed scoring (+ floors) ---------------------------------
+rule score:
+    input: sheet=out("samples.bearing.tsv"), blacklist=BL
+    output: qcats=QCATS, floors="floors.tsv", done=touch(out("score.done"))
+    params: minsig=P["min_signal"], norm=P["normalize"], agr=AGR
+    threads: 16
+    resources: mem_mb=164000, runtime=1440
+    shell:
+        "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --out placeholder.qcat.bgz "
+        "--categories {CATS} --blacklist {input.blacklist} --min-signal {params.minsig} "
+        "{params.norm} --write-floors-tsv {output.floors} --jobs {threads} "
+        "--signal-plots --stats median p90 p99 p80 --stats-plots "
+        "--bed {params.agr} {input.blacklist} {GENES}"
+
+
+# ---- Phase 2: compare (all conditions, region set) ------------------------
+rule compare:
+    input: sheet=out("samples.bearing.tsv"), score=out("score.done"), regions=REGIONS
+    output: done=touch(out("compare.done"))
+    threads: 10
+    resources: mem_mb=200000, runtime=1440
+    shell:
+        "python {BIN}/compare_qcat.py --sheet {input.sheet} --out {OUT}/compare "
+        "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
+        "--no-clip --workers {threads}"
+
+
+# ---- Phase 3: permutation nulls (observed + differential) -----------------
+rule perm_nulls:
+    input: sheet=out("samples.bearing.tsv"), floors="floors.tsv", blacklist=BL
+    output: done=touch(out("perm.done"))
+    params: n=P["n_perms"], shift=P["min_shift"], seed=P["seed"], minsig=P["min_signal"]
+    threads: 10
+    resources: mem_mb=200000, runtime=1440
+    shell:
+        "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --out-dir {OUT}/perm "
+        "--n-perms {params.n} --blacklist {input.blacklist} --floors-tsv {input.floors} "
+        "--min-signal {params.minsig} --min-shift {params.shift} --seed {params.seed} "
+        "--shift-workers {threads} --jobs {threads}"
+
+rule perm_nulls_diff:
+    input: sheet=out("samples.bearing.tsv"), floors="floors.tsv", blacklist=BL,
+           perm=out("perm.done")
+    output: done=touch(out("perm_diff.done"))
+    params: n=P["n_perms"]
+    threads: 10
+    resources: mem_mb=200000, runtime=1440
+    shell:
+        "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --diff-sheet {input.sheet} "
+        "--n-perms {params.n} --out-dir {OUT}/perm --blacklist {input.blacklist} "
+        "--floors-tsv {input.floors} --jobs {threads}"
+
+
+# ---- Phase 4: differential p-values (sbatch-free wrapper) -----------------
+rule pvalue_diff:
+    input: compare=out("compare.done"), perm_diff=out("perm_diff.done")
+    output: done=touch(out("pvalue.done"))
+    params: n=P["n_perms"]
+    threads: 4
+    resources: mem_mb=256000, runtime=1440
+    shell:
+        "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
+        "bash {BIN}/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue"
+
+
+# ---- Phase 5: regional enrichment -----------------------------------------
+rule regional_enrichment:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "enrich_{cmp}_tcrb_regions_v5.tsv")
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/regional_enrichment.py batch "
+        "--diff-table {OUT}/compare/diff_{wildcards.cmp}.stats.tsv "
+        "--regions annotations/tcrb_regions_v5.bed --locus chr6:40790000-41690000 "
+        "--out {output}"
+
+rule regional_consolidate:
+    input: expand(out("regional", "enrich_{cmp}_tcrb_regions_v5.tsv"), cmp=COMPARISONS)
+    output: tsv=out("regional", "consolidated_enrichment.tsv"),
+            pdf=out("regional", "panel_E_heatmap.pdf")
+    shell:
+        "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} --out {output.tsv}; "
+        "python {BIN}/render_regional_enrichment_heatmap.py --tsv {output.tsv} --out {output.pdf} "
+        "--comparisons " + " ".join(COMPARISONS)
+
+
+# ---- Phase 6: BEARING + Hi-C figures (Hi-C only) --------------------------
+rule bearing_hic_figures:
+    input: pvalue=out("pvalue.done"), regions=REGIONS
+    output: done=touch(out("figures.done"))
+    params:
+        contacts=lambda wc: " ".join(
+            "--contact %s=%s" % (c, HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"])))
+            for c in HIC if c in CONDS),
+        res=P["hic"]["contact_resolution"]
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
+        "--regions-file {input.regions} --reference-condition {REF} {params.contacts} "
+        "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
+        "--outdir {OUT}/figures --triangle --run"
+
+
+# ---- Phase 7: Hi-C analyses (Hi-C only) -----------------------------------
+rule hic_tad_extension:
+    output: done=touch(out("hic", "tad.done"))
+    params:
+        conds=" ".join(HIC.keys()), tad_dir=P["hic"]["tad_dir"],
+        anchor=P["hic"]["tad_anchor"], feats=P["hic"]["features_bed"]
+    resources: mem_mb=64000, runtime=720
+    run:
+        for res in [100000, 25000, 250000, 500000]:
+            shell("python {BIN}/hic/tad_extension_analysis.py --tad-dir {params.tad_dir} "
+                  "--resolution %d --conditions {params.conds} --anchor {params.anchor} "
+                  "--features-bed {params.feats} --out-prefix {OUT}/hic/tcrb_tad_%d --plot"
+                  % (res, res))
+
+rule hic_compartment:
+    output: done=touch(out("hic", "compartment.done"))
+    params: region=P["hic"]["compartment_region"], tad_dir=P["hic"]["tad_dir"],
+            feats=P["hic"]["features_bed"]
+    resources: mem_mb=64000, runtime=720
+    run:
+        for res in [100000, 250000, 500000]:
+            shell("python {BIN}/hic/compartment_analysis.py --pc1 %s --region {params.region} "
+                  "--features-bed {params.feats} --tad-dir {params.tad_dir} --tad-resolution %d "
+                  "--orient-with-gtf {GTF} --out-prefix {OUT}/hic/tcrb_compartment_%d"
+                  % (hic_arg("pca1", res), res, res))
+
+rule hic_contact_isolation:
+    output: done=touch(out("hic", "contact_isolation.done"))
+    params:
+        cools=lambda wc: hic_arg("cool", P["hic"]["contact_resolution"]),
+        target=P["hic"]["isolation_target"], win=P["hic"]["isolation_window"],
+        maxd=P["hic"]["isolation_max_distance"], permn=P["hic"]["isolation_perm_n"]
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/hic/tcrb_contact_isolation.py --cool {params.cools} --target {params.target} "
+        "--window-size {params.win} --max-distance {params.maxd} --perm-n {params.permn} "
+        "--out-prefix {OUT}/hic/tcrb_isolation_OE_perm"
+
+rule hic_crosslocus:
+    input: pvalue=out("pvalue.done")
+    output: done=touch(out("hic", "crosslocus.done"))
+    params:
+        res=P["hic"]["contact_resolution"], targets=P["hic"]["crosslocus_targets"],
+        ext=config.get("blacklist_external", "")
+    resources: mem_mb=100000, runtime=1440
+    run:
+        res = params.res
+        diffs = " ".join("%s=%s/compare/diff_%s.stats.tsv" % (c, OUT, "%s_vs_%s" % (REF, c))
+                         for c in HIC if c in CONDS and c != REF)
+        cool_a = HIC[REF]["cool"].replace("{res}", str(res))
+        cool_b = " ".join("%s_vs_%s=%s" % (REF, c, HIC[c]["cool"].replace("{res}", str(res)))
+                          for c in HIC if c in CONDS and c != REF)
+        shell("python {BIN}/hic/bes_hic_crosslocus.py --diffs %s --cool-a %s --cool-b %s "
+              "--targets {params.targets} --hic-bin %d --aggregation p95 "
+              "--contact-metric delta_contact --n-controls 200 --n-panels 1000 "
+              "--blacklist {params.ext} --gtf {GTF} --match-gene-density "
+              "--out-prefix {OUT}/hic/crosslocus_p95_dcontact"
+              % (diffs, cool_a, cool_b, res))
+
+
+# ---- Phase 8-10: calibration, decomposition, synthetic benchmark ----------
+rule calibration:
+    input: score=out("score.done")
+    output: done=touch(out("calibration.done"))
+    resources: mem_mb=200000, runtime=1440
+    shell: "bash {BIN}/run_replicate_calibration.sh"
+
+rule decomposition_report:
+    input: compare=out("compare.done")
+    output: done=touch(out("decomposition.done"))
+    resources: mem_mb=64000, runtime=240
+    shell:
+        "python {BIN}/bearing_decomposition_report.py --diff-dir {OUT}/compare "
+        "--categories DN_rep1_cats.json --out {OUT}/cross_comparison --top-n 500"
+
+rule benchmark:
+    output: done=touch(out("benchmark", "recovery.done"))
+    resources: mem_mb=32000, runtime=720
+    shell:
+        "python {BIN}/benchmark/simulate_bearing_tracks.py --prefix {OUT}/benchmark/sim --seed 1; "
+        "python {BIN}/benchmark/evaluate_bearing_recovery.py --prefix {OUT}/benchmark/sim "
+        "--out-prefix {OUT}/benchmark/recovery"
+
+
+# ---- Paper-figure grid wrappers (Hi-C only) -------------------------------
+# Composite panels that no single analysis script emits as one call. Reuse the
+# .cool / pca1 inputs already in the sheet. Two cell-type sets are used:
+# all five for the main O/E grids, the V1-perturbation pair is handled by the
+# existing hic_contact_isolation rule (Supp S7A).
+LYMPH5 = [c for c in ["DN", "DP", "EbKO", "ProB", "S3T3"] if c in HIC]
+
+rule fig3b_oe_grid:
+    output: out("paper_figures", "fig3_panelB_oe_grid.png")
+    params:
+        cools=lambda wc: " ".join(
+            "%s=%s" % (c, HIC[c]["cool"].replace("{res}", "25000")) for c in LYMPH5)
+    resources: mem_mb=32000, runtime=240
+    shell:
+        "python {BIN}/paper/figures/oe_contact_grid.py --cool {params.cools} "
+        "--region chr6:40400000-42400000 --resolution 25000 --vmin -2 --vmax 2 "
+        "--ncols 5 --annotate-oe-region chr6:41000000-41600000 --out {output}"
+
+rule fig4a_self_contact_grid:
+    output: out("paper_figures", "fig4_panelA_self_contact_grid.png")
+    params:
+        cools=lambda wc: " ".join(
+            "%s=%s" % (c, HIC[c]["cool"].replace("{res}", "25000")) for c in LYMPH5)
+    resources: mem_mb=32000, runtime=240
+    shell:
+        "python {BIN}/paper/figures/oe_contact_grid.py --cool {params.cools} "
+        "--region chr6:39900000-42900000 --resolution 25000 --vmin -2 --vmax 2 "
+        "--ncols 5 --annotate-oe-region chr6:40400000-42400000 --out {output}"
+
+rule suppS7b_compartment_grid:
+    output: out("paper_figures", "suppS7_panelB_compartment_res.png")
+    params:
+        pc1=lambda wc: " ".join(
+            "%s=%s" % (c, HIC[c]["pca1"]) for c in LYMPH5)  # path keeps {res}
+    resources: mem_mb=32000, runtime=240
+    shell:
+        "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
+        "--resolutions 25000 50000 100000 --region chr6:39000000-43500000 "
+        "--landmarks Cntnap2:chr6:46400000:B Gpnmb:chr6:48900000:A Tcrb:chr6:41000000:A "
+        "--out {output}"
+
+
+# ---- Additional manuscript-figure rules -----------------------------------
+# Graphical-abstract panel 3 (diffuse architecture / focal transcription) and
+# the Fig 6B Igh per-track decomposition are independent figure scripts that
+# were not previously emitted by any rule.
+
+rule graphical_abstract_panel3:
+    input: pvalue=out("pvalue.done")
+    output: out("paper_figures", "graphical_abstract_panel3.png")
+    params:
+        diff=lambda wc: out("compare", "diff_%s_vs_ProB.qcat.bgz" % REF)
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/diffuse_architecture_top1pct.py "
+        "--diff {params.diff} --region chr6:40400000-42400000 "
+        "--focal chr6:41450000-41600000 --window 10 --pct 1 "
+        "--figure {output} --out-prefix {OUT}/paper_figures/ga_panel3"
+
+rule fig6b_igh_decomp:
+    input: compare=out("compare.done")
+    output: out("paper_figures", "fig6_panelB_igh_decomp.png")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/bearing_region_decomposition.py "
+        "--diff-dir {OUT}/compare --regions annotations/igh_regions_v4.bed "
+        "--categories DN_rep1_cats.json "
+        "--filename-pattern 'diff_{{comparison}}.stats.tsv' "
+        "--out {output}"
+
+# S7C: within-Tcrb BES-Hi-C co-localization (distinct from the pooled
+# cross-locus hic/bes_hic_crosslocus.py already wired in hic_crosslocus).
+rule bes_hic_within:
+    input: pvalue=out("pvalue.done")
+    output: done=touch(out("hic", "bes_hic_within.done"))
+    params:
+        res=P["hic"]["contact_resolution"],
+        cool_a=lambda wc: HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"])) if REF in HIC else "",
+        cool_b=lambda wc: HIC["DP"]["cool"].replace("{res}", str(P["hic"]["contact_resolution"])) if "DP" in HIC else ""
+    resources: mem_mb=64000, runtime=720
+    shell:
+        "python {BIN}/bes_hic_correlation.py "
+        "--bes {OUT}/compare/diff_{REF}_vs_DP.stats.tsv "
+        "--cool-A {params.cool_a} --cool-B {params.cool_b} "
+        "--region chr6:40400000-42400000 --hic-bin {params.res} "
+        "--n-perm 1000 --prefix {OUT}/hic/bes_hic_within_DN_vs_DP"

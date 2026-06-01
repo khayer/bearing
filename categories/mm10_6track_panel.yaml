@@ -1,0 +1,33 @@
+# Bearing category configuration -- mm10 6-track panel (BEARING paper canonical)
+#
+# This is the fixed six-track panel used throughout the BEARING manuscript,
+# in fixed order. Track 3 (RNAseq -) encodes negative-strand signal as
+# negative numbers and is passed through abs() before normalization.
+#
+# Fields per entry:
+#   name             : human-readable assay label
+#   color            : hex color for pyGenomeTracks plots and bristle panels
+#   negative_strand  : true if BigWig encodes negative-strand signal
+
+name: "mm10 6-track panel"
+genome: mm10
+
+categories:
+  - name: ATAC
+    color: "#be92e0"
+
+  - name: "RNAseq +"
+    color: "#6495ed"
+
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+
+  - name: CTCF
+    color: "#ff2200"
+
+  - name: Cohesin
+    color: "#8b0000"
+
+  - name: H3K27ac
+    color: "#00e676"

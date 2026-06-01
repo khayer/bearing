@@ -1,0 +1,64 @@
+# ---- OS / editor ----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ipynb_checkpoints/
+venv/
+.venv/
+
+# ---- Snakemake / workflow run artifacts ----
+.snakemake/
+results/
+workflow/resources/staged/      # wget-staged inputs (regenerable)
+workflow/resources/*.bw
+workflow/resources/*.cool
+floors.tsv
+
+# ---- container image (multi-GB; host on GHCR/Zenodo, not git) ----
+*.sif
+
+# ---- large data inputs / outputs (never commit) ----
+*.bw
+*.bigwig
+*.cool
+*.mcool
+*.hic
+*.bam
+*.bam.bai
+*.qcat.bgz
+*.qcat.bgz.tbi
+*.bedgraph
+*.bedGraph
+*.bg
+*.bw.tmp
+*.part
+
+# ---- generated figures / reports (regenerable by the workflow) ----
+# Comment these out if you DO want to version final figures.
+# *.png
+# *.pdf
+
+# ---- secrets / credentials (S3 presigned URLs, tokens) ----
+.env
+*.pem
+*credentials*
+*presigned*
+
+# ---- internal run notes (contain cluster-specific paths; kept local) ----
+docs/how_I_run_it.md

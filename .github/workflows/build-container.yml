@@ -1,0 +1,64 @@
+name: build-container
+
+# Builds the Apptainer image from Apptainer.def and pushes it to the GitHub
+# Container Registry (GHCR) as an ORAS artifact. Heavy build (~1-2 GB image),
+# so it runs only on version tags and manual dispatch -- not on every push.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to push (default: latest)"
+        required: false
+        default: "latest"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.4
+
+      - name: Determine image reference
+        id: ref
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"   # lowercase for GHCR
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${{ github.event.inputs.tag }}"
+          fi
+          echo "image=oras://ghcr.io/${OWNER}/bearing" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build SIF
+        run: |
+          sudo apptainer build bearing.sif Apptainer.def
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | apptainer registry login -u "${{ github.actor }}" \
+              --password-stdin oras://ghcr.io
+
+      - name: Push image (versioned + latest)
+        run: |
+          apptainer push bearing.sif "${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.tag }}"
+          apptainer push bearing.sif "${{ steps.ref.outputs.image }}:latest"
+
+      - name: Summary
+        run: |
+          echo "Pushed ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pull with: apptainer pull bearing.sif ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"

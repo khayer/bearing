@@ -1,0 +1,67 @@
+# Template TSV for genomic regions
+# Lines starting with # are ignored
+#
+# ========================================================================
+# PURPOSE
+# ========================================================================
+# This file defines genomic regions of interest for batch plotting.
+# Compatible with:
+#   - batch_pygenometracks.py --regions-file
+#   - bearing_hic_plot.py --regions-file
+#
+# ========================================================================
+# FORMAT
+# ========================================================================
+#
+# REQUIRED COLUMNS:
+#   name   - Region name/label (used in output filenames)
+#   region - Genomic coordinates in UCSC format: chr:start-end
+#
+# OPTIONAL COLUMNS:
+#   resolution - Hi-C bin resolution in bp (for bearing_hic_plot.py)
+#   label      - Custom label for the region (overrides name in plot titles)
+#   out        - Custom output filename (overrides default naming)
+#
+# ========================================================================
+# USAGE
+# ========================================================================
+#
+# With batch_pygenometracks.py:
+#   python3 batch_pygenometracks.py \
+#       --sheet samples.tsv \
+#       --regions-file regions_template.tsv \
+#       --outdir plots/ --run
+#
+# With bearing_hic_plot.py (single region):
+#   python3 bearing_hic_plot.py \
+#       --contact-a condA.mcool --contact-b condB.mcool \
+#       --qcat-a condA.qcat.bgz --qcat-b condB.qcat.bgz \
+#       --region chr6:40793981-41688054 \
+#       --out figure.pdf
+#
+# With bearing_hic_plot.py (batch mode):
+#   python3 bearing_hic_plot.py \
+#       --contact-a condA.mcool --contact-b condB.mcool \
+#       --qcat-a condA.qcat.bgz --qcat-b condB.qcat.bgz \
+#       --regions-file regions_template.tsv \
+#       --outdir figures/
+#
+# ========================================================================
+# EXAMPLES
+# ========================================================================
+
+name	region	resolution	label
+wide	chr6:30000000-50000000	10000	TCRB locus (20 Mb)
+tcrb	chr6:40793981-41688054	10000	TCRB cluster
+rc	chr6:41525453-41567200	5000	Recombination center (high-res)
+vcluster	chr6:40984189-41338475	10000	Variable segment cluster
+v1	chr6:40829239-41076570	10000	V-region subset
+dj_cluster	chr6:41504654-41698839	5000	D-J cluster (high-res)
+enhancer	chr6:41300000-41400000	5000	Putative enhancer region
+
+# Additional examples (uncomment to use):
+# name	region
+# jak2_promoter	chr10:30000000-32000000
+# il10_enhancer	chr1:206940000-207020000
+# hoxd_cluster	chr2:74500000-75200000
+# myc_locus	chr8:127735000-127742000

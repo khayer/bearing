@@ -1,0 +1,37 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.8
+
+# BEARING container for HPC (Singularity / Apptainer)
+#
+# Build:
+#   apptainer build bearing.sif Apptainer.def
+# Run a workflow:
+#   apptainer exec bearing.sif snakemake -s workflow/Snakefile --cores 16
+# Run a single tool:
+#   apptainer exec bearing.sif bearing-score --help
+#
+# The container freezes the conda environment defined in environment.yml so the
+# archived image reproduces the exact software stack used in the paper.
+
+%files
+    environment.yml /opt/bearing/environment.yml
+    pyproject.toml  /opt/bearing/pyproject.toml
+    # the repository source is copied in so `pip install -e .` resolves
+    . /opt/bearing/src
+
+%post
+    micromamba install -y -n base -f /opt/bearing/environment.yml
+    micromamba clean --all --yes
+
+%environment
+    export PATH=/opt/conda/bin:$PATH
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    exec "$@"
+
+%labels
+    Author Katharina E. Hayer
+    Project BEARING
+    Description Reference-model-free per-track epigenomic attribution

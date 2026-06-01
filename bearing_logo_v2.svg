@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 160" width="440" height="160">
+  <defs>
+    <radialGradient id="outerRing" cx="40%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#4e4e4e"/>
+      <stop offset="100%" stop-color="#181818"/>
+    </radialGradient>
+    <radialGradient id="innerRing" cx="40%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#585858"/>
+      <stop offset="100%" stop-color="#222222"/>
+    </radialGradient>
+    <radialGradient id="b0" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#55e888"/>
+      <stop offset="100%" stop-color="#007030"/>
+    </radialGradient>
+    <radialGradient id="b1" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#99bbff"/>
+      <stop offset="100%" stop-color="#2255bb"/>
+    </radialGradient>
+    <radialGradient id="b2" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#ff7755"/>
+      <stop offset="100%" stop-color="#cc1100"/>
+    </radialGradient>
+    <radialGradient id="b3" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#55ddaa"/>
+      <stop offset="100%" stop-color="#008855"/>
+    </radialGradient>
+    <radialGradient id="b4" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#9999ff"/>
+      <stop offset="100%" stop-color="#2222aa"/>
+    </radialGradient>
+    <radialGradient id="b5" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#ffcc55"/>
+      <stop offset="100%" stop-color="#aa7700"/>
+    </radialGradient>
+    <radialGradient id="b6" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#ff99bb"/>
+      <stop offset="100%" stop-color="#bb2255"/>
+    </radialGradient>
+    <radialGradient id="b7" cx="36%" cy="30%" r="62%">
+      <stop offset="0%" stop-color="#cc5555"/>
+      <stop offset="100%" stop-color="#661111"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="2" dy="3" stdDeviation="4" flood-color="#00000060"/>
+    </filter>
+    <linearGradient id="sheen" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="bore-clip">
+      <circle cx="80" cy="80" r="19.5"/>
+    </clipPath>
+    <linearGradient id="rule" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#00b050"/>
+      <stop offset="14%"  stop-color="#6495ed"/>
+      <stop offset="28%"  stop-color="#ff2200"/>
+      <stop offset="44%"  stop-color="#00c864"/>
+      <stop offset="60%"  stop-color="#8b0000"/>
+      <stop offset="76%"  stop-color="#d4aa00"/>
+      <stop offset="100%" stop-color="#1a3a8f"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="440" height="160" fill="#f8f7f3"/>
+
+  <!-- cx=80, cy=80, outer r=66, inner ring r=34, raceway r=50 -->
+
+  <!-- Outer ring -->
+  <circle cx="80" cy="80" r="66" fill="url(#outerRing)" filter="url(#shadow)"/>
+  <circle cx="80" cy="80" r="66" fill="url(#sheen)"/>
+
+  <!-- Gap (the cage space, background color) -->
+  <circle cx="80" cy="80" r="52" fill="#f8f7f3"/>
+
+  <!-- Inner ring -->
+  <circle cx="80" cy="80" r="34" fill="url(#innerRing)"/>
+  <circle cx="80" cy="80" r="34" fill="url(#sheen)"/>
+
+  <!-- Bore background -->
+  <circle cx="80" cy="80" r="20" fill="#f0efeb"/>
+
+  <!-- Hi-C contact arcs: 4 only, all proper curves.
+       Anchor radius = 17. Points:
+         top  80,63  NE 106,72  SE 106,88  S 80,97  NW 54,72  SW 54,88
+       Each arc bows well away from the chord (ctrl pts pushed outward)
+       so it reads as a genuine loop, not a near-straight line.
+  -->
+  <g style="clip-path:url(#bore-clip)">
+    <!-- Arc A: top -> SE, bows left  (green) -->
+    <path d="M 80,63 C 58,65 58,90 106,88"
+          fill="none" stroke="#00b050" stroke-width="1.2"
+          stroke-linecap="round" opacity="0.65"/>
+    <!-- Arc B: NE -> SW, bows downward (blue) -->
+    <path d="M 106,72 C 96,92 64,84 54,88"
+          fill="none" stroke="#6495ed" stroke-width="1.1"
+          stroke-linecap="round" opacity="0.60"/>
+    <!-- Arc C: NW -> SE, bows upward (red) -->
+    <path d="M 54,72 C 64,58 96,58 106,88"
+          fill="none" stroke="#ff2200" stroke-width="1.1"
+          stroke-linecap="round" opacity="0.58"/>
+    <!-- Arc D: top -> S, bows right (teal) -->
+    <path d="M 80,63 C 102,65 102,95 80,97"
+          fill="none" stroke="#00c864" stroke-width="1.0"
+          stroke-linecap="round" opacity="0.55"/>
+  </g>
+
+  <!-- Anchor dots for arc endpoints only -->
+  <circle cx="80"  cy="63" r="1.4" fill="#00b050" opacity="0.80"/>
+  <circle cx="106" cy="72" r="1.4" fill="#6495ed" opacity="0.80"/>
+  <circle cx="106" cy="88" r="1.4" fill="#00c864" opacity="0.80"/>
+  <circle cx="80"  cy="97" r="1.4" fill="#00c864" opacity="0.80"/>
+  <circle cx="54"  cy="72" r="1.4" fill="#ff2200" opacity="0.80"/>
+  <circle cx="54"  cy="88" r="1.4" fill="#6495ed" opacity="0.80"/>
+
+  <!-- Subtle edge vignette -->
+  <circle cx="80" cy="80" r="20" fill="#111111" opacity="0.06"/>
+
+  <!-- 8 balls at raceway radius=43, ball radius=8.5
+       Angles from top, clockwise: 270, 315, 0, 45, 90, 135, 180, 225 deg
+       x = 80 + 43*cos(a), y = 80 + 43*sin(a)
+       270: x=80,   y=37
+       315: x=110,  y=50
+         0: x=123,  y=80
+        45: x=110,  y=110
+        90: x=80,   y=123
+       135: x=50,   y=110
+       180: x=37,   y=80
+       225: x=50,   y=50
+  -->
+
+  <!-- Ball drop shadows -->
+  <circle cx="80"  cy="38"  r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="110" cy="50"  r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="123" cy="80"  r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="110" cy="110" r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="80"  cy="122" r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="50"  cy="110" r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="37"  cy="80"  r="9" fill="#0a0a0a" opacity="0.3"/>
+  <circle cx="50"  cy="50"  r="9" fill="#0a0a0a" opacity="0.3"/>
+
+  <!-- Balls -->
+  <circle cx="80"  cy="38"  r="8.5" fill="url(#b0)"/>
+  <circle cx="110" cy="50"  r="8.5" fill="url(#b1)"/>
+  <circle cx="123" cy="80"  r="8.5" fill="url(#b2)"/>
+  <circle cx="110" cy="110" r="8.5" fill="url(#b3)"/>
+  <circle cx="80"  cy="122" r="8.5" fill="url(#b4)"/>
+  <circle cx="50"  cy="110" r="8.5" fill="url(#b5)"/>
+  <circle cx="37"  cy="80"  r="8.5" fill="url(#b6)"/>
+  <circle cx="50"  cy="50"  r="8.5" fill="url(#b7)"/>
+
+  <!-- Ball specular highlights -->
+  <circle cx="78"  cy="34.5" r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="108" cy="46.5" r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="121" cy="76.5" r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="108" cy="106.5" r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="78"  cy="118.5" r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="48"  cy="106.5" r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="35"  cy="76.5"  r="2.5" fill="white" opacity="0.6"/>
+  <circle cx="48"  cy="46.5"  r="2.5" fill="white" opacity="0.6"/>
+
+  <!-- Outer ring sheen arc (upper-left) -->
+  <path d="M 26 55 A 66 66 0 0 1 80 14"
+        fill="none" stroke="white" stroke-width="4.5"
+        stroke-linecap="round" opacity="0.08"/>
+
+  <!-- Inner ring sheen arc -->
+  <path d="M 54 57 A 34 34 0 0 1 80 46"
+        fill="none" stroke="white" stroke-width="3"
+        stroke-linecap="round" opacity="0.15"/>
+
+
+
+  <!-- ── WORDMARK ── -->
+  <text x="170" y="96"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="52"
+        font-weight="400"
+        letter-spacing="1.5"
+        fill="#1c1c1c">bearing</text>
+
+  <!-- Colored rule, width matches text approx -->
+  <rect x="170" y="105" width="252" height="2.5" fill="url(#rule)" rx="1.2"/>
+
+  <!-- Tagline -->
+  <text x="171" y="122"
+        font-family="'Courier New', Courier, monospace"
+        font-size="9"
+        letter-spacing="3"
+        fill="#888882">MULTI-OMICS  SIGNAL  SCORING</text>
+
+  <!-- Genome build / method label -->
+  <text x="171" y="139"
+        font-family="'Courier New', Courier, monospace"
+        font-size="7.5"
+        letter-spacing="2"
+        fill="#b8b4ac">KL DIVERGENCE  ·  EPIGENOMICS</text>
+
+</svg>

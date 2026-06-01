@@ -1,0 +1,25 @@
+name	region	resolution	label
+Col1a1	chr11:94868948-95020318	5000	Col1a1 (Fibroblast Marker)
+new_wide	chr6:40400000-42400000	10000	Tcrb TAD
+wide	chr6:40009193-47389064	50000	TCRB locus wide
+tcrb	chr6:40793981-41688054	10000	TCRB cluster
+rc	chr6:41525453-41567200	3000	Recombination center (high-res)
+vcluster	chr6:40984189-41338475	3000	Variable segment cluster
+v1_wide	chr6:40829239-41076570	3000	V1-region subset
+dj_cluster	chr6:41504654-41698839	3000	D-J cluster (high-res)
+igk	chr6:67248186-70936333	50000	Igk
+v1	chr6:40872100-40908238	3000	V1-region
+rag	chr2:101541504-101723921	5000	Rag1 and Rag2
+igh	chr12:112934363-116108354	50000	Igh
+emc7	chr2:112416251-112507459	3000	Emc7 for housekeeping
+actb	chr5:142895429-142914439	3000	Actb for housekeeping
+gapdh	chr6:125152671-125178991	3000	Gapdh for housekeeping
+wapl	chr14:34585777-34835999	5000	Wapl
+cd8a	chr6:71301306-71451292	5000	Cd8a
+cd4	chr6:124835319-124917623	3000	Cd4
+trcb_up	chr6:40493981-40788054	3000	Tcrb upstream
+tcrb_v21_try4	chr6:41181080-41327306	3000	Tcrb_v20_to_Try4
+tcrb_v7_v21	chr6:41071900-41195147	3000	Tcrb_v7_to_v21
+rag1_rag2_zoom	chr2:101617089-101660152	3000	Rag1 and Rag2 (zoom in)
+tcrb_v11_v15	chr6:41102455-41148965	3000	V11_to_v15
+igh_wide	chr12:111000000-120000000	100000	Igh (wide)

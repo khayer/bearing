@@ -1,0 +1,30 @@
+# Bearing category configuration -- mm10 5-state minimal
+#
+# A compact 5-track configuration for quick experiments or assays
+# where only the core accessibility + expression + architectural signal
+# tracks are available.
+#
+# Fields per entry:
+#   name             : human-readable assay label
+#   color            : hex color for pyGenomeTracks plots
+#   negative_strand  : true if BigWig encodes negative-strand signal
+
+name: "mm10 5-state minimal"
+genome: mm10
+
+categories:
+  - name: ATAC
+    color: "#be92e0"
+
+  - name: "RNAseq +"
+    color: "#6495ed"
+
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+
+  - name: CTCF
+    color: "#ff2200"
+
+  - name: H3K27ac
+    color: "#00e676"

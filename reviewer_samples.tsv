@@ -1,0 +1,16 @@
+# Reviewer smoke-test sheet for bigwig_to_qcat.py and compare_qcat.py
+# Replace the BigWig paths with your own files before running.
+# This sheet can be used directly with bigwig_to_qcat.py --sheet or
+# with compare_qcat.py --sheet, because compare_qcat.py will convert the
+# BigWigs to qcat files on the fly when qcat paths are not provided.
+#
+# Columns:
+#   sample      sample label used in plots
+#   condition   condition/group label
+#   replicate   replicate number within the condition
+#   bw          comma-separated BigWig paths in category order
+#   out         qcat output filename to write for that sample
+
+sample	condition	replicate	bw	out
+DN_rep1	DN	1	/path/to/DN_rep1_atac.bw,/path/to/DN_rep1_rnaseq_plus.bw,/path/to/DN_rep1_rnaseq_minus.bw,/path/to/DN_rep1_ctcf.bw,/path/to/DN_rep1_cohesin.bw,/path/to/DN_rep1_h3k27ac.bw,/path/to/DN_rep1_enh4c.bw,/path/to/DN_rep1_dj14c.bw,/path/to/DN_rep1_dj24c.bw,/path/to/DN_rep1_biv_tss.bw	DN_rep1.qcat.bgz
+3T3_rep1	3T3	1	/path/to/3T3_rep1_atac.bw,/path/to/3T3_rep1_rnaseq_plus.bw,/path/to/3T3_rep1_rnaseq_minus.bw,/path/to/3T3_rep1_ctcf.bw,/path/to/3T3_rep1_cohesin.bw,/path/to/3T3_rep1_h3k27ac.bw,/path/to/3T3_rep1_enh4c.bw,/path/to/3T3_rep1_dj14c.bw,/path/to/3T3_rep1_dj24c.bw,/path/to/3T3_rep1_biv_tss.bw	3T3_rep1.qcat.bgz

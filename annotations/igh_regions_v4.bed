@@ -1,0 +1,63 @@
+# Igh regional-enrichment regions (mm10) - v4
+# Locus context: --locus chr12:113000000-116100000
+#   (extended past v3's 116000000 boundary to capture Ighv1-85 at
+#    chr12:116000028-116000321 and Ighv1-86 at chr12:116009659-116009954,
+#    the two most-distal V segments in AgRgenes_mm10_s.bed; 90 kb buffer
+#    past Ighv1-86 end.)
+#
+# All coordinates anchored to lab-canonical AgRgenes_mm10_s.bed for gene
+# segment boundaries. Audited against ENCODE mm10 blacklist (PMID 31249361)
+# chr12 entries (earliest chr12 BL interval begins at 118794900, 2.7 Mb
+# past the locus end; all five Igh regions are blacklist-clean).
+#
+# NOTE: Igh is on the minus strand in mm10; transcriptional 5' = high
+# chromosomal coordinate. "Proximal V" = closest to D-J in genomic coords
+# (low chr12); "distal V" = farthest from D-J (high chr12).
+#
+# 4 biology-driven regions + 1 within-locus silent negative control.
+# Non-overlapping.
+#
+# Region 1 (NEGCTL_3flanking_silent) chr12:113030000-113200000 (170 kb, ~850 bins)
+#   NEGATIVE CONTROL. 3'-flanking sequence downstream of the Igh constant
+#   region and downstream of the 3' regulatory region (3'RR HS sites,
+#   located at ~chr12:113210000-113256000, immediately 3' of Igha).
+#   Confirmed gene-segment-free and CBE-free in lab annotations.
+#   Predicted null across all DN-vs-{DP, EbKO, ProB, 3T3} comparisons.
+#
+# Region 2 (CH_JH_iEmu) chr12:113255000-113430000 (175 kb, ~875 bins)
+#   Constant-region exons and JH cluster with the intronic enhancer iEmu.
+#   Contains: Igha (113256204), Ighe, Ighg2c, Ighg2b, Ighg1, Ighg3, Ighd,
+#   Ighm (113418826-113422730), Ighj4..Ighj1 (113428514-113429833), and
+#   the iEmu intronic enhancer (~113427000-113428000, between Ighj4 and
+#   Ighm; not in the AgRgenes BED but well-established in the Igh literature).
+#   Predicted differential: ProB-up (DJH/CH constant-region germline
+#   transcription); flat in DN-vs-DP and DN-vs-EbKO.
+#   Anchor: standard Igh anatomy; Hill et al. 2020.
+#
+# Region 3 (DH_cluster) chr12:113430000-113530000 (100 kb, ~500 bins)
+#   All DH segments (Ighd4-1 at 113430528 through Ighd5-1 at 113526809),
+#   covering 20 DH segments and the IGCR1 boundary element area.
+#   Anchor: Featherstone et al. 2010 (IGCR1); Ba et al. 2020.
+#
+# Region 4 (VH_proximal) chr12:113570000-115000000 (1430 kb, ~7150 bins)
+#   Proximal/middle VH cluster: Ighv5-1 (most proximal V at 113572929)
+#   through the bulk of V7183, Q52, and early J558 families
+#   (128 V segments).
+#   Anchor: Hill et al. 2020 (loop-extrusion proximal-to-distal scanning);
+#   Zhang et al. 2019.
+#
+# Region 5 (VH_distal) chr12:115000000-116100000 (1100 kb, ~5500 bins)
+#   Distal VH cluster: J558 family-dominated, 50 V segments.
+#   Most-proximal: Ighv8-3 (115003418); most-distal: Ighv1-86 (116009954).
+#   Contains the V-cluster window identified in BEARING Results
+#   (chr12:115-116 Mb) as showing the strongest Pro-B-specific minus-strand
+#   transcription signature.
+#   Anchor: Hill et al. 2020 (Wapl-Pax5 axis enables distal-V access via
+#   Igh loop extrusion); Verma-Gaur et al. 2012 (PAIR elements).
+#
+# Format: chrom <TAB> start <TAB> end <TAB> name
+chr12	113030000	113200000	NEGCTL_3flanking_silent
+chr12	113255000	113430000	CH_JH_iEmu
+chr12	113430000	113530000	DH_cluster
+chr12	113570000	115000000	VH_proximal
+chr12	115000000	116100000	VH_distal

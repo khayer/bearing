@@ -1,0 +1,61 @@
+# Bearing category configuration -- hg38 15-state
+#
+# 15-track configuration for human samples (hg38/GRCh38).
+# Category names and colors match the mm10 default so that cross-species
+# comparisons use a consistent color scheme.  Swap in your own assay names
+# if your track order differs.
+#
+# Fields per entry:
+#   name             : human-readable assay label
+#   color            : hex color for pyGenomeTracks plots
+#   negative_strand  : true if BigWig encodes negative-strand signal
+
+name: "hg38 15-state"
+genome: hg38
+
+categories:
+  - name: ATAC
+    color: "#be92e0"
+
+  - name: "RNAseq +"
+    color: "#6495ed"
+
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+
+  - name: CTCF
+    color: "#ff2200"
+
+  - name: Cohesin
+    color: "#8b0000"
+
+  - name: H3K27ac
+    color: "#00e676"
+
+  - name: "Enhancer 4C"
+    color: "#c9a0ff"
+
+  - name: "DJ1 4C"
+    color: "#7b2fff"
+
+  - name: "DJ2 4C"
+    color: "#4b0082"
+
+  - name: "Bivalent/Poised TSS"
+    color: "#cd5c5c"
+
+  - name: "Flanking Bivalent TSS/Enh"
+    color: "#e9967a"
+
+  - name: "Bivalent Enhancer"
+    color: "#bdb76b"
+
+  - name: "Repressed PolyComb"
+    color: "#808080"
+
+  - name: "Weak Repressed PolyComb"
+    color: "#c0c0c0"
+
+  - name: "Quiescent/Low"
+    color: "#ffffff"

@@ -1,0 +1,92 @@
+# Template TSV for bigwig_to_qcat.py --sheet mode and compare_qcat.py
+# Lines starting with # are ignored
+#
+# ========================================================================
+# USE CASE 1: bigwig_to_qcat.py --sheet (convert BigWigs to qcat files)
+# ========================================================================
+#
+# REQUIRED COLUMNS:
+#   bw       - Comma-separated list of BigWig file paths (5-15 files)
+#              OR use separate columns: bw1, bw2, bw3, ... instead
+#
+# OPTIONAL COLUMNS:
+#   sample   - Sample name/label (alternative: "name")
+#   out      - Output qcat.bgz path (default: <sample>.qcat.bgz)
+#
+# USAGE:
+#   python3 bigwig_to_qcat.py --sheet samples_template.tsv --out placeholder.qcat.bgz
+#
+# Example: Using comma-separated bw column
+sample	bw	out
+WT_rep1	WT_atac.bw,WT_rnaseq_plus.bw,WT_rnaseq_minus.bw,WT_ctcf.bw,WT_cohesin.bw,WT_h3k27ac.bw,WT_enh4c.bw,WT_dj14c.bw,WT_dj24c.bw,WT_biv_tss.bw	WT_rep1.qcat.bgz
+WT_rep2	WT_atac.bw,WT_rnaseq_plus.bw,WT_rnaseq_minus.bw,WT_ctcf.bw,WT_cohesin.bw,WT_h3k27ac.bw,WT_enh4c.bw,WT_dj14c.bw,WT_dj24c.bw,WT_biv_tss.bw	WT_rep2.qcat.bgz
+KO_rep1	KO_atac.bw,KO_rnaseq_plus.bw,KO_rnaseq_minus.bw,KO_ctcf.bw,KO_cohesin.bw,KO_h3k27ac.bw,KO_enh4c.bw,KO_dj14c.bw,KO_dj24c.bw,KO_biv_tss.bw	KO_rep1.qcat.bgz
+KO_rep2	KO_atac.bw,KO_rnaseq_plus.bw,KO_rnaseq_minus.bw,KO_ctcf.bw,KO_cohesin.bw,KO_h3k27ac.bw,KO_enh4c.bw,KO_dj14c.bw,KO_dj24c.bw,KO_biv_tss.bw	KO_rep2.qcat.bgz
+
+# ========================================================================
+# USE CASE 2: compare_qcat.py with pre-existing qcat files
+# ========================================================================
+#
+# REQUIRED COLUMNS:
+#   sample     - Unique sample label used in plots
+#   condition  - Groups replicates together (e.g. "WT", "KO", "treat")
+#   replicate  - Integer replicate number within the condition
+#   qcat       - Path to qcat.bgz file produced by bigwig_to_qcat.py
+#
+# USAGE:
+#   python3 compare_qcat.py --sheet samples_template.tsv --out comparison/
+#
+# Example format (uncomment to use):
+# sample	condition	replicate	qcat
+# WT_rep1	WT	1	WT_rep1.qcat.bgz
+# WT_rep2	WT	2	WT_rep2.qcat.bgz
+# KO_rep1	KO	1	KO_rep1.qcat.bgz
+# KO_rep2	KO	2	KO_rep2.qcat.bgz
+
+# ========================================================================
+# USE CASE 3: compare_qcat.py with BigWig files (on-the-fly conversion)
+# ========================================================================
+#
+# REQUIRED COLUMNS:
+#   condition  - Groups replicates together
+#   bw         - Comma-separated BigWig list OR bw1,bw2,... columns
+#
+# OPTIONAL COLUMNS:
+#   sample     - Sample label (default: generated from condition/replicate)
+#   replicate  - Replicate number (default: 0)
+#   out        - Output qcat path (default: <sample>.qcat.bgz)
+#
+# USAGE:
+#   python3 compare_qcat.py --sheet samples_template.tsv --out comparison/
+#
+# Example format (uncomment to use):
+# sample	condition	replicate	bw	out
+# WT_rep1	WT	1	WT_atac.bw,WT_rnaseq_plus.bw,WT_rnaseq_minus.bw,WT_ctcf.bw,WT_cohesin.bw,WT_h3k27ac.bw,WT_enh4c.bw,WT_dj14c.bw,WT_dj24c.bw,WT_biv_tss.bw	WT_rep1.qcat.bgz
+# WT_rep2	WT	2	WT_atac.bw,WT_rnaseq_plus.bw,WT_rnaseq_minus.bw,WT_ctcf.bw,WT_cohesin.bw,WT_h3k27ac.bw,WT_enh4c.bw,WT_dj14c.bw,WT_dj24c.bw,WT_biv_tss.bw	WT_rep2.qcat.bgz
+# KO_rep1	KO	1	KO_atac.bw,KO_rnaseq_plus.bw,KO_rnaseq_minus.bw,KO_ctcf.bw,KO_cohesin.bw,KO_h3k27ac.bw,KO_enh4c.bw,KO_dj14c.bw,KO_dj24c.bw,KO_biv_tss.bw	KO_rep1.qcat.bgz
+# KO_rep2	KO	2	KO_atac.bw,KO_rnaseq_plus.bw,KO_rnaseq_minus.bw,KO_ctcf.bw,KO_cohesin.bw,KO_h3k27ac.bw,KO_enh4c.bw,KO_dj14c.bw,KO_dj24c.bw,KO_biv_tss.bw	KO_rep2.qcat.bgz
+
+# ========================================================================
+# USE CASE 4: batch_pygenometracks.py (batch plotting for each sample)
+# ========================================================================
+#
+# REQUIRED COLUMNS:
+#   sample      - Sample identifier
+#   tracks_ini  - Path to pyGenomeTracks INI file
+#                 OR qcat (auto-derives INI as <base>_tracks.ini)
+#
+# OPTIONAL COLUMNS:
+#   enabled  - 1/0 or true/false to enable/disable sample (default: 1)
+#
+# USAGE:
+#   python3 batch_pygenometracks.py --sheet samples_template.tsv \
+#       --regions-file regions_template.tsv --outdir plots/ --run
+#
+# Example: (uncomment to use)
+# sample	qcat	enabled
+# WT_rep1	WT_rep1.qcat.bgz	1
+# WT_rep2	WT_rep2.qcat.bgz	1
+# KO_rep1	KO_rep1.qcat.bgz	1
+# KO_rep2	KO_rep2.qcat.bgz	0
+
+# NOTE: For genomic regions, see regions_template.tsv

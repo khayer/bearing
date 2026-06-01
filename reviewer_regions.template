@@ -1,0 +1,12 @@
+# Reviewer smoke-test regions for a chr2-only run
+# Replace or tweak coordinates if you want a different Rag window.
+#
+# Columns:
+#   name      short region name used in output filenames
+#   region    genomic interval in chr:start-end format
+#   resolution optional Hi-C resolution (used by some plotting paths)
+#   label     human-readable label for plots
+
+name	region	resolution	label
+rag	chr2:50700000-50950000	10000	Rag locus
+hoxd	chr2:74500000-75200000	10000	Hoxd cluster

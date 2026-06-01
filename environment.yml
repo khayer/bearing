@@ -1,0 +1,38 @@
+# BEARING conda/Bioconda environment
+#
+#   conda env create -f environment.yml
+#   conda activate bearing
+#
+# Pins are intentionally loose (>=) for portability; for an exact archival
+# build use the Apptainer.def container, which freezes the solved environment.
+
+name: bearing
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.10
+  # core scientific stack
+  - numpy>=1.23
+  - scipy>=1.9
+  - pandas>=1.5
+  - scikit-learn>=1.1
+  - matplotlib>=3.6
+  - seaborn>=0.12
+  - pillow>=9.0           # montage_panels.py (paper figure stitching)
+  - pyyaml>=6.0
+  # genomics I/O (bioconda)
+  - pybigwig>=0.3.18
+  - pysam>=0.21
+  - htslib>=1.17          # bgzip + tabix
+  - samtools>=1.17
+  - bedtools>=2.30
+  # Hi-C processing / TAD + compartment calling (Methods M.12)
+  - hicexplorer>=3.7
+  # workflow engine
+  - snakemake>=8.0
+  - snakemake-executor-plugin-slurm
+  - pip
+  - pip:
+      - hicstraw>=1.3.1   # only needed for Juicer .hic input
+      - -e .              # install the bearing package itself (pyproject.toml)

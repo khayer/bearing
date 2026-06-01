@@ -1,0 +1,51 @@
+# BEARING workflow configuration.
+# A single `snakemake` invocation runs the whole pipeline; Hi-C phases only
+# run if the sheet defines Hi-C conditions (rows with a cool path).
+
+# --- inputs ---------------------------------------------------------------
+samples_sheet: "config/samples.tsv"
+categories:    "../categories/mm10_6track_panel.yaml"
+chrom_sizes:   "resources/mm10.chrom.sizes"
+regions_file:  "config/regions.tsv"
+genes_bed:     "resources/mm10_genes.bed"
+agr_genes_bed: "resources/AgRgenes_mm10_s.bed"
+gtf:           "resources/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf"
+blacklist_external: "resources/mm10-blacklist.v2.bed"   # merged with detected
+
+# --- parameters to CONFIRM (these set whether the rerun matches the paper) --
+min_signal: 0.1        # CONFIRM: 0.1 (your runs) vs 0.01 (Methods M.4 default)
+normalize: ""          # "" = off (Methods M.2); or "--normalize-method nonzero-quantile"
+n_perms: 10            # CONFIRM: 10 vs 5
+min_shift: 1500000     # CONFIRM: 1500000 vs 1000000
+seed: 42
+blacklist_merge_distance: 3003
+
+# --- comparisons ----------------------------------------------------------
+reference_condition: DN          # differentials are DN-vs-<each other condition>
+
+# --- Hi-C parameters (used only if the sheet defines Hi-C conditions) ------
+hic:
+  resolutions: [10000, 25000, 100000, 250000, 500000]
+  contact_resolution: 10000      # figures / contact isolation / crosslocus
+  tad_dir: "../tads"
+  tad_anchor: "chr6:41550000"
+  features_bed: "annotations/tcrb_extension_features.bed"
+  compartment_region: "chr6:39000000-55000000"
+  isolation_target: "chr6:40850000-41600000"
+  isolation_window: 750000
+  isolation_max_distance: 6000000
+  isolation_perm_n: 200
+  crosslocus_targets: "annotations/targets.tsv"
+
+# --- locations ------------------------------------------------------------
+outdir: "results"
+bearing_dir: ".."
+container: "bearing.sif"
+
+# --- optional input staging (no aws/mount-s3 on cluster) -------------------
+# Host inputs behind HTTPS (public bucket or presigned URLs) and put those URLs
+# in the sheet. Run workflow/stage_inputs.py once to wget them to a local cache
+# and emit a localized sheet, then point samples_sheet at that localized sheet:
+#   python3 workflow/stage_inputs.py --sheet workflow/config/samples.tsv \
+#       --out-sheet workflow/config/samples.local.tsv --cache-dir resources/staged
+#   snakemake ... --config samples_sheet=workflow/config/samples.local.tsv

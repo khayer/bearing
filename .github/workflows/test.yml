@@ -1,0 +1,58 @@
+name: test
+
+# Fast PR checks: unit/integration tests, plus a synthetic end-to-end smoke
+# test that runs the REAL pipeline on simulated data (no large files, no
+# bioconda env -- pip is enough for the core scoring path).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install (editable) + pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+      - name: Run tests
+        run: pytest -q
+
+  smoke:
+    # End-to-end on a tiny simulated chromosome: simulate -> score -> check.
+    # This is the same path that runs in Codespaces.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Simulate a small synthetic chromosome
+        run: |
+          python benchmark/simulate_bearing_tracks.py \
+            --prefix sim --chrom chrSim --length 2000000 --bin-size 200 \
+            --seed 1
+      - name: Score it through the real pipeline
+        run: |
+          python bigwig_to_qcat.py \
+            --bw sim_atac.bw sim_rnaplus.bw sim_rnaminus.bw \
+                 sim_ctcf.bw sim_rad21.bw sim_h3k27ac.bw \
+            --sample-name sim --categories categories/mm10_6track_panel.yaml \
+            --chrom-sizes sim.chrom.sizes --chroms chrSim \
+            --out sim.qcat.bgz --jobs 2
+      - name: Check output exists and has real (non-zero) scores
+        run: |
+          test -s sim.qcat.bgz
+          n=$(zcat sim.qcat.bgz | grep -vc '\[\[0.0')
+          echo "non-zero-score bins: $n"
+          test "$n" -gt 0

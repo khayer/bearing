@@ -1,0 +1,64 @@
+# Bearing category configuration -- mm10 15-state (default)
+#
+# This is the default category set used by all Bearing scripts when no
+# --categories flag is supplied.  It describes 15 chromatin assay tracks
+# designed for mouse (mm10/GRCm38).
+#
+# Fields per entry:
+#   name             : human-readable assay label (used in plot legends and INI titles)
+#   color            : hex color for this category in pyGenomeTracks plots
+#   negative_strand  : true if this BigWig contains negative-strand signal
+#                      (abs() is applied before KL scoring; axis is flipped in INI)
+#
+# To create a custom config, copy this file, edit names/colors/order, and pass
+# the new file via --categories /path/to/your_config.yaml.
+
+name: "mm10 15-state (Bearing default)"
+genome: mm10
+
+categories:
+  - name: ATAC
+    color: "#be92e0"
+
+  - name: "RNAseq +"
+    color: "#6495ed"
+
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+
+  - name: CTCF
+    color: "#ff2200"
+
+  - name: Cohesin
+    color: "#8b0000"
+
+  - name: H3K27ac
+    color: "#00e676"
+
+  - name: "Enhancer 4C"
+    color: "#c9a0ff"
+
+  - name: "DJ1 4C"
+    color: "#7b2fff"
+
+  - name: "DJ2 4C"
+    color: "#4b0082"
+
+  - name: "Bivalent/Poised TSS"
+    color: "#cd5c5c"
+
+  - name: "Flanking Bivalent TSS/Enh"
+    color: "#e9967a"
+
+  - name: "Bivalent Enhancer"
+    color: "#bdb76b"
+
+  - name: "Repressed PolyComb"
+    color: "#808080"
+
+  - name: "Weak Repressed PolyComb"
+    color: "#c0c0c0"
+
+  - name: "Quiescent/Low"
+    color: "#ffffff"
