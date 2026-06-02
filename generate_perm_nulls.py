@@ -844,6 +844,7 @@ def main():
                 "--diff-only",
                 "--no-clip",
                 "--skip-pca",
+                "--skip-q-pair-jsd",
                 "--workers", str(max(1, args.compare_workers)),
             ]
             if args.chroms:
@@ -967,3 +968,4 @@ def _write_null_sheet(samples, perm_dir, suffix, out_path, dry_run=False):
 
 if __name__ == "__main__":
     main()
+    

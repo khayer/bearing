@@ -113,6 +113,8 @@ rule bearing_sheet:
         qcat=out("samples.qcat.tsv")
     run:
         import os as _os
+        # results/ may not exist yet on the first job; create it.
+        _os.makedirs(_os.path.dirname(output.bw), exist_ok=True)
         # scoring sheet: sample/condition/replicate/out/bw (out = bare name,
         # written into OUT by the score rule which cd's there)
         BEARING_ROWS[["sample", "condition", "replicate", "out", "bw"]] \

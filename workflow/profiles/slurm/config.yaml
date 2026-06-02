@@ -2,7 +2,8 @@
 #   snakemake --profile workflow/profiles/slurm --use-apptainer
 # Snakemake submits one job per rule instance to the cluster.
 executor: slurm
-jobs: 50
+jobs: 100
+latency-wait: 120
 #use-apptainer: true
 printshellcmds: true
 rerun-incomplete: true
