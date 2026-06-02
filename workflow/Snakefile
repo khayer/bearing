@@ -131,7 +131,7 @@ rule detect_blacklist:
     input: sheet=out("samples.bearing.tsv")
     output: out("blacklist", "detected_blacklist.bed")
     threads: 4
-    resources: mem_mb=64000, runtime=1440
+    resources: mem_mb=64000, runtime=1440, cpus_per_task=4
     shell:
         "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --categories {CATS} "
         "--chrom-sizes {CS} "
@@ -159,7 +159,7 @@ rule score:
         done=touch(out("score.done"))
     params: minsig=P["min_signal"], norm=P["normalize"], agr=AGR
     threads: 16
-    resources: mem_mb=164000, runtime=1440
+    resources: mem_mb=164000, runtime=1440, cpus_per_task=16
     shell:
         "cd {OUT} && "
         "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --out placeholder.qcat.bgz "
@@ -174,7 +174,7 @@ rule compare:
     input: sheet=out("samples.qcat.tsv"), score=out("score.done"), regions=REGIONS
     output: done=touch(out("compare.done"))
     threads: 10
-    resources: mem_mb=200000, runtime=1440
+    resources: mem_mb=200000, runtime=1440, cpus_per_task=10
     shell:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} --out {OUT}/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
@@ -187,7 +187,7 @@ rule perm_nulls:
     output: done=touch(out("perm.done"))
     params: n=P["n_perms"], shift=P["min_shift"], seed=P["seed"], minsig=P["min_signal"]
     threads: 10
-    resources: mem_mb=200000, runtime=1440
+    resources: mem_mb=200000, runtime=1440, cpus_per_task=10
     shell:
         "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --out-dir {OUT}/perm "
         "--chrom-sizes {CS} "
@@ -201,7 +201,7 @@ rule perm_nulls_diff:
     output: done=touch(out("perm_diff.done"))
     params: n=P["n_perms"]
     threads: 10
-    resources: mem_mb=200000, runtime=1440
+    resources: mem_mb=200000, runtime=1440, cpus_per_task=10
     shell:
         "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --diff-sheet {input.sheet} "
         "--chrom-sizes {CS} "
@@ -215,7 +215,7 @@ rule pvalue_diff:
     output: done=touch(out("pvalue.done"))
     params: n=P["n_perms"]
     threads: 4
-    resources: mem_mb=256000, runtime=1440
+    resources: mem_mb=256000, runtime=1440, cpus_per_task=4
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue"
