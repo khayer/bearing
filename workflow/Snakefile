@@ -167,8 +167,8 @@ rule bearing_sheet:
 rule detect_blacklist:
     input: sheet=out("samples.bearing.tsv")
     output: out("blacklist", "detected_blacklist.bed")
-    threads: 4
-    resources: mem_mb=64000, runtime=1440, cpus_per_task=4
+    threads: 16
+    resources: mem_mb=96000, runtime=1440, cpus_per_task=16
     shell:
         "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --categories {CATS} "
         "--chrom-sizes {CS} "

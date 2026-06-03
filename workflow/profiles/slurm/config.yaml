@@ -7,6 +7,14 @@ latency-wait: 120
 #use-apptainer: true
 printshellcmds: true
 rerun-incomplete: true
+
+# Re-run a job only when its INPUTS are newer than its outputs (mtime), not
+# when the rule's code/params change. Without this, editing the Snakefile
+# re-triggers completed data steps. Set this once you trust the code is final;
+# if you change a rule in a way that DOES change results, manually delete its
+# outputs (or the .done sentinel) to force a rerun.
+rerun-triggers: mtime
+
 default-resources:
   slurm_partition: "dbhiq,defq"
   mem_mb: 16000
