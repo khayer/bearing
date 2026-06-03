@@ -346,6 +346,12 @@ def main():
     ap.add_argument("--seed", type=int, default=42, metavar="INT",
                     help="Master random seed (default: 42). Each permutation "
                          "round uses a derived seed for reproducibility.")
+    ap.add_argument("--perm-index", type=int, default=None, metavar="I",
+                    help="Run ONLY permutation round I (1-based) instead of "
+                         "1..n_perms. Uses the same derived seed (seed+I) and "
+                         "writes to out-dir/permI/, so independent jobs produce "
+                         "identical output to a single batch run. Enables "
+                         "per-permutation parallelism across cluster jobs.")
     ap.add_argument("--min-shift", type=int, default=1_000_000, metavar="BP",
                     help="Minimum circular shift in bp (default: 1,000,000).")
     ap.add_argument("--chroms", nargs="+", metavar="CHR", default=None,
@@ -512,7 +518,14 @@ def main():
     print("=" * 64)
 
     # ── Permutation rounds ────────────────────────────────────────────────
-    for perm_i in range(1, args.n_perms + 1):
+    if args.perm_index is not None:
+        if args.perm_index < 1 or args.perm_index > args.n_perms:
+            sys.exit("ERROR: --perm-index %d out of range 1..%d"
+                     % (args.perm_index, args.n_perms))
+        _perm_rounds = [args.perm_index]
+    else:
+        _perm_rounds = list(range(1, args.n_perms + 1))
+    for perm_i in _perm_rounds:
         suffix = f"_perm{perm_i}"
         perm_seed = args.seed + perm_i  # deterministic per-round seed
         perm_dir = out_root / f"perm{perm_i}"
@@ -968,4 +981,3 @@ def _write_null_sheet(samples, perm_dir, suffix, out_path, dry_run=False):
 
 if __name__ == "__main__":
     main()
-    

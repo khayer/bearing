@@ -1,6 +1,11 @@
 # BEARING workflow configuration.
 # A single `snakemake` invocation runs the whole pipeline; Hi-C phases only
 # run if the sheet defines Hi-C conditions (rows with a cool path).
+# Directory the sheet's RELATIVE bw/cool paths (../bigwigs, ../hic_files, ...)
+# resolve against. Leave blank to use the directory you launch snakemake from.
+# Set explicitly if you launch from elsewhere or use the SLURM executor:
+data_dir: "/mnt/isilon/bassing_lab/integration_paper/bearing"
+
 
 # --- inputs ---------------------------------------------------------------
 samples_sheet: "config/samples.tsv"
