@@ -22,30 +22,63 @@ import pandas as pd
 configfile: "config/config.yaml"
 container: config.get("container", "bearing.sif")
 
-BIN     = config["bearing_dir"]
-OUT     = config["outdir"]
-CATS    = config["categories"]
-CS      = config["chrom_sizes"]
-REGIONS = config["regions_file"]
-GENES   = config["genes_bed"]
-GTF     = config.get("gtf", "")
-AGR     = config.get("agr_genes_bed", "")
+# Resolve config-relative paths against the workflow/ directory (where this
+# Snakefile and config/ live), so the pipeline runs the same whether launched
+# from the repo root or from workflow/. workflow.basedir is the Snakefile dir.
+WFDIR = workflow.basedir
+def wf(path):
+    """Resolve a path that is written relative to workflow/ to an absolute path."""
+    if os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(WFDIR, path))
+
+BIN     = wf(config["bearing_dir"])
+OUT     = wf(config["outdir"])
+CATS    = wf(config["categories"])
+CS      = wf(config["chrom_sizes"])
+REGIONS = wf(config["regions_file"])
+GENES   = wf(config["genes_bed"])
+GTF     = wf(config.get("gtf", "")) if config.get("gtf", "") else ""
+AGR     = wf(config.get("agr_genes_bed", "")) if config.get("agr_genes_bed", "") else ""
 BL      = os.path.join(OUT, "blacklist", "merged_blacklist.bed")
 P       = config  # parameters
+SHEET   = wf(config["samples_sheet"])
 
 def script(name):     return os.path.join(BIN, name)
 def out(*parts):      return os.path.join(OUT, *parts)
 
 # ---- parse sheet ----------------------------------------------------------
-_sheet = pd.read_csv(config["samples_sheet"], sep="\t", dtype=str,
+_sheet = pd.read_csv(SHEET, sep="\t", dtype=str,
                      comment="#").fillna("")
 BEARING_ROWS = _sheet[_sheet["bw"].str.strip() != ""]
 SAMPLES = BEARING_ROWS["sample"].tolist()
 QCATS = [r["out"] for _, r in BEARING_ROWS.iterrows()]
 
+# data_dir: what the sheet's relative bw paths resolve against (default cwd).
+DATA_DIR = os.path.abspath(config.get("data_dir", "") or os.getcwd())
+def _abs_bw_list(cell):
+    paths = []
+    for p in str(cell).split(","):
+        p = p.strip()
+        if not p:
+            continue
+        paths.append(p if os.path.isabs(p)
+                     else os.path.normpath(os.path.join(DATA_DIR, p)))
+    return paths
+# per-sample maps for the per-sample score rule (10 parallel jobs)
+SAMPLE_BW = {r["sample"]: _abs_bw_list(r["bw"])
+             for _, r in BEARING_ROWS.iterrows()}
+SAMPLE_OUT = {r["sample"]: r["out"] for _, r in BEARING_ROWS.iterrows()}
+
 REF = config["reference_condition"]
 CONDS = list(dict.fromkeys(BEARING_ROWS["condition"].tolist()))
 COMPARISONS = ["%s_vs_%s" % (REF, c) for c in CONDS if c != REF]
+PERM_INDICES = list(range(1, int(config["n_perms"]) + 1))
+
+wildcard_constraints:
+    idx=r"\d+",
+    sample=r"[A-Za-z0-9_.-]+",
+    cmp=r"[A-Za-z0-9_.-]+"
 
 # Hi-C conditions: first row per condition with a cool path (dedup).
 HIC = {}
@@ -68,6 +101,7 @@ def all_targets():
         BL,
         out("score.done"),
         out("compare.done"),
+        out("region_qc.done"),
         out("pvalue.done"),
         out("regional", "consolidated_enrichment.tsv"),
         out("regional", "panel_E_heatmap.pdf"),
@@ -96,21 +130,49 @@ rule all:
 # ---- derive a BEARING-only sheet for the scoring/compare/perm tools -------
 # (drops Hi-C-only rows and the Hi-C columns, which those tools do not need)
 rule bearing_sheet:
-    input: config["samples_sheet"]
-    output: out("samples.bearing.tsv")
+    input: SHEET
+    output:
+        bw=out("samples.bearing.tsv"),
+        qcat=out("samples.qcat.tsv")
     run:
-        cols = ["sample", "condition", "replicate", "out", "bw"]
-        BEARING_ROWS[cols].to_csv(output[0], sep="\t", index=False)
+        import os as _os
+        # results/ may not exist yet on the first job; create it.
+        _os.makedirs(_os.path.dirname(output.bw), exist_ok=True)
+        # Resolve relative bw paths to ABSOLUTE. The score rule cd's into the
+        # results dir, which would break paths like ../bigwigs/...; data_dir
+        # (config, default = the launch directory) is what they are relative to.
+        _data_dir = config.get("data_dir", "") or _os.getcwd()
+        _data_dir = _os.path.abspath(_data_dir)
+        def _abs_bw(cell):
+            parts = []
+            for p in str(cell).split(","):
+                p = p.strip()
+                if not p:
+                    continue
+                parts.append(p if _os.path.isabs(p)
+                             else _os.path.normpath(_os.path.join(_data_dir, p)))
+            return ",".join(parts)
+        _bw = BEARING_ROWS[["sample", "condition", "replicate", "out", "bw"]].copy()
+        _bw["bw"] = _bw["bw"].map(_abs_bw)
+        _bw.to_csv(output.bw, sep="\t", index=False)
+        # downstream sheet: absolute qcat paths so compare/perm find them
+        # regardless of working directory (matches the score_sample outputs:
+        # OUT/<sample>.qcat.bgz)
+        q = BEARING_ROWS[["sample", "condition", "replicate"]].copy()
+        q["qcat"] = [_os.path.join(OUT, "%s.qcat.bgz" % s)
+                     for s in BEARING_ROWS["sample"]]
+        q.to_csv(output.qcat, sep="\t", index=False)
 
 
 # ---- Phase 0: blacklist ---------------------------------------------------
 rule detect_blacklist:
     input: sheet=out("samples.bearing.tsv")
     output: out("blacklist", "detected_blacklist.bed")
-    threads: 4
-    resources: mem_mb=64000, runtime=1440
+    threads: 16
+    resources: mem_mb=96000, runtime=1440, cpus_per_task=16
     shell:
         "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --categories {CATS} "
+        "--chrom-sizes {CS} "
         "--out {OUT}/blacklist/placeholder.qcat.bgz --detect-unmappable "
         "--unmappable-zero-frac 0.90 --unmappable-out {output} --jobs {threads}"
 
@@ -125,57 +187,102 @@ rule merge_blacklist:
         "| sort -k1,1 -k2,2n | bedtools merge > {output}"
 
 
-# ---- Phase 1: observed scoring (+ floors) ---------------------------------
-rule score:
-    input: sheet=out("samples.bearing.tsv"), blacklist=BL
-    output: qcats=QCATS, floors="floors.tsv", done=touch(out("score.done"))
-    params: minsig=P["min_signal"], norm=P["normalize"], agr=AGR
-    threads: 16
-    resources: mem_mb=164000, runtime=1440
+# ---- Phase 1: observed scoring -- ONE SLURM JOB PER SAMPLE ----------------
+# Each sample is scored independently, so all 10 run as parallel cluster jobs
+# (10 jobs x 8 cores) instead of one serial job. bigwig_to_qcat parallelizes
+# across chromosomes within a sample via --jobs. Outputs are written with
+# absolute --out paths, so no cd is needed and input bw paths (absolute, built
+# from data_dir) resolve regardless of working directory.
+rule score_sample:
+    input: blacklist=BL
+    output: qcat=out("{sample}.qcat.bgz")
+    params:
+        bw=lambda wc: " ".join(SAMPLE_BW[wc.sample]),
+        minsig=P["min_signal"], norm=P["normalize"]
+    threads: 8
+    resources: mem_mb=96000, runtime=720, cpus_per_task=8
     shell:
-        "python {BIN}/bigwig_to_qcat.py --sheet {input.sheet} --out placeholder.qcat.bgz "
-        "--categories {CATS} --blacklist {input.blacklist} --min-signal {params.minsig} "
-        "{params.norm} --write-floors-tsv {output.floors} --jobs {threads} "
-        "--signal-plots --stats median p90 p99 p80 --stats-plots "
-        "--bed {params.agr} {input.blacklist} {GENES}"
+        "python {BIN}/bigwig_to_qcat.py --bw {params.bw} "
+        "--sample-name {wildcards.sample} --out {output.qcat} "
+        "--categories {CATS} --chrom-sizes {CS} --blacklist {input.blacklist} "
+        "--min-signal {params.minsig} {params.norm} --jobs {threads} --signal-plots"
+
+# Aggregator: depends on every per-sample qcat; downstream rules wait on this.
+rule score:
+    input: qcats=[out("%s.qcat.bgz" % s) for s in SAMPLES]
+    output: done=touch(out("score.done"))
 
 
 # ---- Phase 2: compare (all conditions, region set) ------------------------
 rule compare:
-    input: sheet=out("samples.bearing.tsv"), score=out("score.done"), regions=REGIONS
+    input: sheet=out("samples.qcat.tsv"), score=out("score.done"), regions=REGIONS
     output: done=touch(out("compare.done"))
     threads: 10
-    resources: mem_mb=200000, runtime=1440
+    resources: mem_mb=200000, runtime=1440, cpus_per_task=10
     shell:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} --out {OUT}/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
         "--no-clip --workers {threads}"
 
+# ---- Phase 2b: per-region raw-signal QC PNGs (pyGenomeTracks) --------------
+# One PNG per sample per region (raw BigWig tracks + BEARING score track), for
+# eyeballing each locus. Output: results/raw_vs_bearing/<sample>_<region>.png
+rule region_qc:
+    input: sheet=out("samples.qcat.tsv"), score=out("score.done"), regions=REGIONS
+    output: done=touch(out("region_qc.done"))
+    resources: mem_mb=32000, runtime=240
+    shell:
+        "python {BIN}/batch_pygenometracks.py --sheet {input.sheet} "
+        "--regions-file {input.regions} --outdir {OUT}/raw_vs_bearing "
+        "--dpi 200 --skip-missing-ini --run"
 
-# ---- Phase 3: permutation nulls (observed + differential) -----------------
-rule perm_nulls:
-    input: sheet=out("samples.bearing.tsv"), floors="floors.tsv", blacklist=BL
-    output: done=touch(out("perm.done"))
+
+# ---- Phase 3: permutation nulls -- ONE JOB PER (SAMPLE, PERMUTATION) -------
+# The observed null for each (sample, permutation) is independent, so they run
+# as separate cluster jobs: 10 samples x N perms. Each job shifts+scores ONE
+# sample for ONE permutation (about the size of a score_sample job), avoiding
+# the multi-hour serial scoring that hit the wall-clock limit. A per-index
+# aggregator then waits for all samples before the differential step (which
+# needs every condition present) runs for that permutation.
+rule perm_sample_one:
+    input: sheet=out("samples.bearing.tsv"), score=out("score.done"), blacklist=BL
+    output: out("perm", "perm{idx}", "{sample}", "{sample}_perm{idx}.qcat.bgz")
     params: n=P["n_perms"], shift=P["min_shift"], seed=P["seed"], minsig=P["min_signal"]
-    threads: 10
-    resources: mem_mb=200000, runtime=1440
+    threads: 8
+    resources: mem_mb=96000, runtime=720, cpus_per_task=8
     shell:
         "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --out-dir {OUT}/perm "
-        "--n-perms {params.n} --blacklist {input.blacklist} --floors-tsv {input.floors} "
-        "--min-signal {params.minsig} --min-shift {params.shift} --seed {params.seed} "
+        "--chrom-sizes {CS} --n-perms {params.n} --perm-index {wildcards.idx} "
+        "--only-sample {wildcards.sample} "
+        "--blacklist {input.blacklist} --min-signal {params.minsig} "
+        "--min-shift {params.shift} --seed {params.seed} "
         "--shift-workers {threads} --jobs {threads}"
 
-rule perm_nulls_diff:
-    input: sheet=out("samples.bearing.tsv"), floors="floors.tsv", blacklist=BL,
-           perm=out("perm.done")
-    output: done=touch(out("perm_diff.done"))
+# Per-index aggregator: all samples' observed nulls for this permutation exist.
+rule perm_null_one:
+    input: [out("perm", "perm{idx}", s, "%s_perm{idx}.qcat.bgz" % s) for s in SAMPLES]
+    output: touch(out("perm", "perm{idx}.obs.done"))
+
+rule perm_diff_one:
+    input: obs=out("perm", "perm{idx}.obs.done"),
+           sheet=out("samples.bearing.tsv"), blacklist=BL
+    output: touch(out("perm", "perm{idx}.diff.done"))
     params: n=P["n_perms"]
-    threads: 10
-    resources: mem_mb=200000, runtime=1440
+    threads: 8
+    resources: mem_mb=120000, runtime=720, cpus_per_task=8
     shell:
         "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --diff-sheet {input.sheet} "
-        "--n-perms {params.n} --out-dir {OUT}/perm --blacklist {input.blacklist} "
-        "--floors-tsv {input.floors} --jobs {threads}"
+        "--chrom-sizes {CS} --n-perms {params.n} --perm-index {wildcards.idx} "
+        "--out-dir {OUT}/perm --blacklist {input.blacklist} --jobs {threads}"
+
+# Aggregators: wait for all permutation rounds.
+rule perm_nulls:
+    input: [out("perm", "perm%d.obs.done" % i) for i in PERM_INDICES]
+    output: touch(out("perm.done"))
+
+rule perm_nulls_diff:
+    input: [out("perm", "perm%d.diff.done" % i) for i in PERM_INDICES]
+    output: touch(out("perm_diff.done"))
 
 
 # ---- Phase 4: differential p-values (sbatch-free wrapper) -----------------
@@ -184,10 +291,10 @@ rule pvalue_diff:
     output: done=touch(out("pvalue.done"))
     params: n=P["n_perms"]
     threads: 4
-    resources: mem_mb=256000, runtime=1440
+    resources: mem_mb=256000, runtime=1440, cpus_per_task=4
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
-        "bash {BIN}/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue"
+        "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue"
 
 
 # ---- Phase 5: regional enrichment -----------------------------------------
