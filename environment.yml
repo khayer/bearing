@@ -29,6 +29,7 @@ dependencies:
   - bedtools>=2.30
   # Hi-C processing / TAD + compartment calling (Methods M.12)
   - hicexplorer>=3.7
+  - pygenometracks
   # Build prerequisites for hic-straw (compiles a C++ extension that needs
   # libcurl headers + a C++ compiler; without these the pip build fails with
   # "curl/curl.h: No such file or directory").
@@ -49,4 +50,3 @@ dependencies:
       # line above and install the prebuilt bioconda binary instead, e.g.
       #   conda install -c bioconda hic-straw
       # (verify the exact bioconda package name for your platform).
-      

@@ -20,8 +20,8 @@ conda env create -f environment.yml
 conda activate bearing          # installs the package + bearing-* commands
 
 # HPC container -- pull the prebuilt image (built in CI, hosted on GHCR)
+# requires apptainer OR singularity on PATH
 bash workflow/get_container.sh          # writes ./bearing.sif
-# requires apptainer or singularity on PATH
 # or build it yourself:
 apptainer build bearing.sif Apptainer.def
 ```
@@ -39,8 +39,8 @@ The end-to-end pipeline is a Snakemake workflow over five steps; edit
 snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml --cores 16
 ```
 
-See `workflow/README.md` for the step-by-step breakdown and `docs/how_I_run_it.md`
-for the manual / SLURM equivalents.
+See `workflow/README.md` for the step-by-step breakdown and
+`paper/reproduce_all.sh` for the explicit staged-SLURM equivalents.
 
 ## Two plotting entry points
 
@@ -78,7 +78,7 @@ workflow/                Snakemake pipeline + config
 categories/              track-panel definitions (mm10_6track_panel.yaml is canonical)
 annotations/             region BEDs (Tcrb, Igh, feature sets)
 paper/                   figure -> code reproducibility map
-docs/                    scoring method, roadmap, run notes
+docs/                    scoring method, statistics/significance, roadmap, run notes
 slurm/                   HPC submission scripts
 tests/                   unit + integration tests
 bearing/                 shared library modules
