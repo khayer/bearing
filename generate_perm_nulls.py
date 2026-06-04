@@ -352,6 +352,13 @@ def main():
                          "writes to out-dir/permI/, so independent jobs produce "
                          "identical output to a single batch run. Enables "
                          "per-permutation parallelism across cluster jobs.")
+    ap.add_argument("--only-sample", default=None, metavar="NAME",
+                    help="Process ONLY this sample (by sample name). Combined "
+                         "with --perm-index, lets one cluster job shift+score a "
+                         "single sample for a single permutation, for maximum "
+                         "parallelism. The differential step still needs all "
+                         "samples present, so run it (without --only-sample) "
+                         "after every sample's observed null exists.")
     ap.add_argument("--min-shift", type=int, default=1_000_000, metavar="BP",
                     help="Minimum circular shift in bp (default: 1,000,000).")
     ap.add_argument("--chroms", nargs="+", metavar="CHR", default=None,
@@ -420,10 +427,26 @@ def main():
     out_root = Path(args.out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    progress_json = out_root / "progress.json"
-    progress_log = out_root / "progress.log"
+    # When running a single permutation (--perm-index, used by the per-perm
+    # Snakemake jobs), write per-index progress files so concurrent jobs never
+    # write the same file. A shared progress.json/.log would be clobbered by
+    # 10 parallel jobs and can hit partial-write races on shared filesystems.
+    if args.perm_index is not None:
+        _ptag = "perm%d" % args.perm_index
+        if args.only_sample:
+            _ptag += "." + args.only_sample
+        progress_json = out_root / ("progress.%s.json" % _ptag)
+        progress_log = out_root / ("progress.%s.log" % _ptag)
+    else:
+        progress_json = out_root / "progress.json"
+        progress_log = out_root / "progress.log"
 
     samples = load_sheet(args.sheet)
+    if args.only_sample:
+        samples = [s for s in samples if s["sample"] == args.only_sample]
+        if not samples:
+            sys.exit("ERROR: --only-sample '%s' not found in sheet"
+                     % args.only_sample)
     diff_samples = load_sheet(args.diff_sheet) if args.diff_sheet else None
 
     # Collect null qcat paths per sample for final summary
