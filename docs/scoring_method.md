@@ -108,6 +108,10 @@ more active in condition B. The stacked bars still use the same color scheme,
 so a red positive bar means CTCF gained signal in A, and a green negative bar
 means H3K27ac was lost.
 
+For the *significance* of scores and differential tracks -- the p-value, the
+permutation null, the null hypothesis, and the differential p-value -- see the
+companion document [`statistics.md`](statistics.md).
+
 ---
 
 ## Overview
