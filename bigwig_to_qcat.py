@@ -187,9 +187,24 @@ def _detect_unmappable_for_chrom(task):
                         vals = [None] * n_subbins
                     raw.extend(vals)
             else:
-                raw = bw.stats(chrom, 0, chrom_len, type="mean", nBins=n_bins)
-                if raw is None:
-                    raw = [None] * n_bins
+                # Fast path: one bulk values() read + numpy binning is ~10x
+                # faster than stats(nBins=...), which issues a summary query per
+                # bin. Only zero/nonzero detection matters here, so binned means
+                # are sufficient. Falls back to stats() on any error.
+                try:
+                    _v = bw.values(chrom, 0, chrom_len, numpy=True)
+                    _v = np.nan_to_num(_v, nan=0.0).astype(np.float32)
+                    _pad = (-len(_v)) % bin_size
+                    if _pad:
+                        _v = np.concatenate([_v, np.zeros(_pad, dtype=np.float32)])
+                    _binned = _v.reshape(-1, bin_size).mean(axis=1)
+                    raw = _binned[:n_bins].tolist()
+                    if len(raw) < n_bins:
+                        raw = raw + [None] * (n_bins - len(raw))
+                except Exception:
+                    raw = bw.stats(chrom, 0, chrom_len, type="mean", nBins=n_bins)
+                    if raw is None:
+                        raw = [None] * n_bins
         except Exception:
             # Missing chrom or inaccessible values -> treat as all-zero.
             zero_flags = np.ones(n_bins, dtype=bool)
@@ -1407,15 +1422,45 @@ def mean_signal_in_bins(bw, chrom, bins):
     """
     Return a float array of mean BigWig signal for each bin.
     Missing / NaN values become 0.
+
+    Fast path: read the spanned range once with values() and average per bin
+    with numpy. Calling bw.stats() once per bin (the previous approach) issues
+    millions of summary queries genome-wide and dominated scoring runtime.
+    Falls back to per-bin stats() on any error for robustness.
     """
-    vals = np.zeros(len(bins), dtype=np.float32)
-    for i, (s, e) in enumerate(bins):
-        try:
-            v = bw.stats(chrom, s, e, type="mean")[0]
-            vals[i] = 0.0 if (v is None or math.isnan(v)) else float(v)
-        except Exception:
-            vals[i] = 0.0
-    return vals
+    n = len(bins)
+    vals = np.zeros(n, dtype=np.float32)
+    if n == 0:
+        return vals
+    try:
+        # bins are contiguous, uniform-width, ascending within a chromosome in
+        # the genome-wide path; handle the general case by spanning min..max and
+        # indexing each bin's slice from the bulk array.
+        span_start = int(bins[0][0])
+        span_end = int(bins[-1][1])
+        chrom_len = bw.chroms(chrom)
+        if chrom_len is not None:
+            span_end = min(span_end, int(chrom_len))
+        raw = bw.values(chrom, span_start, span_end, numpy=True)
+        raw = np.nan_to_num(raw, nan=0.0).astype(np.float32)
+        for i, (s, e) in enumerate(bins):
+            a = int(s) - span_start
+            b = int(e) - span_start
+            if a < 0:
+                a = 0
+            if b > len(raw):
+                b = len(raw)
+            if b > a:
+                vals[i] = raw[a:b].mean()
+        return vals
+    except Exception:
+        for i, (s, e) in enumerate(bins):
+            try:
+                v = bw.stats(chrom, s, e, type="mean")[0]
+                vals[i] = 0.0 if (v is None or math.isnan(v)) else float(v)
+            except Exception:
+                vals[i] = 0.0
+        return vals
 
 
 def quantile_normalize_columns(signal_matrix):
