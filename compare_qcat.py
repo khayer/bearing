@@ -1011,6 +1011,12 @@ def diff_qcat(bins, mean_score_A, mean_score_B, out_path):
 
     diff = mean_score_A - mean_score_B   # (bins, num_states)
 
+    # Write rows already in genome order. `bins` come from common_bins, which
+    # is sorted by (chrom, start); we keep that order so the output needs no
+    # external sort in the common case. We still run a safety sort, but bounded
+    # in memory and pointed at the output directory for temp space (the default
+    # /tmp on a compute node is often too small for 1+ GB files and causes the
+    # sort to stall or fail, leaving a 0-byte .sorted file).
     tmp_path = str(out_path) + ".tmp.tsv"
     with open(tmp_path, "w") as fh:
         for idx, (chrom, start, end) in enumerate(bins):
@@ -1024,12 +1030,17 @@ def diff_qcat(bins, mean_score_A, mean_score_B, out_path):
             fh.write(chrom + "\t" + str(start) + "\t" + str(end) +
                      "\t" + qcat_col + "\n")
 
-    # Sort
+    # Sort (bounded memory + tempdir on the output filesystem, not /tmp)
     import subprocess
     sorted_path = tmp_path + ".sorted"
+    sort_tmpdir = os.path.dirname(os.path.abspath(str(out_path))) or "."
+    env = dict(os.environ, LC_ALL="C")
     with open(sorted_path, "w") as sf:
-        subprocess.run(["sort", "-k1,1", "-k2,2n", tmp_path],
-                       stdout=sf, check=True)
+        subprocess.run(
+            ["sort", "-k1,1", "-k2,2n",
+             "-S", "2G", "-T", sort_tmpdir, tmp_path],
+            stdout=sf, check=True, env=env,
+        )
     os.remove(tmp_path)
 
     bgz_path = str(out_path)
@@ -4519,3 +4530,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

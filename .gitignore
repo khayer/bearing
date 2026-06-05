@@ -62,4 +62,8 @@ floors.tsv
 
 # ---- internal run notes (contain cluster-specific paths; kept local) ----
 docs/how_I_run_it.md
+
+.Rhistory
+
 docs/categories.json
+

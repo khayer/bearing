@@ -37,9 +37,10 @@ echo
 echo "== Snakemake dry run (validate DAG) =="
 SM_TARGETS=()
 if [ "$CORE_ONLY" = "1" ]; then
-  # core path only: stop at the p-value sentinel, skip Hi-C targets
+  # core path only: p-values + per-region QC PNGs, skip Hi-C targets
   OUT=$(python3 -c "import yaml;print(yaml.safe_load(open('$CONFIG'))['outdir'])")
-  SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done")
+  SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
+              "$REPO/workflow/$OUT/region_qc.done")
 fi
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" -n "${SM_TARGETS[@]}"
 
