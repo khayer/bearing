@@ -103,7 +103,21 @@ def main():
         sys.exit(1)
     rows = load_sheet(sheet_path)
 
-    resolutions = (cfg.get("hic", {}) or {}).get("resolutions", []) or []
+    hic_cfg = (cfg.get("hic", {}) or {})
+    resolutions = hic_cfg.get("resolutions", []) or []
+    # Per-column resolution requirements: a Hi-C column is only read at the
+    # resolutions the rules that consume it actually use. Checking the full
+    # global grid would flag files (e.g. pca1 at 10kb) that no rule reads.
+    comp_res = hic_cfg.get("compartment_resolutions", resolutions) or resolutions
+    tad_res = hic_cfg.get("tad_resolutions", resolutions) or resolutions
+    contact_res = hic_cfg.get("contact_resolution", None)
+    # cool matrices are read at: contact_resolution (figures / contact isolation
+    # / crosslocus) and the O/E grid resolutions (25k, 50k, 100k). They are NOT
+    # read at the coarse compartment resolutions, so don't demand those.
+    cool_res = sorted({int(x) for x in (
+        ([contact_res] if contact_res else []) + [25000, 50000, 100000]
+    )}) or resolutions
+    col_res = {"cool": cool_res, "insul": tad_res, "pca1": comp_res}
 
     n_bearing = 0
     n_hic = 0
@@ -117,16 +131,18 @@ def main():
         if not args.core_only:
             # A row may override which resolutions it needs via an optional
             # `resolutions` column (comma/space-separated), e.g. Hi-C-only
-            # backgrounds that exist at only a subset of resolutions. Falls
-            # back to the global hic.resolutions list.
+            # backgrounds that exist at only a subset of resolutions. When set,
+            # it applies to all that row's Hi-C columns; otherwise each column
+            # is checked at the resolutions its consuming rule actually uses.
             row_res = r.get("resolutions", "").replace(",", " ").split()
-            res_list = [x for x in row_res if x] or resolutions
+            row_res = [x for x in row_res if x]
             for col in ["cool", "insul", "pca1"]:
                 pat = r.get(col, "")
                 if not pat:
                     continue
                 if col == "cool":
                     n_hic += 1
+                res_list = row_res or col_res.get(col, resolutions)
                 if "{res}" in pat:
                     for res in res_list:
                         check(resolve(pat.replace("{res}", str(res)), base),
