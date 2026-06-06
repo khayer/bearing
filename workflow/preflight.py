@@ -115,6 +115,12 @@ def main():
             for p in bw.split(","):
                 check(resolve(p.strip(), base), "bw[%s]" % sample)
         if not args.core_only:
+            # A row may override which resolutions it needs via an optional
+            # `resolutions` column (comma/space-separated), e.g. Hi-C-only
+            # backgrounds that exist at only a subset of resolutions. Falls
+            # back to the global hic.resolutions list.
+            row_res = r.get("resolutions", "").replace(",", " ").split()
+            res_list = [x for x in row_res if x] or resolutions
             for col in ["cool", "insul", "pca1"]:
                 pat = r.get(col, "")
                 if not pat:
@@ -122,7 +128,7 @@ def main():
                 if col == "cool":
                     n_hic += 1
                 if "{res}" in pat:
-                    for res in resolutions:
+                    for res in res_list:
                         check(resolve(pat.replace("{res}", str(res)), base),
                               "%s[%s]@%s" % (col, sample, res))
                 else:
