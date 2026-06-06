@@ -36,7 +36,8 @@ hic:
   # Resolutions to run TAD-extension and compartment analyses at. Set these to
   # the resolutions that actually exist on disk (domain BEDs / pca1 BigWigs).
   tad_resolutions: [25000, 100000, 250000, 500000]
-  compartment_resolutions: [100000, 250000, 500000]
+  #compartment_resolutions: [100000, 250000, 500000]
+  compartment_resolutions: [100000,  500000]
   tad_anchor: "chr6:41550000"
   features_bed: "annotations/tcrb_extension_features.bed"
   compartment_region: "chr6:39000000-55000000"
