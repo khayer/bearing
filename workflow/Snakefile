@@ -88,10 +88,17 @@ for _, r in _sheet.iterrows():
         HIC[c] = {"cool": r["cool"], "insul": r["insul"], "pca1": r["pca1"]}
 HAS_HIC = len(HIC) > 0
 
+def _abs_hic(p):
+    """Resolve a Hi-C path (possibly relative like ../comp/...) to absolute
+    against DATA_DIR, so it works regardless of a SLURM job's working dir."""
+    if not p:
+        return p
+    return p if os.path.isabs(p) else os.path.normpath(os.path.join(DATA_DIR, p))
+
 def hic_arg(field, res, conds=None):
-    """Build 'COND=path COND=path ...' with {res} substituted."""
+    """Build 'COND=path COND=path ...' with {res} substituted, absolute paths."""
     conds = conds or list(HIC.keys())
-    return " ".join("%s=%s" % (c, HIC[c][field].replace("{res}", str(res)))
+    return " ".join("%s=%s" % (c, _abs_hic(HIC[c][field].replace("{res}", str(res))))
                     for c in conds if c in HIC)
 
 
@@ -324,7 +331,7 @@ rule bearing_hic_figures:
     output: done=touch(out("figures.done"))
     params:
         contacts=lambda wc: " ".join(
-            "--contact %s=%s" % (c, HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"])))
+            "--contact %s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))))
             for c in HIC if c in CONDS),
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
@@ -339,27 +346,58 @@ rule bearing_hic_figures:
 rule hic_tad_extension:
     output: done=touch(out("hic", "tad.done"))
     params:
-        conds=" ".join(HIC.keys()), tad_dir=P["hic"]["tad_dir"],
-        anchor=P["hic"]["tad_anchor"], feats=P["hic"]["features_bed"]
+        conds=" ".join(HIC.keys()), tad_dir=_abs_hic(P["hic"]["tad_dir"]),
+        anchor=P["hic"]["tad_anchor"], feats=os.path.join(BIN, P["hic"]["features_bed"])
     resources: mem_mb=64000, runtime=720
     run:
-        for res in [100000, 25000, 250000, 500000]:
-            shell("python {BIN}/hic/tad_extension_analysis.py --tad-dir {params.tad_dir} "
-                  "--resolution %d --conditions {params.conds} --anchor {params.anchor} "
-                  "--features-bed {params.feats} --out-prefix {OUT}/hic/tcrb_tad_%d --plot"
-                  % (res, res))
+        # Resolutions to plot; configurable via hic.tad_resolutions so the loop
+        # only requests resolutions that actually exist on disk for the TAD
+        # domain BEDs. A resolution with no loadable data logs a warning and is
+        # skipped rather than aborting the whole rule.
+        import subprocess as _sp
+        _any = False
+        for res in P["hic"].get("tad_resolutions", [100000, 25000, 250000, 500000]):
+            rc = _sp.run(
+                "python {BIN}/hic/tad_extension_analysis.py --tad-dir {params.tad_dir} "
+                "--resolution %d --conditions {params.conds} --anchor {params.anchor} "
+                "--features-bed {params.feats} --out-prefix {OUT}/hic/tcrb_tad_%d --plot"
+                % (res, res), shell=True).returncode
+            if rc == 0:
+                _any = True
+            else:
+                print("WARNING: TAD extension failed at resolution %d "
+                      "(likely no domain BED present); continuing." % res)
+        if not _any:
+            raise RuntimeError("TAD extension produced no output at any "
+                               "configured resolution; check hic.tad_resolutions "
+                               "and the tad_dir contents.")
 
 rule hic_compartment:
     output: done=touch(out("hic", "compartment.done"))
-    params: region=P["hic"]["compartment_region"], tad_dir=P["hic"]["tad_dir"],
-            feats=P["hic"]["features_bed"]
+    params: region=P["hic"]["compartment_region"], tad_dir=_abs_hic(P["hic"]["tad_dir"]),
+            feats=os.path.join(BIN, P["hic"]["features_bed"])
     resources: mem_mb=64000, runtime=720
     run:
-        for res in [100000, 250000, 500000]:
-            shell("python {BIN}/hic/compartment_analysis.py --pc1 %s --region {params.region} "
-                  "--features-bed {params.feats} --tad-dir {params.tad_dir} --tad-resolution %d "
-                  "--orient-with-gtf {GTF} --out-prefix {OUT}/hic/tcrb_compartment_%d"
-                  % (hic_arg("pca1", res), res, res))
+        # Configurable via hic.compartment_resolutions; only request resolutions
+        # whose pca1 BigWigs exist. A resolution with no loadable PC1 logs a
+        # warning and is skipped rather than aborting the whole rule.
+        import subprocess as _sp
+        _any = False
+        for res in P["hic"].get("compartment_resolutions", [100000, 250000, 500000]):
+            rc = _sp.run(
+                "python {BIN}/hic/compartment_analysis.py --pc1 %s --region {params.region} "
+                "--features-bed {params.feats} --tad-dir {params.tad_dir} --tad-resolution %d "
+                "--orient-with-gtf {GTF} --out-prefix {OUT}/hic/tcrb_compartment_%d"
+                % (hic_arg("pca1", res), res, res), shell=True).returncode
+            if rc == 0:
+                _any = True
+            else:
+                print("WARNING: compartment analysis failed at resolution %d "
+                      "(likely no pca1 BigWig present); continuing." % res)
+        if not _any:
+            raise RuntimeError("Compartment analysis produced no output at any "
+                               "configured resolution; check "
+                               "hic.compartment_resolutions and the comp/ contents.")
 
 rule hic_contact_isolation:
     output: done=touch(out("hic", "contact_isolation.done"))
@@ -412,11 +450,16 @@ rule decomposition_report:
 
 rule benchmark:
     output: done=touch(out("benchmark", "recovery.done"))
+    params: pfx=out("benchmark", "sim"), outdir=out("benchmark", "recovery")
     resources: mem_mb=32000, runtime=720
     shell:
-        "python {BIN}/benchmark/simulate_bearing_tracks.py --prefix {OUT}/benchmark/sim --seed 1; "
-        "python {BIN}/benchmark/evaluate_bearing_recovery.py --prefix {OUT}/benchmark/sim "
-        "--out-prefix {OUT}/benchmark/recovery"
+        "python {BIN}/benchmark/simulate_bearing_tracks.py --prefix {params.pfx} --seed 1; "
+        "python {BIN}/benchmark/evaluate_bearing_recovery.py "
+        "--truth {params.pfx}_truth.tsv "
+        "--bw {params.pfx}_atac.bw {params.pfx}_rnaplus.bw {params.pfx}_rnaminus.bw "
+        "{params.pfx}_ctcf.bw {params.pfx}_rad21.bw {params.pfx}_h3k27ac.bw "
+        "--chrom-sizes {params.pfx}.chrom.sizes --scorer {BIN}/bigwig_to_qcat.py "
+        "--outdir {params.outdir}"
 
 
 # ---- Paper-figure grid wrappers (Hi-C only) -------------------------------

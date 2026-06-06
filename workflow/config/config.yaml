@@ -1,13 +1,13 @@
 # BEARING workflow configuration.
 # A single `snakemake` invocation runs the whole pipeline; Hi-C phases only
 # run if the sheet defines Hi-C conditions (rows with a cool path).
+
+# --- inputs ---------------------------------------------------------------
 # Directory the sheet's RELATIVE bw/cool paths (../bigwigs, ../hic_files, ...)
 # resolve against. Leave blank to use the directory you launch snakemake from.
 # Set explicitly if you launch from elsewhere or use the SLURM executor:
 data_dir: "/mnt/isilon/bassing_lab/integration_paper/bearing"
 
-
-# --- inputs ---------------------------------------------------------------
 samples_sheet: "config/samples.tsv"
 categories:    "../categories/mm10_6track_panel.yaml"
 chrom_sizes:   "resources/mm10.chrom.sizes"
@@ -33,6 +33,10 @@ hic:
   resolutions: [10000, 25000, 100000, 250000, 500000]
   contact_resolution: 10000      # figures / contact isolation / crosslocus
   tad_dir: "../tads"
+  # Resolutions to run TAD-extension and compartment analyses at. Set these to
+  # the resolutions that actually exist on disk (domain BEDs / pca1 BigWigs).
+  tad_resolutions: [25000, 100000, 250000, 500000]
+  compartment_resolutions: [100000, 250000, 500000]
   tad_anchor: "chr6:41550000"
   features_bed: "annotations/tcrb_extension_features.bed"
   compartment_region: "chr6:39000000-55000000"
