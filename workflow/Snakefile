@@ -571,7 +571,7 @@ rule fig6b_igh_decomp:
         "python {BIN}/bearing_region_decomposition.py "
         "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/igh_regions_v4.bed "
         "--categories {OUT}/DN_rep1_cats.json "
-        "--filename-pattern 'diff_{{comparison}}.stats.tsv' "
+        "--filename-pattern 'diff_*.stats.tsv' "
         "--out {output}"
 
 # S7C: within-Tcrb BES-Hi-C co-localization (distinct from the pooled
