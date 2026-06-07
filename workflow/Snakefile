@@ -311,8 +311,8 @@ rule regional_enrichment:
     resources: mem_mb=100000, runtime=1440
     shell:
         "python {BIN}/regional_enrichment.py batch "
-        "--diff-table {OUT}/compare/diff_{wildcards.cmp}.stats.tsv "
-        "--regions annotations/tcrb_regions_v5.bed --locus chr6:40790000-41690000 "
+        "--diff-table {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--regions {BIN}/annotations/tcrb_regions_v5.bed --locus chr6:40790000-41690000 "
         "--out {output}"
 
 rule regional_consolidate:
@@ -425,10 +425,10 @@ rule hic_crosslocus:
     resources: mem_mb=100000, runtime=1440
     run:
         res = params.res
-        diffs = " ".join("%s=%s/compare/diff_%s.stats.tsv" % (c, OUT, "%s_vs_%s" % (REF, c))
+        diffs = " ".join("%s=%s/pvalue/diff_%s.stats.tsv" % (c, OUT, "%s_vs_%s" % (REF, c))
                          for c in HIC if c in CONDS and c != REF)
-        cool_a = HIC[REF]["cool"].replace("{res}", str(res))
-        cool_b = " ".join("%s_vs_%s=%s" % (REF, c, HIC[c]["cool"].replace("{res}", str(res)))
+        cool_a = _abs_hic(HIC[REF]["cool"].replace("{res}", str(res)))
+        cool_b = " ".join("%s_vs_%s=%s" % (REF, c, _abs_hic(HIC[c]["cool"].replace("{res}", str(res))))
                           for c in HIC if c in CONDS and c != REF)
         shell("python {BIN}/hic/bes_hic_crosslocus.py --diffs %s --cool-a %s --cool-b %s "
               "--targets {params.targets} --hic-bin %d --aggregation p95 "
@@ -439,23 +439,55 @@ rule hic_crosslocus:
 
 
 # ---- Phase 8-10: calibration, decomposition, synthetic benchmark ----------
-rule calibration:
+rule calibration_one:
+    # Per-condition replicate calibration; one SLURM job per condition so the
+    # five conditions run in parallel instead of serially in a single job. Each
+    # job writes to its own out dir so the script's per-run summary table does
+    # not collide/race across the parallel jobs.
     input: score=out("score.done")
-    output: done=touch(out("calibration.done"))
-    params: nperms=P.get("n_perms", 10)
+    output: summary=out("calibration", "{cond}", "{cond}", "{cond}_summary.txt")
+    params: nperms=P.get("n_perms", 10), outdir=lambda wc: out("calibration", wc.cond)
     resources: mem_mb=200000, runtime=1440
     shell:
         "bash {BIN}/run_replicate_calibration.sh "
-        "--sheet {OUT}/samples.qcat.tsv --out {OUT}/calibration "
+        "--sheet {OUT}/samples.qcat.tsv --out {params.outdir} "
         "--perm-template '{OUT}/perm/perm{{perm}}/{{sample}}/{{sample}}_perm{{perm}}.qcat.bgz' "
-        "--n-perms {params.nperms} --obs-qcat-col qcat --scripts-dir {BIN}"
+        "--n-perms {params.nperms} --obs-qcat-col qcat --scripts-dir {BIN} "
+        "--conditions {wildcards.cond}"
+
+rule calibration:
+    # Aggregate the per-condition summaries into one combined table. Built fresh
+    # here (rather than relying on the script's in-loop append) because the
+    # per-condition jobs run concurrently in isolated out dirs.
+    input: summaries=expand(out("calibration", "{cond}", "{cond}", "{cond}_summary.txt"), cond=CONDS)
+    output: done=touch(out("calibration.done")),
+            table=out("calibration", "calibration_summary.tsv")
+    run:
+        import re as _re
+        import os as _os
+        with open(output.table, "w") as _o:
+            _o.write("condition\tn_bins\tlambda\tpct_at_floor\t"
+                     "bh_significant\tverdict\n")
+            for _s in input.summaries:
+                _cond = _os.path.basename(_s).replace("_summary.txt", "")
+                _txt = open(_s).read()
+                def _grab(pat, default="NA"):
+                    m = _re.search(pat, _txt, _re.M)
+                    return m.group(1).strip() if m else default
+                _nbins = _grab(r"^observed bins \(n\)\s*:\s*([\d,]+)")
+                _lam = _grab(r"^genomic-inflation lam\s*:\s*([\d.]+)")
+                _floor = _grab(r"^bins at floor\s*:.*\(([\d.]+)%\)")
+                _bh = _grab(r"^BH-significant.*:\s*([\d,]+)")
+                _verdict = _grab(r"^VERDICT:\s*([A-Z]+)")
+                _o.write("\t".join([_cond, _nbins, _lam, _floor,
+                                    _bh, _verdict]) + "\n")
 
 rule decomposition_report:
-    input: compare=out("compare.done")
+    input: pvalue=out("pvalue.done")
     output: done=touch(out("decomposition.done"))
     resources: mem_mb=64000, runtime=240
     shell:
-        "python {BIN}/bearing_decomposition_report.py --diff-dir {OUT}/compare "
+        "python {BIN}/bearing_decomposition_report.py --diff-dir {OUT}/pvalue "
         "--categories {OUT}/DN_rep1_cats.json --out {OUT}/cross_comparison --top-n 500"
 
 rule benchmark:
@@ -483,7 +515,7 @@ rule fig3b_oe_grid:
     output: out("paper_figures", "fig3_panelB_oe_grid.png")
     params:
         cools=lambda wc: " ".join(
-            "%s=%s" % (c, HIC[c]["cool"].replace("{res}", "25000")) for c in LYMPH5)
+            "%s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", "25000"))) for c in LYMPH5)
     resources: mem_mb=32000, runtime=240
     shell:
         "python {BIN}/paper/figures/oe_contact_grid.py --cool {params.cools} "
@@ -494,7 +526,7 @@ rule fig4a_self_contact_grid:
     output: out("paper_figures", "fig4_panelA_self_contact_grid.png")
     params:
         cools=lambda wc: " ".join(
-            "%s=%s" % (c, HIC[c]["cool"].replace("{res}", "25000")) for c in LYMPH5)
+            "%s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", "25000"))) for c in LYMPH5)
     resources: mem_mb=32000, runtime=240
     shell:
         "python {BIN}/paper/figures/oe_contact_grid.py --cool {params.cools} "
@@ -505,7 +537,7 @@ rule suppS7b_compartment_grid:
     output: out("paper_figures", "suppS7_panelB_compartment_res.png")
     params:
         pc1=lambda wc: " ".join(
-            "%s=%s" % (c, HIC[c]["pca1"]) for c in LYMPH5)  # path keeps {res}
+            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"])) for c in LYMPH5)  # path keeps {res}
     resources: mem_mb=32000, runtime=240
     shell:
         "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
@@ -523,7 +555,7 @@ rule graphical_abstract_panel3:
     input: pvalue=out("pvalue.done")
     output: out("paper_figures", "graphical_abstract_panel3.png")
     params:
-        diff=lambda wc: out("compare", "diff_%s_vs_ProB.qcat.bgz" % REF)
+        diff=lambda wc: out("pvalue", "diff_%s_vs_ProB.stats.tsv" % REF)
     resources: mem_mb=16000, runtime=120
     shell:
         "python {BIN}/diffuse_architecture_top1pct.py "
@@ -532,12 +564,12 @@ rule graphical_abstract_panel3:
         "--figure {output} --out-prefix {OUT}/paper_figures/ga_panel3"
 
 rule fig6b_igh_decomp:
-    input: compare=out("compare.done")
+    input: pvalue=out("pvalue.done")
     output: out("paper_figures", "fig6_panelB_igh_decomp.png")
     resources: mem_mb=16000, runtime=120
     shell:
         "python {BIN}/bearing_region_decomposition.py "
-        "--diff-dir {OUT}/compare --regions {BIN}/annotations/igh_regions_v4.bed "
+        "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/igh_regions_v4.bed "
         "--categories {OUT}/DN_rep1_cats.json "
         "--filename-pattern 'diff_{{comparison}}.stats.tsv' "
         "--out {output}"
@@ -549,12 +581,12 @@ rule bes_hic_within:
     output: done=touch(out("hic", "bes_hic_within.done"))
     params:
         res=P["hic"]["contact_resolution"],
-        cool_a=lambda wc: HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"])) if REF in HIC else "",
-        cool_b=lambda wc: HIC["DP"]["cool"].replace("{res}", str(P["hic"]["contact_resolution"])) if "DP" in HIC else ""
+        cool_a=lambda wc: _abs_hic(HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if REF in HIC else "",
+        cool_b=lambda wc: _abs_hic(HIC["DP"]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if "DP" in HIC else ""
     resources: mem_mb=64000, runtime=720
     shell:
         "python {BIN}/bes_hic_correlation.py "
-        "--bes {OUT}/compare/diff_{REF}_vs_DP.stats.tsv "
+        "--bes {OUT}/pvalue/diff_{REF}_vs_DP.stats.tsv "
         "--cool-A {params.cool_a} --cool-B {params.cool_b} "
         "--region chr6:40400000-42400000 --hic-bin {params.res} "
         "--n-perm 1000 --prefix {OUT}/hic/bes_hic_within_DN_vs_DP"

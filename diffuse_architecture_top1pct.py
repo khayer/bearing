@@ -56,8 +56,19 @@ def parse_locus(spec):
 
 
 def load_diff(path):
-    """Load the BEARING differential TSV. Expects header with chrom,start,end,kl_1..kl_6."""
-    df = pd.read_csv(path, sep="\t")
+    """Load the BEARING differential TSV. Expects header with chrom,start,end,kl_1..kl_6.
+
+    Transparently handles gzip/bgzip-compressed input (detected by the gzip
+    magic bytes) so a .tsv or a .tsv.gz both work.
+    """
+    compression = "infer"
+    try:
+        with open(path, "rb") as _fh:
+            if _fh.read(2) == b"\x1f\x8b":
+                compression = "gzip"
+    except OSError:
+        pass
+    df = pd.read_csv(path, sep="\t", compression=compression)
     needed = {"chrom", "start", "end"} | set(KL_COLS)
     missing = needed - set(df.columns)
     if missing:
