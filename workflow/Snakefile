@@ -353,16 +353,18 @@ rule hic_tad_extension:
         # Resolutions to plot; configurable via hic.tad_resolutions so the loop
         # only requests resolutions that actually exist on disk for the TAD
         # domain BEDs. A resolution with no loadable data logs a warning and is
-        # skipped rather than aborting the whole rule.
+        # skipped rather than aborting the whole rule. subprocess.run does NOT
+        # expand Snakemake {placeholders}, so values are substituted explicitly.
         import subprocess as _sp
         _any = False
         for res in P["hic"].get("tad_resolutions", [100000, 25000, 250000, 500000]):
-            rc = _sp.run(
-                "python {BIN}/hic/tad_extension_analysis.py --tad-dir {params.tad_dir} "
-                "--resolution %d --conditions {params.conds} --anchor {params.anchor} "
-                "--features-bed {params.feats} --out-prefix {OUT}/hic/tcrb_tad_%d --plot"
-                % (res, res), shell=True).returncode
-            if rc == 0:
+            cmd = (
+                "python %s/hic/tad_extension_analysis.py --tad-dir %s "
+                "--resolution %d --conditions %s --anchor %s "
+                "--features-bed %s --out-prefix %s/hic/tcrb_tad_%d --plot"
+                % (BIN, params.tad_dir, res, params.conds, params.anchor,
+                   params.feats, OUT, res))
+            if _sp.run(cmd, shell=True).returncode == 0:
                 _any = True
             else:
                 print("WARNING: TAD extension failed at resolution %d "
@@ -381,15 +383,18 @@ rule hic_compartment:
         # Configurable via hic.compartment_resolutions; only request resolutions
         # whose pca1 BigWigs exist. A resolution with no loadable PC1 logs a
         # warning and is skipped rather than aborting the whole rule.
+        # subprocess.run does NOT expand Snakemake {placeholders}, so values are
+        # substituted explicitly.
         import subprocess as _sp
         _any = False
         for res in P["hic"].get("compartment_resolutions", [100000, 250000, 500000]):
-            rc = _sp.run(
-                "python {BIN}/hic/compartment_analysis.py --pc1 %s --region {params.region} "
-                "--features-bed {params.feats} --tad-dir {params.tad_dir} --tad-resolution %d "
-                "--orient-with-gtf {GTF} --out-prefix {OUT}/hic/tcrb_compartment_%d"
-                % (hic_arg("pca1", res), res, res), shell=True).returncode
-            if rc == 0:
+            cmd = (
+                "python %s/hic/compartment_analysis.py --pc1 %s --region %s "
+                "--features-bed %s --tad-dir %s --tad-resolution %d "
+                "--orient-with-gtf %s --out-prefix %s/hic/tcrb_compartment_%d"
+                % (BIN, hic_arg("pca1", res), params.region, params.feats,
+                   params.tad_dir, res, GTF, OUT, res))
+            if _sp.run(cmd, shell=True).returncode == 0:
                 _any = True
             else:
                 print("WARNING: compartment analysis failed at resolution %d "
