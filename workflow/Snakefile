@@ -426,7 +426,7 @@ rule hic_crosslocus:
     resources: mem_mb=100000, runtime=1440
     run:
         res = params.res
-        diffs = " ".join("%s=%s/pvalue/diff_%s.stats.tsv" % (c, OUT, "%s_vs_%s" % (REF, c))
+        diffs = " ".join("%s_vs_%s=%s/pvalue/diff_%s.stats.tsv" % (REF, c, OUT, "%s_vs_%s" % (REF, c))
                          for c in HIC if c in CONDS and c != REF)
         cool_a = _abs_hic(HIC[REF]["cool"].replace("{res}", str(res)))
         cool_b = " ".join("%s_vs_%s=%s" % (REF, c, _abs_hic(HIC[c]["cool"].replace("{res}", str(res))))
