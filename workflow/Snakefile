@@ -116,7 +116,7 @@ def all_targets():
         out("decomposition.done"),
         out("benchmark", "recovery.done"),
         out("paper_figures", "graphical_abstract_panel3.png"),
-        out("paper_figures", "fig6_panelB_igh_decomp.png"),
+        out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
     ]
     if HAS_HIC:
         t += [out("figures.done"),
@@ -420,8 +420,9 @@ rule hic_crosslocus:
     input: pvalue=out("pvalue.done")
     output: done=touch(out("hic", "crosslocus.done"))
     params:
-        res=P["hic"]["contact_resolution"], targets=P["hic"]["crosslocus_targets"],
-        ext=config.get("blacklist_external", "")
+        res=P["hic"]["contact_resolution"],
+        targets=os.path.join(BIN, P["hic"]["crosslocus_targets"]),
+        ext=os.path.join(BIN, config["blacklist_external"]) if config.get("blacklist_external", "") else ""
     resources: mem_mb=100000, runtime=1440
     run:
         res = params.res
@@ -430,12 +431,17 @@ rule hic_crosslocus:
         cool_a = _abs_hic(HIC[REF]["cool"].replace("{res}", str(res)))
         cool_b = " ".join("%s_vs_%s=%s" % (REF, c, _abs_hic(HIC[c]["cool"].replace("{res}", str(res))))
                           for c in HIC if c in CONDS and c != REF)
+        ires = P["hic"].get("insulation_resolution", 25000)
+        insul_a = _abs_hic(HIC[REF]["insul"].replace("{res}", str(ires)))
+        insul_b = " ".join("%s_vs_%s=%s" % (REF, c, _abs_hic(HIC[c]["insul"].replace("{res}", str(ires))))
+                           for c in HIC if c in CONDS and c != REF)
         shell("python {BIN}/hic/bes_hic_crosslocus.py --diffs %s --cool-a %s --cool-b %s "
+              "--insul-a %s --insul-b %s "
               "--targets {params.targets} --hic-bin %d --aggregation p95 "
               "--contact-metric delta_contact --n-controls 200 --n-panels 1000 "
               "--blacklist {params.ext} --gtf {GTF} --match-gene-density "
               "--out-prefix {OUT}/hic/crosslocus_p95_dcontact"
-              % (diffs, cool_a, cool_b, res))
+              % (diffs, cool_a, cool_b, insul_a, insul_b, res))
 
 
 # ---- Phase 8-10: calibration, decomposition, synthetic benchmark ----------
@@ -565,14 +571,15 @@ rule graphical_abstract_panel3:
 
 rule fig6b_igh_decomp:
     input: pvalue=out("pvalue.done")
-    output: out("paper_figures", "fig6_panelB_igh_decomp.png")
+    output: out("paper_figures", "fig6_panelB_igh_decomp.pdf")
+    params: prefix=out("paper_figures", "fig6_panelB_igh_decomp")
     resources: mem_mb=16000, runtime=120
     shell:
         "python {BIN}/bearing_region_decomposition.py "
         "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/igh_regions_v4.bed "
         "--categories {OUT}/DN_rep1_cats.json "
         "--filename-pattern 'diff_*.stats.tsv' "
-        "--out {output}"
+        "--out {params.prefix}"
 
 # S7C: within-Tcrb BES-Hi-C co-localization (distinct from the pooled
 # cross-locus hic/bes_hic_crosslocus.py already wired in hic_crosslocus).
@@ -583,8 +590,8 @@ rule bes_hic_within:
         res=P["hic"]["contact_resolution"],
         cool_a=lambda wc: _abs_hic(HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if REF in HIC else "",
         cool_b=lambda wc: _abs_hic(HIC["DP"]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if "DP" in HIC else "",
-        insul_a=lambda wc: _abs_hic(HIC[REF]["insul"].replace("{res}", str(P["hic"]["contact_resolution"]))) if REF in HIC else "",
-        insul_b=lambda wc: _abs_hic(HIC["DP"]["insul"].replace("{res}", str(P["hic"]["contact_resolution"]))) if "DP" in HIC else ""
+        insul_a=lambda wc: _abs_hic(HIC[REF]["insul"].replace("{res}", str(P["hic"].get("insulation_resolution", 25000)))) if REF in HIC else "",
+        insul_b=lambda wc: _abs_hic(HIC["DP"]["insul"].replace("{res}", str(P["hic"].get("insulation_resolution", 25000)))) if "DP" in HIC else ""
     resources: mem_mb=64000, runtime=720
     shell:
         "python {BIN}/bes_hic_correlation.py "

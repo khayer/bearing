@@ -32,12 +32,18 @@ reference_condition: DN          # differentials are DN-vs-<each other condition
 hic:
   resolutions: [10000, 25000, 100000, 250000, 500000]
   contact_resolution: 10000      # figures / contact isolation / crosslocus
+  # Resolution for TAD-insulation (.bm) tracks used by the BES-Hi-C rules
+  # (bes_hic_within, hic_crosslocus). Insulation .bm files do NOT exist at
+  # 10000 for all conditions (only DN/DP/ProB); 25000 is the resolution all
+  # five share. The script does an interval lookup, so insul may be a coarser
+  # resolution than contact_resolution (each 10k contact bin picks up the 25k
+  # insulation value covering it).
+  insulation_resolution: 25000
   tad_dir: "../tads"
   # Resolutions to run TAD-extension and compartment analyses at. Set these to
   # the resolutions that actually exist on disk (domain BEDs / pca1 BigWigs).
   tad_resolutions: [25000, 100000, 250000, 500000]
-  #compartment_resolutions: [100000, 250000, 500000]
-  compartment_resolutions: [100000,  500000]
+  compartment_resolutions: [100000, 250000, 500000]
   tad_anchor: "chr6:41550000"
   features_bed: "annotations/tcrb_extension_features.bed"
   compartment_region: "chr6:39000000-55000000"
