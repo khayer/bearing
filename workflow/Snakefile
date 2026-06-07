@@ -320,8 +320,8 @@ rule regional_consolidate:
     output: tsv=out("regional", "consolidated_enrichment.tsv"),
             pdf=out("regional", "panel_E_heatmap.pdf")
     shell:
-        "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} --out {output.tsv}; "
-        "python {BIN}/render_regional_enrichment_heatmap.py --tsv {output.tsv} --out {output.pdf} "
+        "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} "
+        "--out {output.tsv} --heatmap-out {output.pdf} "
         "--comparisons " + " ".join(COMPARISONS)
 
 
@@ -339,7 +339,7 @@ rule bearing_hic_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures --triangle --run"
+        "--outdir {OUT}/figures --no-pvals --triangle --run"
 
 
 # ---- Phase 7: Hi-C analyses (Hi-C only) -----------------------------------
@@ -582,11 +582,14 @@ rule bes_hic_within:
     params:
         res=P["hic"]["contact_resolution"],
         cool_a=lambda wc: _abs_hic(HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if REF in HIC else "",
-        cool_b=lambda wc: _abs_hic(HIC["DP"]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if "DP" in HIC else ""
+        cool_b=lambda wc: _abs_hic(HIC["DP"]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))) if "DP" in HIC else "",
+        insul_a=lambda wc: _abs_hic(HIC[REF]["insul"].replace("{res}", str(P["hic"]["contact_resolution"]))) if REF in HIC else "",
+        insul_b=lambda wc: _abs_hic(HIC["DP"]["insul"].replace("{res}", str(P["hic"]["contact_resolution"]))) if "DP" in HIC else ""
     resources: mem_mb=64000, runtime=720
     shell:
         "python {BIN}/bes_hic_correlation.py "
         "--bes {OUT}/pvalue/diff_{REF}_vs_DP.stats.tsv "
+        "--insul-A {params.insul_a} --insul-B {params.insul_b} "
         "--cool-A {params.cool_a} --cool-B {params.cool_b} "
         "--region chr6:40400000-42400000 --hic-bin {params.res} "
         "--n-perm 1000 --prefix {OUT}/hic/bes_hic_within_DN_vs_DP"
