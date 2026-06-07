@@ -442,8 +442,13 @@ rule hic_crosslocus:
 rule calibration:
     input: score=out("score.done")
     output: done=touch(out("calibration.done"))
+    params: nperms=P.get("n_perms", 10)
     resources: mem_mb=200000, runtime=1440
-    shell: "bash {BIN}/run_replicate_calibration.sh"
+    shell:
+        "bash {BIN}/run_replicate_calibration.sh "
+        "--sheet {OUT}/samples.qcat.tsv --out {OUT}/calibration "
+        "--perm-template '{OUT}/perm/perm{{perm}}/{{sample}}/{{sample}}_perm{{perm}}.qcat.bgz' "
+        "--n-perms {params.nperms} --obs-qcat-col qcat --scripts-dir {BIN}"
 
 rule decomposition_report:
     input: compare=out("compare.done")
@@ -451,7 +456,7 @@ rule decomposition_report:
     resources: mem_mb=64000, runtime=240
     shell:
         "python {BIN}/bearing_decomposition_report.py --diff-dir {OUT}/compare "
-        "--categories DN_rep1_cats.json --out {OUT}/cross_comparison --top-n 500"
+        "--categories {OUT}/DN_rep1_cats.json --out {OUT}/cross_comparison --top-n 500"
 
 rule benchmark:
     output: done=touch(out("benchmark", "recovery.done"))
@@ -532,8 +537,8 @@ rule fig6b_igh_decomp:
     resources: mem_mb=16000, runtime=120
     shell:
         "python {BIN}/bearing_region_decomposition.py "
-        "--diff-dir {OUT}/compare --regions annotations/igh_regions_v4.bed "
-        "--categories DN_rep1_cats.json "
+        "--diff-dir {OUT}/compare --regions {BIN}/annotations/igh_regions_v4.bed "
+        "--categories {OUT}/DN_rep1_cats.json "
         "--filename-pattern 'diff_{{comparison}}.stats.tsv' "
         "--out {output}"
 
