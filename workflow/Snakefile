@@ -471,6 +471,7 @@ rule bearing_hic_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
+        "--categories {OUT}/DN_rep1_cats.json "
         "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run; "
         # only mark done if PDFs were actually produced (guards against silent skips)
         "if [ -n \"$(find {OUT}/figures/triangle -name '*.pdf' -print -quit 2>/dev/null)\" ]; then "
