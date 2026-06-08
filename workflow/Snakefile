@@ -417,12 +417,11 @@ rule hic_contact_isolation:
         "--out-prefix {OUT}/hic/tcrb_isolation_OE_perm"
 
 rule hic_crosslocus:
-    input: pvalue=out("pvalue.done")
+    input: pvalue=out("pvalue.done"), blacklist=BL
     output: done=touch(out("hic", "crosslocus.done"))
     params:
         res=P["hic"]["contact_resolution"],
-        targets=os.path.join(BIN, P["hic"]["crosslocus_targets"]),
-        ext=os.path.join(BIN, config["blacklist_external"]) if config.get("blacklist_external", "") else ""
+        targets=os.path.join(BIN, P["hic"]["crosslocus_targets"])
     resources: mem_mb=100000, runtime=1440
     run:
         res = params.res
@@ -439,7 +438,7 @@ rule hic_crosslocus:
               "--insul-a %s --insul-b %s "
               "--targets {params.targets} --hic-bin %d --aggregation p95 "
               "--contact-metric delta_contact --n-controls 200 --n-panels 1000 "
-              "--blacklist {params.ext} --gtf {GTF} --match-gene-density "
+              "--blacklist {input.blacklist} --gtf {GTF} --match-gene-density "
               "--out-prefix {OUT}/hic/crosslocus_p95_dcontact"
               % (diffs, cool_a, cool_b, insul_a, insul_b, res))
 
