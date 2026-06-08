@@ -145,6 +145,39 @@ def _draw_rgb_triangle(ax, image, inverted=False):
     ax.set_ylim(0.0, 1.0)
 
 
+def _overlay_loops_on_triangle(ax, loops, region_start, region_end, used_res,
+                               matrix_n, inverted=False, color="#1f77b4",
+                               marker="o", label=None):
+    """Overlay loop apexes on a rotated Hi-C triangle.
+
+    The triangle maps bin (i,j) to normalized axes x=(i+j)/(2n), y=(j-i)/n
+    (see _draw_rgb_triangle). A loop connects genomic anchors p1<p2; convert to
+    bin indices relative to region_start at the matrix resolution and place a
+    marker at that apex. Loops with both anchors outside the matrix are skipped.
+    """
+    if not loops or matrix_n <= 0 or used_res <= 0:
+        return
+    drawn = 0
+    for (s1, e1, s2, e2, _score) in loops:
+        a = ((s1 + e1) // 2)
+        b = ((s2 + e2) // 2)
+        lo, hi = (a, b) if a <= b else (b, a)
+        i = (lo - region_start) // used_res
+        j = (hi - region_start) // used_res
+        if i < 0 or j < 0 or i >= matrix_n or j >= matrix_n:
+            continue
+        x = (i + j) / (2.0 * matrix_n)
+        y = (j - i) / float(matrix_n)
+        if inverted:
+            y = 1.0 - y
+        ax.plot(x, y, marker=marker, markersize=4, markerfacecolor="none",
+                markeredgecolor=color, markeredgewidth=1.0, zorder=5,
+                label=label if drawn == 0 else None)
+        drawn += 1
+    if drawn:
+        print(f"  overlaid {drawn} loop apex(es) ({label or 'loops'})")
+
+
 def _draw_triangle_hic(
     ax,
     image,
@@ -461,6 +494,20 @@ def make_figure_triangle(
         rgb_mode=rgb_hic,
         hic_vmax=hic_vmax,
     )
+    # Overlay loop apexes on the top triangle. In RGB single-triangle mode both
+    # A and B loops share the one triangle; in split mode only A goes on top
+    # (B is drawn on the inverted bottom triangle below).
+    _overlay_loops_on_triangle(
+        ax_hic_top, loops_a, region_start, region_end, used_res_a, matrix_n,
+        inverted=False, color="#cc00cc", marker="o", label="%s loops" % label_a)
+    if rgb_hic:
+        _overlay_loops_on_triangle(
+            ax_hic_top, loops_b, region_start, region_end, used_res_b, matrix_n,
+            inverted=False, color="#00aa00", marker="s", label="%s loops" % label_b)
+    if loops is not None:
+        _overlay_loops_on_triangle(
+            ax_hic_top, loops, region_start, region_end, used_res_a, matrix_n,
+            inverted=False, color="#222222", marker="o", label="loops")
     if rgb_hic:
         ax_hic_top.text(
             0.06,
@@ -647,6 +694,10 @@ def make_figure_triangle(
             rgb_mode=rgb_hic,
             hic_vmax=hic_vmax,
         )
+        _overlay_loops_on_triangle(
+            ax_hic_bottom, loops_b, region_start, region_end, used_res_b,
+            matrix_n, inverted=True, color="#00aa00", marker="s",
+            label="%s loops" % label_b)
         ax_hic_bottom.text(
             0.50,
             0.06,
