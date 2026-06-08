@@ -391,6 +391,7 @@ def _diffloop_cmps():        # comparisons where BOTH REF and B have loops
 rule bes_loop_anchor:
     input: pvalue=out("pvalue.done")
     output: out("loops", "anchor_enrichment_{cmp}.tsv")
+    wildcard_constraints: cmp=r"[A-Za-z0-9]+_vs_[A-Za-z0-9]+"
     resources: mem_mb=32000, runtime=120
     params:
         loops=lambda wc: _abs_hic(HIC[_cond_of(wc.cmp)]["loops"])
@@ -402,6 +403,7 @@ rule bes_loop_anchor:
 rule bes_differential_loops:
     input: pvalue=out("pvalue.done")
     output: out("loops", "differential_loops_{cmp}.tsv")
+    wildcard_constraints: cmp=r"[A-Za-z0-9]+_vs_[A-Za-z0-9]+"
     resources: mem_mb=32000, runtime=120
     params:
         loops_a=lambda wc: _abs_hic(HIC[REF]["loops"]),
@@ -412,17 +414,50 @@ rule bes_differential_loops:
         "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
         "--categories {OUT}/DN_rep1_cats.json --out {output}"
 
+# Locus-scoped versions (default = Tcrb window via config 'loops_locus'). The
+# genome-wide versions are dominated by the noise floor; these re-ask the
+# topology question within the locus where real signal lives.
+LOOPS_LOCUS = config.get("loops_locus", "chr6:40790000-41690000")
+
+rule bes_loop_anchor_locus:
+    input: pvalue=out("pvalue.done")
+    output: out("loops", "anchor_enrichment_{cmp}_tcrb.tsv")
+    resources: mem_mb=32000, runtime=120
+    params:
+        loops=lambda wc: _abs_hic(HIC[_cond_of(wc.cmp)]["loops"])
+    shell:
+        "python {BIN}/bes_loop_anchor_enrichment.py "
+        "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--loops {params.loops} --categories {OUT}/DN_rep1_cats.json "
+        "--locus %s --out {output}" % LOOPS_LOCUS
+
+rule bes_differential_loops_locus:
+    input: pvalue=out("pvalue.done")
+    output: out("loops", "differential_loops_{cmp}_tcrb.tsv")
+    resources: mem_mb=32000, runtime=120
+    params:
+        loops_a=lambda wc: _abs_hic(HIC[REF]["loops"]),
+        loops_b=lambda wc: _abs_hic(HIC[_cond_of(wc.cmp)]["loops"])
+    shell:
+        "python {BIN}/bes_differential_loops.py "
+        "--loops-a {params.loops_a} --loops-b {params.loops_b} "
+        "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--categories {OUT}/DN_rep1_cats.json "
+        "--locus %s --out {output}" % LOOPS_LOCUS
+
 rule loops_topology:
     input:
         anchor=expand(out("loops", "anchor_enrichment_{cmp}.tsv"), cmp=_anchor_cmps()),
-        diff=expand(out("loops", "differential_loops_{cmp}.tsv"), cmp=_diffloop_cmps())
+        diff=expand(out("loops", "differential_loops_{cmp}.tsv"), cmp=_diffloop_cmps()),
+        anchor_tcrb=expand(out("loops", "anchor_enrichment_{cmp}_tcrb.tsv"), cmp=_anchor_cmps()),
+        diff_tcrb=expand(out("loops", "differential_loops_{cmp}_tcrb.tsv"), cmp=_diffloop_cmps())
     output: done=touch(out("loops", "topology.done"))
 
 
 # ---- Phase 6: BEARING + Hi-C figures (Hi-C only) --------------------------
 rule bearing_hic_figures:
     input: pvalue=out("pvalue.done"), psample=out("pvalue_samples.done"), regions=REGIONS
-    output: done=touch(out("figures.done"))
+    output: done=out("figures.done")
     params:
         contacts=lambda wc: " ".join(
             "--contact %s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))))
@@ -436,7 +471,13 @@ rule bearing_hic_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run"
+        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run; "
+        # only mark done if PDFs were actually produced (guards against silent skips)
+        "if [ -n \"$(find {OUT}/figures/triangle -name '*.pdf' -print -quit 2>/dev/null)\" ]; then "
+        "touch {output.done}; "
+        "else echo 'ERROR: triangle batch produced no PDFs in {OUT}/figures/triangle "
+        "(all comparisons likely skipped -- check per-sample p-value inputs and the "
+        "batch stdout for [SKIP] lines)' >&2; exit 1; fi"
 
 # Combined Hi-C + BEARING browser figures (bearing_hic_combined_plot.py, a
 # drop-in for the triangle plotter). Same contacts/loops/p-values/RGB; written
@@ -449,9 +490,11 @@ rule bearing_hic_figures:
 # diff p-value, per-track KL decomposition. Written to figures/combined/.
 rule bearing_hic_combined_one:
     input: pvalue=out("pvalue.done"), psample=out("pvalue_samples.done"), regions=REGIONS
-    output: out("figures", "combined", "{cmp}_combined.pdf")
+    output: out("figures", "combined", "{cmp}", "combined.done")
+    wildcard_constraints: cmp=r"[A-Za-z0-9]+_vs_[A-Za-z0-9]+"
     params:
         cond=lambda wc: wc.cmp.split("_vs_")[-1],
+        subdir=lambda wc: out("figures", "combined", wc.cmp),
         cool_a=lambda wc: _abs_hic(HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))),
         cool_b=lambda wc: _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))),
         insul_a=lambda wc: _abs_hic(HIC[REF]["insul"].replace("{res}", str(P["hic"].get("insulation_resolution", 25000)))),
@@ -473,10 +516,14 @@ rule bearing_hic_combined_one:
         "--regions-file {input.regions} --gtf {GTF} "
         "--categories {OUT}/DN_rep1_cats.json "
         "--label-a {REF} --label-b {params.cond} "
-        "--outdir {OUT}/figures/combined --out {output}"
+        "--outdir {params.subdir}; "
+        # only mark done if PDFs were produced in this comparison's subfolder
+        "if [ -n \"$(find {params.subdir} -name '*.pdf' -print -quit 2>/dev/null)\" ]; then "
+        "touch {output}; "
+        "else echo 'ERROR: combined plot produced no PDFs in {params.subdir}' >&2; exit 1; fi"
 
 rule bearing_hic_combined_figures:
-    input: [out("figures", "combined", "%s_combined.pdf" % c) for c in COMPARISONS]
+    input: [out("figures", "combined", "%s" % c, "combined.done") for c in COMPARISONS]
     output: done=touch(out("figures_combined.done"))
 
 

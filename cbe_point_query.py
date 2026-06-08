@@ -116,15 +116,21 @@ def main():
     ap.add_argument("--out", required=True, help="output long-format TSV")
     args = ap.parse_args()
 
-    # kl_N (1-indexed) -> kl_<TrackName> via categories JSON, else leave as-is.
+    # kl_1, kl_2, ... (numeric suffix, file order) -> kl_<TrackName>, mapped
+    # POSITIONALLY from the categories JSON so it is robust to 0- or 1-indexed
+    # keys. Columns already named (kl_CTCF) are left as-is.
     kl_label = {}
     if args.categories and os.path.exists(args.categories):
         try:
             import json
-            cats = json.load(open(args.categories)).get("categories", {})
-            for k, v in cats.items():
-                name = v[0] if isinstance(v, (list, tuple)) else str(v)
-                kl_label["kl_%d" % (int(k) + 1)] = "kl_%s" % name
+            obj = json.load(open(args.categories))
+            cats = obj.get("categories", obj) if isinstance(obj, dict) else {}
+            ordered = []
+            for k in sorted(cats, key=lambda x: int(x)):
+                v = cats[k]
+                ordered.append(v[0] if isinstance(v, (list, tuple)) else str(v))
+            for i, name in enumerate(ordered):
+                kl_label["kl_%d" % (i + 1)] = "kl_%s" % name
         except (ValueError, KeyError, TypeError):
             kl_label = {}
 

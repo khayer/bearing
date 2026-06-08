@@ -93,18 +93,22 @@ def overlaps_anchor(lookup, chrom, bstart, bend):
 
 
 def _track_namer(categories_path):
-    """Return f(kl_col)->display name. Maps kl_1..6 (1-indexed) via a categories
-    JSON {"categories": {"0": ["ATAC", ...], ...}} when provided; otherwise just
-    strips the kl_ prefix (handles kl_CTCF-style names already)."""
+    """Return f(kl_col)->display name. Maps kl_1, kl_2, ... (numeric suffix, in
+    file order) to track names POSITIONALLY from a categories JSON, so it is
+    robust to whether the JSON keys are 0- or 1-indexed. Columns already named
+    (kl_CTCF) or unmatched fall back to stripping the kl_ prefix."""
     mapping = {}
     if categories_path and os.path.exists(categories_path):
         try:
             import json
-            cats = json.load(open(categories_path)).get("categories", {})
-            # 0-indexed categories -> 1-indexed kl columns
-            for k, v in cats.items():
-                name = v[0] if isinstance(v, (list, tuple)) else str(v)
-                mapping["kl_%d" % (int(k) + 1)] = name
+            obj = json.load(open(categories_path))
+            cats = obj.get("categories", obj) if isinstance(obj, dict) else {}
+            ordered = []
+            for k in sorted(cats, key=lambda x: int(x)):
+                v = cats[k]
+                ordered.append(v[0] if isinstance(v, (list, tuple)) else str(v))
+            for i, name in enumerate(ordered):
+                mapping["kl_%d" % (i + 1)] = name
         except (ValueError, KeyError, TypeError):
             mapping = {}
 
