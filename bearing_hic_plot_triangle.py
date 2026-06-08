@@ -32,6 +32,7 @@ from bearing_hic_plot import (
     HIC_CMAP,
     draw_diff_horizontal,
     draw_epilogos_horizontal,
+    draw_loops_horizontal,
     draw_gene_track,
     draw_genomic_axis,
     draw_legend,
@@ -145,6 +146,18 @@ def _draw_rgb_triangle(ax, image, inverted=False):
     ax.set_ylim(0.0, 1.0)
 
 
+def _palette_ab_colors(palette):
+    """Return (color_a, color_b) hex matching the RGB Hi-C palette, so loop
+    arcs/markers and condition labels use the same colors as the contact map."""
+    return {
+        "magenta-green": ("#cc00cc", "#00aa00"),
+        "magenta-green-white": ("#cc00cc", "#00aa00"),
+        "red-green": ("#cc0000", "#00aa00"),
+        "blue-red": ("#1f5fcc", "#cc0000"),
+        "green-blue": ("#00aa00", "#1f5fcc"),
+    }.get(palette, ("#cc00cc", "#00aa00"))
+
+
 def _overlay_loops_on_triangle(ax, loops, region_start, region_end, used_res,
                                matrix_n, inverted=False, color="#1f77b4",
                                marker="o", label=None):
@@ -153,10 +166,13 @@ def _overlay_loops_on_triangle(ax, loops, region_start, region_end, used_res,
     The triangle maps bin (i,j) to normalized axes x=(i+j)/(2n), y=(j-i)/n
     (see _draw_rgb_triangle). A loop connects genomic anchors p1<p2; convert to
     bin indices relative to region_start at the matrix resolution and place a
-    marker at that apex. Loops with both anchors outside the matrix are skipped.
+    marker at the apex of that bin pair. Markers are drawn filled with a white
+    halo so they stay visible against the busy RGB contact background.
     """
+    import matplotlib.patheffects as pe
     if not loops or matrix_n <= 0 or used_res <= 0:
         return
+    halo = [pe.withStroke(linewidth=2.2, foreground="white")]
     drawn = 0
     for (s1, e1, s2, e2, _score) in loops:
         a = ((s1 + e1) // 2)
@@ -166,12 +182,15 @@ def _overlay_loops_on_triangle(ax, loops, region_start, region_end, used_res,
         j = (hi - region_start) // used_res
         if i < 0 or j < 0 or i >= matrix_n or j >= matrix_n:
             continue
-        x = (i + j) / (2.0 * matrix_n)
-        y = (j - i) / float(matrix_n)
+        # bin centers (the quad for (i,j) spans i..i+1, j..j+1)
+        ic, jc = i + 0.5, j + 0.5
+        x = (ic + jc) / (2.0 * matrix_n)
+        y = (jc - ic) / float(matrix_n)
         if inverted:
             y = 1.0 - y
-        ax.plot(x, y, marker=marker, markersize=4, markerfacecolor="none",
-                markeredgecolor=color, markeredgewidth=1.0, zorder=5,
+        ax.plot(x, y, marker=marker, markersize=7, markerfacecolor=color,
+                markeredgecolor="white", markeredgewidth=1.0, alpha=0.95,
+                zorder=6, path_effects=halo,
                 label=label if drawn == 0 else None)
         drawn += 1
     if drawn:
@@ -194,8 +213,9 @@ def _draw_triangle_hic(
 
 def _triangle_figure_layout(num_beds: int = 0, bed_styles: list | None = None):
     fig = plt.figure(figsize=(12.0, 14.0), dpi=150)
-    # Base rows before bed tracks: hic_top, qcat_a, qcat_b, diff, pval_diff, pval_manhattan
-    pre_bed = [4.3, 0.95, 0.95, 0.95, 0.75, 0.75]
+    # Base rows before bed tracks: hic_top, loops_a, loops_b, qcat_a, qcat_b,
+    # diff, pval_diff, pval_manhattan
+    pre_bed = [4.3, 0.45, 0.45, 0.95, 0.95, 0.95, 0.75, 0.75]
     # Default gene/axis/bottom triangle heights
     gene_h = 0.40
     axis_h = 0.35
@@ -231,14 +251,16 @@ def _triangle_figure_layout(num_beds: int = 0, bed_styles: list | None = None):
 
     axes = {}
     axes["hic_top"] = fig.add_subplot(gs[0, 0])
-    axes["qcat_a"] = fig.add_subplot(gs[1, 0])
-    axes["qcat_b"] = fig.add_subplot(gs[2, 0])
-    axes["diff"] = fig.add_subplot(gs[3, 0])
-    axes["pval_diff"] = fig.add_subplot(gs[4, 0])
-    axes["pval_manhattan"] = fig.add_subplot(gs[5, 0])
+    axes["loops_a"] = fig.add_subplot(gs[1, 0])
+    axes["loops_b"] = fig.add_subplot(gs[2, 0])
+    axes["qcat_a"] = fig.add_subplot(gs[3, 0])
+    axes["qcat_b"] = fig.add_subplot(gs[4, 0])
+    axes["diff"] = fig.add_subplot(gs[5, 0])
+    axes["pval_diff"] = fig.add_subplot(gs[6, 0])
+    axes["pval_manhattan"] = fig.add_subplot(gs[7, 0])
 
-    # bed rows start at index 6
-    bed_start = 6
+    # bed rows start at index 8
+    bed_start = 8
     for i in range(num_beds):
         axes[f"bed_{i}"] = fig.add_subplot(gs[bed_start + i, 0])
 
@@ -280,6 +302,7 @@ def make_figure_triangle(
     pval_overlay=False,
     rgb_hic=False,
     rgb_palette="magenta-green",
+    loops_on_triangle=True,
     beds=None,
     bed_style_overrides=None,
 ):
@@ -441,6 +464,8 @@ def make_figure_triangle(
 
     fig, axes = _triangle_figure_layout(num_beds=len(beds), bed_styles=bed_styles)
     ax_hic_top = axes["hic_top"]
+    ax_loops_a = axes["loops_a"]
+    ax_loops_b = axes["loops_b"]
     ax_qcat_a = axes["qcat_a"]
     ax_qcat_b = axes["qcat_b"]
     ax_diff = axes["diff"]
@@ -450,6 +475,10 @@ def make_figure_triangle(
     ax_axis = axes["axis"]
     ax_hic_bottom = axes["hic_bottom"]
     ax_legend = axes["legend"]
+
+    # Colors matched to the RGB Hi-C palette so labels, arc tracks, and triangle
+    # markers all agree (e.g. red-green -> A=red, B=green).
+    color_a, color_b = _palette_ab_colors(rgb_palette) if rgb_hic else ("#cc00cc", "#00a83a")
 
     # draw bed tracks if present
     for i, bed_path in enumerate(beds or []):
@@ -494,20 +523,29 @@ def make_figure_triangle(
         rgb_mode=rgb_hic,
         hic_vmax=hic_vmax,
     )
-    # Overlay loop apexes on the top triangle. In RGB single-triangle mode both
-    # A and B loops share the one triangle; in split mode only A goes on top
-    # (B is drawn on the inverted bottom triangle below).
-    _overlay_loops_on_triangle(
-        ax_hic_top, loops_a, region_start, region_end, used_res_a, matrix_n,
-        inverted=False, color="#cc00cc", marker="o", label="%s loops" % label_a)
-    if rgb_hic:
+    # Optional loop apex markers on the top triangle (toggle via loops_on_triangle).
+    # Arc tracks below always show the loops; the triangle markers are additive.
+    if loops_on_triangle:
         _overlay_loops_on_triangle(
-            ax_hic_top, loops_b, region_start, region_end, used_res_b, matrix_n,
-            inverted=False, color="#00aa00", marker="s", label="%s loops" % label_b)
-    if loops is not None:
-        _overlay_loops_on_triangle(
-            ax_hic_top, loops, region_start, region_end, used_res_a, matrix_n,
-            inverted=False, color="#222222", marker="o", label="loops")
+            ax_hic_top, loops_a, region_start, region_end, used_res_a, matrix_n,
+            inverted=False, color=color_a, marker="o", label="%s loops" % label_a)
+        if rgb_hic:
+            _overlay_loops_on_triangle(
+                ax_hic_top, loops_b, region_start, region_end, used_res_b, matrix_n,
+                inverted=False, color=color_b, marker="s", label="%s loops" % label_b)
+        if loops is not None:
+            _overlay_loops_on_triangle(
+                ax_hic_top, loops, region_start, region_end, used_res_a, matrix_n,
+                inverted=False, color="#222222", marker="o", label="loops")
+
+    # Two arc tracks (condition A, condition B) below the triangle, colored to
+    # match the Hi-C palette.
+    draw_loops_horizontal(
+        ax_loops_a, loops_a or [], region_start, region_end,
+        label="%s loops" % label_a, color=color_a, anchor_color=color_a)
+    draw_loops_horizontal(
+        ax_loops_b, loops_b or [], region_start, region_end,
+        label="%s loops" % label_b, color=color_b, anchor_color=color_b)
     if rgb_hic:
         ax_hic_top.text(
             0.06,
@@ -515,7 +553,7 @@ def make_figure_triangle(
             label_a,
             transform=ax_hic_top.transAxes,
             fontsize=8,
-            color="#cc00cc",
+            color=color_a,
             ha="left",
             va="top",
             fontweight="bold",
@@ -526,7 +564,7 @@ def make_figure_triangle(
             label_b,
             transform=ax_hic_top.transAxes,
             fontsize=8,
-            color="#00a83a",
+            color=color_b,
             ha="right",
             va="top",
             fontweight="bold",
@@ -694,10 +732,11 @@ def make_figure_triangle(
             rgb_mode=rgb_hic,
             hic_vmax=hic_vmax,
         )
-        _overlay_loops_on_triangle(
-            ax_hic_bottom, loops_b, region_start, region_end, used_res_b,
-            matrix_n, inverted=True, color="#00aa00", marker="s",
-            label="%s loops" % label_b)
+        if loops_on_triangle:
+            _overlay_loops_on_triangle(
+                ax_hic_bottom, loops_b, region_start, region_end, used_res_b,
+                matrix_n, inverted=True, color=color_b, marker="s",
+                label="%s loops" % label_b)
         ax_hic_bottom.text(
             0.50,
             0.06,
@@ -754,6 +793,10 @@ def main():
         choices=["magenta-green", "red-green", "blue-red", "green-blue", "magenta-green-white"],
         default="magenta-green",
     )
+    parser.add_argument(
+        "--no-loops-on-triangle", dest="loops_on_triangle", action="store_false",
+        help="Show loops only as arc tracks, not as apex markers on the triangle.")
+    parser.set_defaults(loops_on_triangle=True)
     region_group = parser.add_mutually_exclusive_group(required=True)
     region_group.add_argument("--region", metavar="CHR:START-END")
     region_group.add_argument("--regions-file", metavar="TSV")
@@ -906,6 +949,7 @@ def main():
                     categories=cli_categories,
                     rgb_hic=args.rgb_hic,
                     rgb_palette=args.rgb_palette,
+                    loops_on_triangle=args.loops_on_triangle,
                     beds=args.bed,
                     bed_style_overrides=bed_style_overrides,
                     pval_overlay=args.pval_overlay,
@@ -947,6 +991,7 @@ def main():
             categories=cli_categories,
             rgb_hic=args.rgb_hic,
             rgb_palette=args.rgb_palette,
+            loops_on_triangle=args.loops_on_triangle,
             beds=args.bed,
             bed_style_overrides=bed_style_overrides,
         )
