@@ -546,7 +546,7 @@ rule suppS7b_compartment_grid:
     resources: mem_mb=32000, runtime=240
     shell:
         "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
-        "--resolutions 25000 50000 100000 --region chr6:39000000-43500000 "
+        "--resolutions 25000 100000 250000 --region chr6:39000000-43500000 "
         "--landmarks Cntnap2:chr6:46400000:B Gpnmb:chr6:48900000:A Tcrb:chr6:41000000:A "
         "--out {output}"
 
