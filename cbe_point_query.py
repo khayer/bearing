@@ -111,8 +111,22 @@ def main():
     ap.add_argument("--diffs", nargs="+", required=True,
                     help="diff_<A>_vs_<B>.stats.tsv files (one per comparison)")
     ap.add_argument("--cbe-bed", required=True, help="CBE BED4 (chrom,start,end,name)")
+    ap.add_argument("--categories", default=None,
+                    help="optional categories JSON to label kl_N columns by track name")
     ap.add_argument("--out", required=True, help="output long-format TSV")
     args = ap.parse_args()
+
+    # kl_N (1-indexed) -> kl_<TrackName> via categories JSON, else leave as-is.
+    kl_label = {}
+    if args.categories and os.path.exists(args.categories):
+        try:
+            import json
+            cats = json.load(open(args.categories)).get("categories", {})
+            for k, v in cats.items():
+                name = v[0] if isinstance(v, (list, tuple)) else str(v)
+                kl_label["kl_%d" % (int(k) + 1)] = "kl_%s" % name
+        except (ValueError, KeyError, TypeError):
+            kl_label = {}
 
     cbes = read_cbes(args.cbe_bed)
 
@@ -156,7 +170,14 @@ def main():
     base_cols = ["comparison", "cbe_name", "cbe_chrom", "cbe_start", "cbe_end",
                  "bin_status", "bin_start", "bin_end", "bearing_score",
                  "direction", "pval", "pval_adj_bh", "fdr_significant"]
-    header = base_cols + kl_union
+    labeled_kl = [kl_label.get(k, k) for k in kl_union]
+    header = base_cols + labeled_kl
+    # rename per-row kl keys to their labeled names so DictWriter aligns
+    if kl_label:
+        for rec in out_rows:
+            for raw in list(rec.keys()):
+                if raw in kl_label:
+                    rec[kl_label[raw]] = rec.pop(raw)
     with open(args.out, "w", newline="") as out:
         w = csv.DictWriter(out, fieldnames=header, delimiter="\t",
                            extrasaction="ignore")

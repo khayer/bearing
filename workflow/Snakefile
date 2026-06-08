@@ -125,6 +125,7 @@ def all_targets():
     if HAS_HIC:
         t += [out("figures.done"),
               out("figures_combined.done"),
+              out("pvalue_samples.done"),
               out("hic", "tad.done"),
               out("hic", "compartment.done"),
               out("hic", "contact_isolation.done"),
@@ -308,6 +309,32 @@ rule pvalue_diff:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue"
 
+# Per-sample (non-diff) p-values: run bearing_pvalue.py for each sample against
+# its OWN permutation nulls (perm/perm{idx}/{sample}/{sample}_perm{idx}.qcat.bgz,
+# built by perm_sample_one). Produces pvalue/<sample>.stats.tsv and
+# <sample>.neglog10p.bw so the figure qcat-A/qcat-B rows can carry per-sample
+# significance markers (distinct from the differential diff_<cmp> p-values).
+rule pvalue_sample:
+    input:
+        qcat=out("{sample}.qcat.bgz"),
+        perm=out("perm.done")
+    output: out("pvalue", "{sample}.neglog10p.bw")
+    params:
+        prefix=lambda wc: out("pvalue", wc.sample),
+        nulls=lambda wc: " ".join(
+            out("perm", "perm%d" % i, wc.sample, "%s_perm%d.qcat.bgz" % (wc.sample, i))
+            for i in PERM_INDICES)
+    threads: 2
+    resources: mem_mb=64000, runtime=720, cpus_per_task=2
+    shell:
+        "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
+        "python {BIN}/bearing_pvalue.py --qcat {input.qcat} "
+        "--null-qcat {params.nulls} --out-prefix {params.prefix} --fdr 0.05"
+
+rule pvalue_samples:
+    input: [out("pvalue", "%s.neglog10p.bw" % s) for s in SAMPLES]
+    output: touch(out("pvalue_samples.done"))
+
 
 # ---- Phase 5: regional enrichment -----------------------------------------
 rule regional_enrichment:
@@ -342,7 +369,8 @@ rule cbe_point_query:
             "%s/pvalue/diff_%s.stats.tsv" % (OUT, c) for c in COMPARISONS)
     shell:
         "python {BIN}/cbe_point_query.py --diffs {params.diffs} "
-        "--cbe-bed {BIN}/annotations/cbe_mm10.bed --out {output.tsv}"
+        "--cbe-bed {BIN}/annotations/cbe_mm10.bed "
+        "--categories {OUT}/DN_rep1_cats.json --out {output.tsv}"
 
 # ---- Loop topology (#2 anchor-stratified BES, #3 differential loops) -------
 # B-condition of comparison REF_vs_<c> is <c>. #2 needs <c>'s loops; #3 needs
@@ -393,7 +421,7 @@ rule loops_topology:
 
 # ---- Phase 6: BEARING + Hi-C figures (Hi-C only) --------------------------
 rule bearing_hic_figures:
-    input: pvalue=out("pvalue.done"), regions=REGIONS
+    input: pvalue=out("pvalue.done"), psample=out("pvalue_samples.done"), regions=REGIONS
     output: done=touch(out("figures.done"))
     params:
         contacts=lambda wc: " ".join(
@@ -408,28 +436,48 @@ rule bearing_hic_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --diff-pvals-only --run"
+        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run"
 
 # Combined Hi-C + BEARING browser figures (bearing_hic_combined_plot.py, a
 # drop-in for the triangle plotter). Same contacts/loops/p-values/RGB; written
 # to figures/combined so the two figure styles sit in sibling folders.
-rule bearing_hic_combined_figures:
-    input: pvalue=out("pvalue.done"), regions=REGIONS
-    output: done=touch(out("figures_combined.done"))
+# Combined Hi-C + BEARING browser figures (bearing_hic_combined_plot.py).
+# Calls the combined plotter DIRECTLY per comparison (REF vs each cond) -- the
+# batch runner cannot express its distinctive options (--show-hic A,B,diff,
+# --insul-A/-B insulation tracks, --diff-stats). Produces the stacked layout:
+# Hi-C A / Hi-C B / Hi-C diff triangles, insulation A vs B, |delta insul|, BES,
+# diff p-value, per-track KL decomposition. Written to figures/combined/.
+rule bearing_hic_combined_one:
+    input: pvalue=out("pvalue.done"), psample=out("pvalue_samples.done"), regions=REGIONS
+    output: out("figures", "combined", "{cmp}_combined.pdf")
     params:
-        contacts=lambda wc: " ".join(
-            "--contact %s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))))
-            for c in HIC if c in CONDS),
-        loops=lambda wc: " ".join(
-            "--loops %s=%s" % (c, _abs_hic(HIC[c]["loops"]))
-            for c in HIC if c in CONDS and HIC[c].get("loops")),
+        cond=lambda wc: wc.cmp.split("_vs_")[-1],
+        cool_a=lambda wc: _abs_hic(HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))),
+        cool_b=lambda wc: _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))),
+        insul_a=lambda wc: _abs_hic(HIC[REF]["insul"].replace("{res}", str(P["hic"].get("insulation_resolution", 25000)))),
+        insul_b=lambda wc: _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["insul"].replace("{res}", str(P["hic"].get("insulation_resolution", 25000)))),
+        loops_a=lambda wc: ("--loops-a %s" % _abs_hic(HIC[REF]["loops"])) if HIC.get(REF, {}).get("loops") else "",
+        loops_b=lambda wc: ("--loops-b %s" % _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["loops"])) if HIC.get(wc.cmp.split("_vs_")[-1], {}).get("loops") else "",
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
     shell:
-        "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
-        "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
-        "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures/combined --combined --rgb-hic --rgb-palette red-green --diff-pvals-only --run"
+        "python {BIN}/bearing_hic_combined_plot.py "
+        "--contact-a {params.cool_a} --contact-b {params.cool_b} "
+        "--qcat-a {OUT}/{REF}_rep1.qcat.bgz --qcat-b {OUT}/{params.cond}_rep1.qcat.bgz "
+        "--diff-qcat {OUT}/compare/diff_{wildcards.cmp}.qcat.bgz "
+        "--diff-stats {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--pval-diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--insul-A {params.insul_a} --insul-B {params.insul_b} "
+        "{params.loops_a} {params.loops_b} "
+        "--show-hic A,B,diff --resolution {params.res} "
+        "--regions-file {input.regions} --gtf {GTF} "
+        "--categories {OUT}/DN_rep1_cats.json "
+        "--label-a {REF} --label-b {params.cond} "
+        "--outdir {OUT}/figures/combined --out {output}"
+
+rule bearing_hic_combined_figures:
+    input: [out("figures", "combined", "%s_combined.pdf" % c) for c in COMPARISONS]
+    output: done=touch(out("figures_combined.done"))
 
 
 # ---- Phase 7: Hi-C analyses (Hi-C only) -----------------------------------

@@ -113,6 +113,18 @@ def _track_namer(categories_path):
     return namer
 
 
+def _parse_locus(s):
+    """'chr6:40790000-41690000' -> (chrom, start, end), or None."""
+    if not s:
+        return None
+    try:
+        chrom, rng = s.split(":")
+        a, b = rng.replace(",", "").split("-")
+        return (chrom, int(a), int(b))
+    except ValueError:
+        raise SystemExit("ERROR: bad --locus '%s' (want chr:start-end)" % s)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -121,11 +133,17 @@ def main():
     ap.add_argument("--out", required=True, help="output summary TSV (one row)")
     ap.add_argument("--categories", default=None,
                     help="optional categories JSON to label kl_N tracks by name")
+    ap.add_argument("--locus", default=None,
+                    help="restrict to a genomic window chr:start-end (e.g. the "
+                         "Tcrb locus) instead of the genome-wide noise floor")
+    ap.add_argument("--fdr-only", action="store_true",
+                    help="restrict the |BES| comparison to FDR-significant bins")
     ap.add_argument("--bins-out", default=None,
                     help="optional per-bin labelled TSV (bin, stratum, BES, fdr)")
     args = ap.parse_args()
 
     namer = _track_namer(args.categories)
+    locus = _parse_locus(args.locus)
     comp = parse_comparison_name(args.diff)
     lookup = build_anchor_lookup(read_loops(args.loops))
 
@@ -146,6 +164,10 @@ def main():
         except (KeyError, ValueError):
             continue
         sig = int(float(r.get(fdr_col, "0") or 0)) if fdr_col else 0
+        if locus is not None and (c != locus[0] or e <= locus[1] or s >= locus[2]):
+            continue
+        if args.fdr_only and sig != 1:
+            continue
         grp = anchor if overlaps_anchor(lookup, c, s, e) else nonanc
         grp["abs_bes"].append(abs(bes))
         grp["sig"] += sig

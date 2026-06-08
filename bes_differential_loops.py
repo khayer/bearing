@@ -108,7 +108,18 @@ def anchor_intervals(loops):
     return ivs
 
 
-def load_diff(path):
+def _parse_locus(s):
+    if not s:
+        return None
+    try:
+        chrom, rng = s.split(":")
+        a, b = rng.replace(",", "").split("-")
+        return (chrom, int(a), int(b))
+    except ValueError:
+        raise SystemExit("ERROR: bad --locus '%s' (want chr:start-end)" % s)
+
+
+def load_diff(path, locus=None, fdr_only=False):
     fh = _open(path)
     reader = csv.DictReader(fh, delimiter="\t")
     fields = reader.fieldnames or []
@@ -121,6 +132,11 @@ def load_diff(path):
             r["_bes"] = float(r.get("bearing_score", "nan"))
             r["_sig"] = int(float(r.get(fdr_col, "0") or 0)) if fdr_col else 0
         except (KeyError, ValueError):
+            continue
+        if locus is not None and (r["_c"] != locus[0] or r["_e"] <= locus[1]
+                                  or r["_s"] >= locus[2]):
+            continue
+        if fdr_only and r["_sig"] != 1:
             continue
         rows.append(r)
     fh.close()
@@ -194,6 +210,10 @@ def main():
                     help="extra bp padding for anchor overlap (default 0)")
     ap.add_argument("--categories", default=None,
                     help="optional categories JSON to label kl_N tracks by name")
+    ap.add_argument("--locus", default=None,
+                    help="restrict to a genomic window chr:start-end (e.g. Tcrb)")
+    ap.add_argument("--fdr-only", action="store_true",
+                    help="restrict BES tallies to FDR-significant bins")
     ap.add_argument("--out", required=True, help="output per-class summary TSV")
     args = ap.parse_args()
 
@@ -202,7 +222,8 @@ def main():
     la = read_loops(args.loops_a)
     lb = read_loops(args.loops_b)
     classes = classify(la, lb, args.slop)
-    by, kl_cols = load_diff(args.diff)
+    by, kl_cols = load_diff(args.diff, locus=_parse_locus(args.locus),
+                            fdr_only=args.fdr_only)
 
     def mean(xs):
         return (sum(xs) / len(xs)) if xs else 0.0
