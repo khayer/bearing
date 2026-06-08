@@ -28,5 +28,5 @@ S3T3_rep2	S3T3	2	S3T3_rep2.qcat.bgz	../bigwigs/ATAC/s3T3_ATAC_rep4.bw,../bigwigs
 # --- dV1P / dV1CTCF temporarily disabled: their Hi-C files are not present at
 #     all required resolutions yet. Re-enable by removing the leading '#' on the
 #     two rows below once the files exist.
-#dV1P_hic	dV1P				../hic_files/merged_corrected_KR_dV1P_bs_{res}.cool	../../projects/HiC_V31_NT_allele/data/endpoints/HiC_explorer_mm10/07tad/merged_corrected_KR_dV1P_bs_{res}_tad_score.bm	../comp/merged_corrected_KR_dV1P_bs_{res}_pca1.bw	25000 100000
-#dV1CTCF_hic	dV1CTCF				../hic_files/merged_corrected_KR_dV1CTCF_bs_{res}.cool	../../projects/HiC_V31_NT_allele/data/endpoints/HiC_explorer_mm10/07tad/merged_corrected_KR_dV1CTCF_bs_{res}_tad_score.bm	../comp/merged_corrected_KR_dV1CTCF_bs_{res}_pca1.bw	25000 100000
+dV1P_hic	dV1P				../hic_files/merged_corrected_KR_dV1P_bs_{res}.cool	../../projects/HiC_V31_NT_allele/data/endpoints/HiC_explorer_mm10/07tad/merged_corrected_KR_dV1P_bs_{res}_tad_score.bm	../comp/merged_corrected_KR_dV1P_bs_{res}_pca1.bw	25000 100000
+dV1CTCF_hic	dV1CTCF				../hic_files/merged_corrected_KR_dV1CTCF_bs_{res}.cool	../../projects/HiC_V31_NT_allele/data/endpoints/HiC_explorer_mm10/07tad/merged_corrected_KR_dV1CTCF_bs_{res}_tad_score.bm	../comp/merged_corrected_KR_dV1CTCF_bs_{res}_pca1.bw	25000 100000
