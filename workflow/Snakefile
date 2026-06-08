@@ -539,14 +539,17 @@ rule fig4a_self_contact_grid:
         "--ncols 5 --annotate-oe-region chr6:40400000-42400000 --out {output}"
 
 rule suppS7b_compartment_grid:
+    input: gtf=GTF
     output: out("paper_figures", "suppS7_panelB_compartment_res.png")
     params:
         pc1=lambda wc: " ".join(
-            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"])) for c in LYMPH5)  # path keeps {res}
+            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"])) for c in LYMPH5),  # path keeps {res}
+        orient_region=P["hic"].get("compartment_region", "chr6:39000000-55000000")
     resources: mem_mb=32000, runtime=240
     shell:
         "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
         "--resolutions 25000 100000 250000 --region chr6:39000000-43500000 "
+        "--gtf {input.gtf} --orient-region {params.orient_region} "
         "--landmarks Cntnap2:chr6:46400000:B Gpnmb:chr6:48900000:A Tcrb:chr6:41000000:A "
         "--out {output}"
 
