@@ -11,21 +11,17 @@ OWNER="${BEARING_OWNER:-khayer}"
 TAG="${1:-latest}"
 OUT="${BEARING_SIF:-bearing.sif}"
 
+# Detect container runtime: apptainer or singularity (the renamed predecessor).
 if command -v apptainer >/dev/null 2>&1; then
-	RUNTIME="apptainer"
+  RT=apptainer
 elif command -v singularity >/dev/null 2>&1; then
-	RUNTIME="singularity"
+  RT=singularity
 else
-	cat >&2 <<'EOF'
-ERROR: neither apptainer nor singularity is installed on PATH.
-
-To pull the prebuilt image, install Apptainer/Singularity first, or build a
-local SIF with:
-	apptainer build bearing.sif Apptainer.def
-EOF
-	exit 127
+  echo "ERROR: neither 'apptainer' nor 'singularity' is on PATH." >&2
+  echo "Install one of them, or build locally with: apptainer build bearing.sif Apptainer.def" >&2
+  exit 1
 fi
 
-echo "Pulling oras://ghcr.io/${OWNER}/bearing:${TAG} -> ${OUT}"
-"${RUNTIME}" pull --force "${OUT}" "oras://ghcr.io/${OWNER}/bearing:${TAG}"
+echo "Pulling oras://ghcr.io/${OWNER}/bearing:${TAG} -> ${OUT}  (using ${RT})"
+"$RT" pull --force "${OUT}" "oras://ghcr.io/${OWNER}/bearing:${TAG}"
 echo "Done. Use it with: snakemake --use-apptainer ..."

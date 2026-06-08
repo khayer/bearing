@@ -66,6 +66,7 @@ import argparse
 import bisect
 import json
 import math
+import time
 import multiprocessing
 import os
 import subprocess
@@ -1432,35 +1433,50 @@ def mean_signal_in_bins(bw, chrom, bins):
     vals = np.zeros(n, dtype=np.float32)
     if n == 0:
         return vals
+    span_start = int(bins[0][0])
+    span_end = int(bins[-1][1])
     try:
-        # bins are contiguous, uniform-width, ascending within a chromosome in
-        # the genome-wide path; handle the general case by spanning min..max and
-        # indexing each bin's slice from the bulk array.
-        span_start = int(bins[0][0])
-        span_end = int(bins[-1][1])
         chrom_len = bw.chroms(chrom)
         if chrom_len is not None:
             span_end = min(span_end, int(chrom_len))
-        raw = bw.values(chrom, span_start, span_end, numpy=True)
-        raw = np.nan_to_num(raw, nan=0.0).astype(np.float32)
-        for i, (s, e) in enumerate(bins):
-            a = int(s) - span_start
-            b = int(e) - span_start
-            if a < 0:
-                a = 0
-            if b > len(raw):
-                b = len(raw)
-            if b > a:
-                vals[i] = raw[a:b].mean()
-        return vals
     except Exception:
-        for i, (s, e) in enumerate(bins):
-            try:
-                v = bw.stats(chrom, s, e, type="mean")[0]
-                vals[i] = 0.0 if (v is None or math.isnan(v)) else float(v)
-            except Exception:
-                vals[i] = 0.0
-        return vals
+        pass
+    # Bulk read with a few retries: under heavy concurrent load on a shared
+    # filesystem the pyBigWig reader can fail transiently; a brief retry
+    # avoids killing the whole scoring job over a momentary read hiccup.
+    raw = None
+    for attempt in range(3):
+        try:
+            raw = bw.values(chrom, span_start, span_end, numpy=True)
+            break
+        except Exception:
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+            else:
+                raw = None
+    if raw is not None:
+        try:
+            raw = np.nan_to_num(raw, nan=0.0).astype(np.float32)
+            for i, (s, e) in enumerate(bins):
+                a = int(s) - span_start
+                b = int(e) - span_start
+                if a < 0:
+                    a = 0
+                if b > len(raw):
+                    b = len(raw)
+                if b > a:
+                    vals[i] = raw[a:b].mean()
+            return vals
+        except Exception:
+            pass
+    # Fallback: per-bin stats (slower but robust)
+    for i, (s, e) in enumerate(bins):
+        try:
+            v = bw.stats(chrom, s, e, type="mean")[0]
+            vals[i] = 0.0 if (v is None or math.isnan(v)) else float(v)
+        except Exception:
+            vals[i] = 0.0
+    return vals
 
 
 def quantile_normalize_columns(signal_matrix):

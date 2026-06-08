@@ -117,6 +117,7 @@ def all_targets():
         out("benchmark", "recovery.done"),
         out("paper_figures", "graphical_abstract_panel3.png"),
         out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
+        out("paper_figures", "suppSXX_crosslocus_ebko_survey.pdf"),
     ]
     if HAS_HIC:
         t += [out("figures.done"),
@@ -514,7 +515,7 @@ rule benchmark:
 # .cool / pca1 inputs already in the sheet. Two cell-type sets are used:
 # all five for the main O/E grids, the V1-perturbation pair is handled by the
 # existing hic_contact_isolation rule (Supp S7A).
-LYMPH5 = [c for c in ["DN", "DP", "EbKO", "ProB", "S3T3"] if c in HIC]
+LYMPH5 = [c for c in ["DN", "EbKO", "DP", "ProB", "S3T3"] if c in HIC]
 
 rule fig3b_oe_grid:
     output: out("paper_figures", "fig3_panelB_oe_grid.png")
@@ -582,6 +583,23 @@ rule fig6b_igh_decomp:
         "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/igh_regions_v4.bed "
         "--categories {OUT}/DN_rep1_cats.json "
         "--filename-pattern 'diff_*.stats.tsv' "
+        "--out {params.prefix}"
+
+# Supp: cross-locus DN-vs-EbKO survey. Re-uses the existing DN_vs_EbKO diff
+# stats, decomposed across additional antigen-receptor / control loci, to test
+# whether the Igh VH-proximal DN-vs-EbKO signal is locus-specific or diffuse.
+# Restricted to the DN_vs_EbKO comparison via the filename pattern.
+rule crosslocus_ebko_survey:
+    input: pvalue=out("pvalue.done")
+    output: out("paper_figures", "suppSXX_crosslocus_ebko_survey.pdf")
+    params: prefix=out("paper_figures", "suppSXX_crosslocus_ebko_survey")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/bearing_region_decomposition.py "
+        "--diff-dir {OUT}/pvalue "
+        "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
+        "--categories {OUT}/DN_rep1_cats.json "
+        "--filename-pattern 'diff_DN_vs_EbKO.stats.tsv' "
         "--out {params.prefix}"
 
 # S7C: within-Tcrb BES-Hi-C co-localization (distinct from the pooled

@@ -1,13 +1,20 @@
-# SLURM execution profile. Run:
-#   snakemake --profile workflow/profiles/slurm --use-apptainer
-# Snakemake submits one job per rule instance to the cluster.
+# SLURM execution profile -- Snakemake submits each rule as its own sbatch job.
+#   snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml \
+#             --profile workflow/profiles/slurm
+#
+# Runs jobs in the ACTIVE conda env (no container). Add --use-apptainer to run
+# inside the image instead (pull it first with workflow/get_container.sh).
+
 executor: slurm
-jobs: 100
-latency-wait: 120
-#use-apptainer: true
+jobs: 50                 # max concurrent cluster jobs
 printshellcmds: true
 rerun-incomplete: true
-
+# Retry a failed job automatically. Per-sample perm jobs occasionally fail
+# transiently under heavy concurrent load (many simultaneous big reads against
+# the shared filesystem can make the pyBigWig C reader fail or abort). Such
+# failures pass on a retry; deterministic errors still fail after exhausting
+# retries. 3 retries comfortably covers transient filesystem hiccups.
+retries: 3
 # Re-run a job only when its INPUTS are newer than its outputs (mtime), not
 # when the rule's code/params change. Without this, editing the Snakefile
 # re-triggers completed data steps. Set this once you trust the code is final;
@@ -15,8 +22,18 @@ rerun-incomplete: true
 # outputs (or the .done sentinel) to force a rerun.
 rerun-triggers: mtime
 
+# Shared filesystems (Isilon/NFS) propagate new files to the head node with a
+# lag; without a generous wait, Snakemake declares outputs "missing" seconds
+# after a job that actually succeeded. 120s covers typical Isilon latency.
+latency-wait: 120
+
 default-resources:
   slurm_partition: "dbhiq,defq"
   mem_mb: 16000
-  runtime: 240          # minutes
+  runtime: 240           # minutes
+  # cpus_per_task is set per-rule in the Snakefile (matches each rule's
+  # threads). Single-core rules fall back to 1 here.
   cpus_per_task: 1
+  # If your cluster requires an account, uncomment and set it (otherwise
+  # Snakemake tries to guess and you may see a harmless sacct warning):
+  # slurm_account: "bassing_lab"

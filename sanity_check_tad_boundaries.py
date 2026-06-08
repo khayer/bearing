@@ -37,7 +37,7 @@ DEFAULT_TAD_DIR = (
     "/mnt/isilon/bassing_lab/projects/HiC_V31_NT_allele/"
     "data/endpoints/HiC_explorer_mm10/07tad"
 )
-CONDITIONS = ["DN", "DP", "EbKO", "ProB", "S3T3"]
+CONDITIONS = ["DN", "EbKO", "DP", "ProB", "S3T3"]
 
 # File-name patterns - edit if your naming differs
 BOUNDARY_PATTERN = "{cond}_boundaries.bed"
