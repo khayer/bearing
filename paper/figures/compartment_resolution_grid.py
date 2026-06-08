@@ -130,6 +130,9 @@ def main():
                          "is then applied to the plotted --region.")
     ap.add_argument("--orient-nbins", type=int, default=2000,
                     help="Bins for the orientation-decision region.")
+    ap.add_argument("--tcrb-span", default=None,
+                    help="chrom:start-end of the Tcrb locus to shade grey "
+                         "(default: a band around the Tcrb landmark).")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -162,6 +165,19 @@ def main():
     # Tcrb gets a distinct marker; other landmarks stay faint.
     def is_tcrb(name):
         return name.lower().startswith("tcrb") or name.lower().startswith("trcb")
+
+    # Grey shading band for the Tcrb locus. Use --tcrb-span if given, else a
+    # band centred on the Tcrb landmark (+/- 450 kb, ~ the locus extent).
+    tcrb_band = None
+    if args.tcrb_span:
+        bchrom, bstart, bend = parse_region(args.tcrb_span)
+        if bchrom == chrom:
+            tcrb_band = (bstart, bend)
+    if tcrb_band is None:
+        for name, lchrom, lpos, ab in landmarks:
+            if is_tcrb(name) and lchrom == chrom and start <= lpos <= end:
+                tcrb_band = (lpos - 450000, lpos + 450000)
+                break
 
     # Orientation-decision region: prefer a wide window (whole chromosome span
     # if not given) so the gene-density correlation is stable; the resulting
@@ -213,24 +229,24 @@ def main():
             ax.fill_between(x, 0, pos, color="#c0392b", linewidth=0)  # A
             ax.fill_between(x, 0, neg, color="#0b3d91", linewidth=0)  # B
             ax.axhline(0, color="#888", linewidth=0.5)
+            # Tcrb locus shaded grey behind the data; other landmarks faint.
+            if tcrb_band is not None:
+                ax.axvspan(max(tcrb_band[0], start), min(tcrb_band[1], end),
+                           color="#000000", alpha=0.12, linewidth=0, zorder=0)
             for name, lchrom, lpos, ab in landmarks:
-                if lchrom == chrom and start <= lpos <= end:
-                    if is_tcrb(name):
-                        ax.axvline(lpos, color="#111", linewidth=1.4,
-                                   linestyle="-", zorder=5)
-                    else:
-                        ax.axvline(lpos, color="#999", linewidth=0.5,
-                                   linestyle=":")
-            # Label the Tcrb line once, on the top row only.
+                if lchrom == chrom and start <= lpos <= end and not is_tcrb(name):
+                    ax.axvline(lpos, color="#999", linewidth=0.5,
+                               linestyle=":")
+            # Label the Tcrb band once, on the top row only.
             if ri == 0:
                 ax.set_title("%d kb" % (res // 1000), fontsize=9)
-                for name, lchrom, lpos, ab in landmarks:
-                    if is_tcrb(name) and lchrom == chrom and start <= lpos <= end:
-                        ax.annotate("Tcrb", xy=(lpos, 0.96),
-                                    xycoords=("data", "axes fraction"),
-                                    xytext=(2, 0), textcoords="offset points",
-                                    ha="left", va="top", fontsize=7,
-                                    color="#111", zorder=6)
+                if tcrb_band is not None:
+                    bmid = 0.5 * (max(tcrb_band[0], start) + min(tcrb_band[1], end))
+                    ax.annotate("Tcrb", xy=(bmid, 0.96),
+                                xycoords=("data", "axes fraction"),
+                                xytext=(0, 0), textcoords="offset points",
+                                ha="center", va="top", fontsize=7,
+                                color="#333", zorder=6)
             if ci == 0:
                 ax.set_ylabel(cond, fontsize=9)
             ax.set_xticks([]); ax.set_yticks([])
