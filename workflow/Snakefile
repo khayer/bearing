@@ -455,30 +455,40 @@ rule loops_topology:
 
 
 # ---- Phase 6: BEARING + Hi-C figures (Hi-C only) --------------------------
-rule bearing_hic_figures:
+rule bearing_hic_triangle_one:
     input: pvalue=out("pvalue.done"), psample=out("pvalue_samples.done"), regions=REGIONS
-    output: done=out("figures.done")
+    output: out("figures", "triangle", "{cmp}", "triangle.done")
+    wildcard_constraints: cmp=r"[A-Za-z0-9]+_vs_[A-Za-z0-9]+"
     params:
-        contacts=lambda wc: " ".join(
-            "--contact %s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))))
-            for c in HIC if c in CONDS),
-        loops=lambda wc: " ".join(
-            "--loops %s=%s" % (c, _abs_hic(HIC[c]["loops"]))
-            for c in HIC if c in CONDS and HIC[c].get("loops")),
+        cond=lambda wc: wc.cmp.split("_vs_")[-1],
+        subdir=lambda wc: out("figures", "triangle", wc.cmp),
+        cool_a=lambda wc: _abs_hic(HIC[REF]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))),
+        cool_b=lambda wc: _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))),
+        loops_a=lambda wc: ("--loops-a %s" % _abs_hic(HIC[REF]["loops"])) if HIC.get(REF, {}).get("loops") else "",
+        loops_b=lambda wc: ("--loops-b %s" % _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["loops"])) if HIC.get(wc.cmp.split("_vs_")[-1], {}).get("loops") else "",
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
     shell:
-        "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
-        "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
-        "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
+        "python {BIN}/bearing_hic_plot_triangle.py "
+        "--contact-a {params.cool_a} --contact-b {params.cool_b} "
+        "--qcat-a {OUT}/{REF}_rep1.qcat.bgz --qcat-b {OUT}/{params.cond}_rep1.qcat.bgz "
+        "--diff-qcat {OUT}/compare/diff_{wildcards.cmp}.qcat.bgz "
+        "--pval-a {OUT}/pvalue/{REF}_rep1.stats.tsv --pval-b {OUT}/pvalue/{params.cond}_rep1.stats.tsv "
+        "--pval-diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv --pval-cutoff 0.05 "
+        "{params.loops_a} {params.loops_b} "
+        "--resolution {params.res} --rgb-hic --rgb-palette red-green "
+        "--regions-file {input.regions} --gtf {GTF} "
         "--categories {OUT}/DN_rep1_cats.json "
-        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run; "
-        # only mark done if PDFs were actually produced (guards against silent skips)
-        "if [ -n \"$(find {OUT}/figures/triangle -name '*.pdf' -print -quit 2>/dev/null)\" ]; then "
-        "touch {output.done}; "
-        "else echo 'ERROR: triangle batch produced no PDFs in {OUT}/figures/triangle "
-        "(all comparisons likely skipped -- check per-sample p-value inputs and the "
-        "batch stdout for [SKIP] lines)' >&2; exit 1; fi"
+        "--label-a {REF} --label-b {params.cond} "
+        "--outdir {params.subdir}; "
+        # only mark done if PDFs were produced in this comparison's subfolder
+        "if [ -n \"$(find {params.subdir} -name '*.pdf' -print -quit 2>/dev/null)\" ]; then "
+        "touch {output}; "
+        "else echo 'ERROR: triangle plot produced no PDFs in {params.subdir}' >&2; exit 1; fi"
+
+rule bearing_hic_figures:
+    input: [out("figures", "triangle", "%s" % c, "triangle.done") for c in COMPARISONS]
+    output: done=touch(out("figures.done"))
 
 # Combined Hi-C + BEARING browser figures (bearing_hic_combined_plot.py, a
 # drop-in for the triangle plotter). Same contacts/loops/p-values/RGB; written
