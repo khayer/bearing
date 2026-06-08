@@ -124,6 +124,7 @@ def all_targets():
     ]
     if HAS_HIC:
         t += [out("figures.done"),
+              out("figures_combined.done"),
               out("hic", "tad.done"),
               out("hic", "compartment.done"),
               out("hic", "contact_isolation.done"),
@@ -368,7 +369,7 @@ rule bes_loop_anchor:
     shell:
         "python {BIN}/bes_loop_anchor_enrichment.py "
         "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
-        "--loops {params.loops} --out {output}"
+        "--loops {params.loops} --categories {OUT}/DN_rep1_cats.json --out {output}"
 
 rule bes_differential_loops:
     input: pvalue=out("pvalue.done")
@@ -380,7 +381,8 @@ rule bes_differential_loops:
     shell:
         "python {BIN}/bes_differential_loops.py "
         "--loops-a {params.loops_a} --loops-b {params.loops_b} "
-        "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv --out {output}"
+        "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--categories {OUT}/DN_rep1_cats.json --out {output}"
 
 rule loops_topology:
     input:
@@ -406,7 +408,28 @@ rule bearing_hic_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures --no-pvals --triangle --run"
+        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run"
+
+# Combined Hi-C + BEARING browser figures (bearing_hic_combined_plot.py, a
+# drop-in for the triangle plotter). Same contacts/loops/p-values/RGB; written
+# to figures/combined so the two figure styles sit in sibling folders.
+rule bearing_hic_combined_figures:
+    input: pvalue=out("pvalue.done"), regions=REGIONS
+    output: done=touch(out("figures_combined.done"))
+    params:
+        contacts=lambda wc: " ".join(
+            "--contact %s=%s" % (c, _abs_hic(HIC[c]["cool"].replace("{res}", str(P["hic"]["contact_resolution"]))))
+            for c in HIC if c in CONDS),
+        loops=lambda wc: " ".join(
+            "--loops %s=%s" % (c, _abs_hic(HIC[c]["loops"]))
+            for c in HIC if c in CONDS and HIC[c].get("loops")),
+        res=P["hic"]["contact_resolution"]
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
+        "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
+        "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
+        "--outdir {OUT}/figures/combined --combined --rgb-hic --rgb-palette red-green --run"
 
 
 # ---- Phase 7: Hi-C analyses (Hi-C only) -----------------------------------

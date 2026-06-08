@@ -166,6 +166,24 @@ def bins_in_intervals(by, kl_cols, ivs):
     return abs_bes, sig, kl
 
 
+def _track_namer(categories_path):
+    """kl_1..6 (1-indexed) -> display name via categories JSON, else strip kl_."""
+    mapping = {}
+    if categories_path and os.path.exists(categories_path):
+        try:
+            import json
+            cats = json.load(open(categories_path)).get("categories", {})
+            for k, v in cats.items():
+                name = v[0] if isinstance(v, (list, tuple)) else str(v)
+                mapping["kl_%d" % (int(k) + 1)] = name
+        except (ValueError, KeyError, TypeError):
+            mapping = {}
+
+    def namer(col):
+        return mapping.get(col, col.replace("kl_", ""))
+    return namer
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -174,9 +192,12 @@ def main():
     ap.add_argument("--diff", required=True, help="diff_<A>_vs_<B>.stats.tsv")
     ap.add_argument("--slop", type=int, default=0,
                     help="extra bp padding for anchor overlap (default 0)")
+    ap.add_argument("--categories", default=None,
+                    help="optional categories JSON to label kl_N tracks by name")
     ap.add_argument("--out", required=True, help="output per-class summary TSV")
     args = ap.parse_args()
 
+    namer = _track_namer(args.categories)
     comp = parse_comparison_name(args.diff)
     la = read_loops(args.loops_a)
     lb = read_loops(args.loops_b)
@@ -190,7 +211,7 @@ def main():
     for cls in ("gained", "lost", "shared"):
         ivs = anchor_intervals(classes[cls])
         abs_bes, sig, kl = bins_in_intervals(by, kl_cols, ivs)
-        dom = max(kl, key=kl.get).replace("kl_", "") if (kl_cols and abs_bes) else ""
+        dom = namer(max(kl, key=kl.get)) if (kl_cols and abs_bes) else ""
         stats[cls] = (len(classes[cls]), len(abs_bes), mean(abs_bes), sig, dom)
 
     fisher_p = "NA"

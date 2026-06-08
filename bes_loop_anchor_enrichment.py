@@ -92,16 +92,40 @@ def overlaps_anchor(lookup, chrom, bstart, bend):
     return False
 
 
+def _track_namer(categories_path):
+    """Return f(kl_col)->display name. Maps kl_1..6 (1-indexed) via a categories
+    JSON {"categories": {"0": ["ATAC", ...], ...}} when provided; otherwise just
+    strips the kl_ prefix (handles kl_CTCF-style names already)."""
+    mapping = {}
+    if categories_path and os.path.exists(categories_path):
+        try:
+            import json
+            cats = json.load(open(categories_path)).get("categories", {})
+            # 0-indexed categories -> 1-indexed kl columns
+            for k, v in cats.items():
+                name = v[0] if isinstance(v, (list, tuple)) else str(v)
+                mapping["kl_%d" % (int(k) + 1)] = name
+        except (ValueError, KeyError, TypeError):
+            mapping = {}
+
+    def namer(col):
+        return mapping.get(col, col.replace("kl_", ""))
+    return namer
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--diff", required=True, help="diff_<A>_vs_<B>.stats.tsv")
     ap.add_argument("--loops", required=True, help="loop BEDPE for the condition")
     ap.add_argument("--out", required=True, help="output summary TSV (one row)")
+    ap.add_argument("--categories", default=None,
+                    help="optional categories JSON to label kl_N tracks by name")
     ap.add_argument("--bins-out", default=None,
                     help="optional per-bin labelled TSV (bin, stratum, BES, fdr)")
     args = ap.parse_args()
 
+    namer = _track_namer(args.categories)
     comp = parse_comparison_name(args.diff)
     lookup = build_anchor_lookup(read_loops(args.loops))
 
@@ -153,7 +177,7 @@ def main():
     def mean(xs):
         return (sum(xs) / len(xs)) if xs else 0.0
 
-    a_dom = max(anchor["kl"], key=anchor["kl"].get).replace("kl_", "") if (kl_cols and anchor["n"]) else ""
+    a_dom = namer(max(anchor["kl"], key=anchor["kl"].get)) if (kl_cols and anchor["n"]) else ""
 
     with open(args.out, "w", newline="") as out:
         w = csv.writer(out, delimiter="\t")
