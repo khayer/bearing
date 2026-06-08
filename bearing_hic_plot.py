@@ -703,7 +703,17 @@ def load_loops(loops_path, chrom, start, end):
                 continue
             c1, s1, e1 = parts[0], int(parts[1]), int(parts[2])
             c2, s2, e2 = parts[3], int(parts[4]), int(parts[5])
-            score = float(parts[6]) if len(parts) > 6 else 1.0
+            # Column 7+ varies by caller: some BEDPE put a numeric score there,
+            # others (e.g. Mustache merged loops) put an anchor-name string like
+            # 'AnchorA_3000_num365_'. Use the first parseable float at/after
+            # col 6; fall back to 1.0 if none (loops are drawn unweighted).
+            score = 1.0
+            for tok in parts[6:]:
+                try:
+                    score = float(tok)
+                    break
+                except ValueError:
+                    continue
             if c1 != chrom or c2 != chrom:
                 continue
             # Keep if either anchor overlaps the region

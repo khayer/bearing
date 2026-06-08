@@ -257,6 +257,45 @@ def _prepare_forward_oriented_diff_assets(cond: str, ref: str, comp_dir: Path, r
 
 def _count_significant_bins_in_region(bw_path: Path, chrom: str, start: int, end: int,
                                       cutoff_neglog10: float) -> int:
+    # sample_pval() may hand us a .stats.tsv (preferred when present) or a
+    # .neglog10p.bw. Count significant bins from whichever format applies.
+    if str(bw_path).lower().endswith(".tsv"):
+        count = 0
+        with open(bw_path) as fh:
+            header = fh.readline().rstrip("\n").split("\t")
+            try:
+                ci, si, ei = header.index("chrom"), header.index("start"), header.index("end")
+            except ValueError:
+                return 0
+            nlp_i = next((i for i, h in enumerate(header)
+                          if h.lower() in ("neglog10p", "neg_log10_p", "-log10p")), None)
+            p_i = next((i for i, h in enumerate(header) if h.lower() == "pval"), None)
+            for line in fh:
+                f = line.rstrip("\n").split("\t")
+                if len(f) <= max(ci, ei):
+                    continue
+                if f[ci] != chrom and f[ci] != (chrom[3:] if chrom.startswith("chr") else "chr" + chrom):
+                    continue
+                try:
+                    bs, be = int(f[si]), int(f[ei])
+                except ValueError:
+                    continue
+                if be < start or bs > end:
+                    continue
+                try:
+                    if nlp_i is not None:
+                        nlp = abs(float(f[nlp_i]))
+                    elif p_i is not None:
+                        pv = float(f[p_i])
+                        nlp = -math.log10(pv) if pv > 0 else 0.0
+                    else:
+                        continue
+                except (ValueError, IndexError):
+                    continue
+                if nlp >= cutoff_neglog10:
+                    count += 1
+        return count
+
     try:
         import pyBigWig
     except ImportError as exc:
