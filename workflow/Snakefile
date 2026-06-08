@@ -408,7 +408,7 @@ rule bearing_hic_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --run"
+        "--outdir {OUT}/figures/triangle --triangle --rgb-hic --rgb-palette red-green --diff-pvals-only --run"
 
 # Combined Hi-C + BEARING browser figures (bearing_hic_combined_plot.py, a
 # drop-in for the triangle plotter). Same contacts/loops/p-values/RGB; written
@@ -429,7 +429,7 @@ rule bearing_hic_combined_figures:
         "python {BIN}/batch_bearing_hic_plots.py --sheet {OUT}/samples.bearing.tsv "
         "--regions-file {input.regions} --reference-condition {REF} {params.contacts} {params.loops} "
         "--comparison-dir {OUT}/compare --gtf {GTF} --results-dir {OUT}/pvalue "
-        "--outdir {OUT}/figures/combined --combined --rgb-hic --rgb-palette red-green --run"
+        "--outdir {OUT}/figures/combined --combined --rgb-hic --rgb-palette red-green --diff-pvals-only --run"
 
 
 # ---- Phase 7: Hi-C analyses (Hi-C only) -----------------------------------

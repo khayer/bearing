@@ -367,6 +367,11 @@ def main() -> int:
     ap.add_argument("--comparison-dir", default=None, help="Directory containing compare_qcat diff_*.qcat.bgz files (optional).")
     ap.add_argument("--outdir", default="hic_batch", help="Top-level output directory for plots.")
     ap.add_argument("--triangle", action="store_true", help="Use bearing_hic_plot_triangle.py for generated figures.")
+    ap.add_argument("--combined", action="store_true", help="Use bearing_hic_combined_plot.py (combined Hi-C + BEARING browser) for generated figures.")
+    ap.add_argument("--diff-pvals-only", action="store_true",
+                    help="Render the differential (B-A) p-value track but do NOT "
+                         "require or pass per-sample p-value tracks. Use when the "
+                         "pipeline only computes per-comparison diff p-values.")
 
     ap.add_argument("--highlights", default=None, help="Optional BED for highlighted regions.")
     ap.add_argument("--gtf", default=None, help="Optional GTF for genes.")
@@ -428,7 +433,9 @@ def main() -> int:
     regions_path = _resolve(args.regions_file, Path.cwd())
     results_dir = _resolve(args.results_dir, Path.cwd())
     outdir = _resolve(args.outdir, Path.cwd())
-    bearing_plot = script_dir / ("bearing_hic_plot_triangle.py" if args.triangle else "bearing_hic_plot.py")
+    bearing_plot = script_dir / (
+        "bearing_hic_combined_plot.py" if getattr(args, "combined", False)
+        else ("bearing_hic_plot_triangle.py" if args.triangle else "bearing_hic_plot.py"))
 
     if not sheet_path.exists():
         raise SystemExit(f"ERROR: missing sheet: {sheet_path}")
@@ -512,7 +519,7 @@ def main() -> int:
     ref_contact = _resolve(contact_map[ref], Path.cwd())
 
     ref_required = [ref_qcat, ref_contact]
-    if not args.no_pvals:
+    if not args.no_pvals and not args.diff_pvals_only:
         ref_required.append(ref_pval)
     for p in ref_required:
         if not p.exists():
@@ -539,7 +546,7 @@ def main() -> int:
         cond_contact = _resolve(contact_map[cond], Path.cwd())
 
         required_inputs = [cond_qcat, cond_contact]
-        if not args.no_pvals:
+        if not args.no_pvals and not args.diff_pvals_only:
             required_inputs.append(cond_pval)
         missing = [p for p in required_inputs if not p.exists()]
         if missing:
@@ -604,7 +611,7 @@ def main() -> int:
         if categories_yaml:
             cmd.extend(["--categories", str(categories_yaml)])
 
-        if not args.no_pvals:
+        if not args.no_pvals and not args.diff_pvals_only:
             cmd.extend([
                 "--pval-a", str(ref_pval),
                 "--pval-b", str(cond_pval),
