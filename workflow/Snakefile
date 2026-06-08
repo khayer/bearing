@@ -111,13 +111,14 @@ def all_targets():
         out("region_qc.done"),
         out("pvalue.done"),
         out("regional", "consolidated_enrichment.tsv"),
+        out("regional", "consolidated_enrichment_cbe.tsv"),
         out("regional", "panel_E_heatmap.pdf"),
         out("calibration.done"),
         out("decomposition.done"),
         out("benchmark", "recovery.done"),
         out("paper_figures", "graphical_abstract_panel3.png"),
         out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
-        out("paper_figures", "suppSXX_crosslocus_ebko_survey.pdf"),
+        out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
     ]
     if HAS_HIC:
         t += [out("figures.done"),
@@ -320,6 +321,29 @@ rule regional_consolidate:
     input: expand(out("regional", "enrich_{cmp}_tcrb_regions_v5.tsv"), cmp=COMPARISONS)
     output: tsv=out("regional", "consolidated_enrichment.tsv"),
             pdf=out("regional", "panel_E_heatmap.pdf")
+    shell:
+        "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} "
+        "--out {output.tsv} --heatmap-out {output.pdf} "
+        "--comparisons " + " ".join(COMPARISONS)
+
+# CBE regional enrichment: same machinery as tcrb_regions_v5, run over the
+# CTCF-binding-element BED (annotations/cbe_mm10.bed, 24 CBEs in the Tcrb
+# locus). Results land in their own files (consolidated_enrichment_cbe.tsv /
+# cbe_enrichment_heatmap.pdf) so they do not mix with the region-panel output.
+rule regional_enrichment_cbe:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "enrich_{cmp}_cbe.tsv")
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/regional_enrichment.py batch "
+        "--diff-table {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--regions {BIN}/annotations/cbe_mm10.bed --locus chr6:40790000-41690000 "
+        "--out {output}"
+
+rule regional_consolidate_cbe:
+    input: expand(out("regional", "enrich_{cmp}_cbe.tsv"), cmp=COMPARISONS)
+    output: tsv=out("regional", "consolidated_enrichment_cbe.tsv"),
+            pdf=out("regional", "cbe_enrichment_heatmap.pdf")
     shell:
         "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} "
         "--out {output.tsv} --heatmap-out {output.pdf} "
@@ -585,14 +609,64 @@ rule fig6b_igh_decomp:
         "--filename-pattern 'diff_*.stats.tsv' "
         "--out {params.prefix}"
 
+# ---- Consensus-Q diagnostic chain (isolated; does NOT touch canonical results)
+# Re-scores against an element-wise-median consensus Q to test whether the
+# genome-wide CTCF/Cohesin-dominated DN-vs-EbKO shift seen in the cross-locus
+# survey collapses under a comparability-robust Q. All outputs live under
+# results/consensusQ/ so the canonical compare/pvalue results are untouched.
+rule compare_consensusq:
+    input: sheet=out("samples.qcat.tsv"), score=out("score.done"), regions=REGIONS
+    output: done=touch(out("consensusQ", "compare.done"))
+    threads: 10
+    resources: mem_mb=200000, runtime=1440, cpus_per_task=10
+    shell:
+        "python {BIN}/compare_qcat.py --sheet {input.sheet} "
+        "--out {OUT}/consensusQ/compare "
+        "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
+        "--no-clip --workers {threads} --consensus-q"
+
+rule pvalue_consensusq:
+    input: compare=out("consensusQ", "compare.done"), perm_diff=out("perm_diff.done")
+    output: done=touch(out("consensusQ", "pvalue.done"))
+    params: n=P["n_perms"]
+    threads: 4
+    resources: mem_mb=256000, runtime=1440, cpus_per_task=4
+    shell:
+        "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
+        "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/consensusQ/compare {params.n} "
+        "{OUT}/perm/perm {OUT}/consensusQ/pvalue"
+
+rule crosslocus_ebko_survey_consensusq:
+    input: pvalue=out("consensusQ", "pvalue.done")
+    output: fig=out("paper_figures", "qc_crosslocus_ebko_survey_consensusQ.pdf"),
+            fdr=out("paper_figures", "qc_crosslocus_ebko_survey_consensusQ.fdr_counts.tsv")
+    params: prefix=out("paper_figures", "qc_crosslocus_ebko_survey_consensusQ")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/bearing_region_decomposition.py "
+        "--diff-dir {OUT}/consensusQ/pvalue "
+        "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
+        "--categories {OUT}/DN_rep1_cats.json "
+        "--filename-pattern 'diff_DN_vs_EbKO.stats.tsv' "
+        "--out {params.prefix}; "
+        "python {BIN}/crosslocus_fdr_counts.py "
+        "--diff {OUT}/consensusQ/pvalue/diff_DN_vs_EbKO.stats.tsv "
+        "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
+        "--out {output.fdr}"
+
 # Supp: cross-locus DN-vs-EbKO survey. Re-uses the existing DN_vs_EbKO diff
 # stats, decomposed across additional antigen-receptor / control loci, to test
 # whether the Igh VH-proximal DN-vs-EbKO signal is locus-specific or diffuse.
 # Restricted to the DN_vs_EbKO comparison via the filename pattern.
+# NOTE: held OUT of the manuscript pending consensus-Q resolution (the raw
+# survey shows a genome-wide CTCF/Cohesin shift consistent with an
+# architectural-track batch effect, not locus-specific biology). Output named
+# 'qc_' rather than 'suppSXX_' to mark it as diagnostic, not a paper figure.
 rule crosslocus_ebko_survey:
     input: pvalue=out("pvalue.done")
-    output: out("paper_figures", "suppSXX_crosslocus_ebko_survey.pdf")
-    params: prefix=out("paper_figures", "suppSXX_crosslocus_ebko_survey")
+    output: fig=out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
+            fdr=out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.fdr_counts.tsv")
+    params: prefix=out("paper_figures", "qc_crosslocus_ebko_survey_rawQ")
     resources: mem_mb=16000, runtime=120
     shell:
         "python {BIN}/bearing_region_decomposition.py "
@@ -600,7 +674,11 @@ rule crosslocus_ebko_survey:
         "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
         "--categories {OUT}/DN_rep1_cats.json "
         "--filename-pattern 'diff_DN_vs_EbKO.stats.tsv' "
-        "--out {params.prefix}"
+        "--out {params.prefix}; "
+        "python {BIN}/crosslocus_fdr_counts.py "
+        "--diff {OUT}/pvalue/diff_DN_vs_EbKO.stats.tsv "
+        "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
+        "--out {output.fdr}"
 
 # S7C: within-Tcrb BES-Hi-C co-localization (distinct from the pooled
 # cross-locus hic/bes_hic_crosslocus.py already wired in hic_crosslocus).
