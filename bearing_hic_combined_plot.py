@@ -646,9 +646,13 @@ def make_combined_figure(
                     & (df_full["start"] < region_end))
             df_r = df_full[mask].copy().reset_index(drop=True)
             decomp_centers = (df_r["start"].to_numpy() + df_r["end"].to_numpy()) / 2.0
-            sign = -1.0 if diff_sign == "flip" else 1.0
+            # Decomposition is fixed to the A - B convention (raw diff_i =
+            # KL_A_i - KL_B_i; positive = more active in condition A), so signal
+            # stronger in A (the reference, e.g. DN) points ABOVE the 0-line.
+            # This is intentionally independent of diff_sign, which only governs
+            # the qcat-diff / lollipop panels.
             for col in kl_cols:
-                decomp_region_vals.append(sign * df_r[col].to_numpy(dtype=float))
+                decomp_region_vals.append(df_r[col].to_numpy(dtype=float))
             decomp_names, decomp_colors = sel_names, sel_colors
             print("  {} decomposition tracks, {} bins in region".format(
                 len(decomp_names), len(df_r)))
@@ -662,6 +666,13 @@ def make_combined_figure(
     bed_features_list, bed_styles = [], []
     for bed_path in beds:
         feats = load_bed_for_region(bed_path, chrom, region_start, region_end)
+        if not feats:
+            # Locus-specific annotation (e.g. CBE at Tcrb, AgR genes at the
+            # antigen-receptor loci) -- skip the track entirely where it has no
+            # features rather than drawing an empty row.
+            print("  bed {}: no features in region, skipping track".format(
+                Path(bed_path).name))
+            continue
         k1, k2 = str(bed_path), Path(bed_path).name
         if k1 in bed_style_overrides:
             style = bed_style_overrides[k1]
@@ -875,6 +886,16 @@ def make_combined_figure(
             if drew:
                 legend_drawn = True
             ax_d.tick_params(axis="x", labelbottom=False)
+            if i == 0:
+                # Make the A - B direction explicit: up = more in A (e.g. DN).
+                ax_d.annotate(
+                    "+ {}".format(label_a), xy=(0.004, 0.97),
+                    xycoords="axes fraction", fontsize=6, ha="left", va="top",
+                    color="#444444")
+                ax_d.annotate(
+                    "- {}".format(label_b), xy=(0.004, 0.03),
+                    xycoords="axes fraction", fontsize=6, ha="left", va="bottom",
+                    color="#444444")
 
     # ---- genomic axis (bottom) ----
     draw_genomic_axis(axes["axis"], region_start, region_end, chrom)

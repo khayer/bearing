@@ -39,7 +39,10 @@ CS      = wf(config["chrom_sizes"])
 REGIONS = wf(config["regions_file"])
 GENES   = wf(config["genes_bed"])
 GTF     = wf(config.get("gtf", "")) if config.get("gtf", "") else ""
-AGR     = wf(config.get("agr_genes_bed", "")) if config.get("agr_genes_bed", "") else ""
+# annotation beds live under the bearing dir (BIN), like cbe_point_query's
+# {BIN}/annotations/cbe_mm10.bed -- resolve relative to BIN, not workflow/.
+AGR     = os.path.normpath(os.path.join(BIN, config.get("agr_genes_bed", "annotations/AgRgenes_mm10_s.bed")))
+CBE     = os.path.normpath(os.path.join(BIN, config.get("cbe_bed", "annotations/cbe_mm10.bed")))
 BL      = os.path.join(OUT, "blacklist", "merged_blacklist.bed")
 P       = config  # parameters
 SHEET   = wf(config["samples_sheet"])
@@ -113,6 +116,7 @@ def all_targets():
         out("pvalue.done"),
         out("regional", "consolidated_enrichment.tsv"),
         out("regional", "cbe_point_query.tsv"),
+        out("regional", "significant_bins_summary.tsv"),
         out("loops", "topology.done"),
         out("regional", "panel_E_heatmap.pdf"),
         out("calibration.done"),
@@ -372,6 +376,19 @@ rule cbe_point_query:
         "--cbe-bed {BIN}/annotations/cbe_mm10.bed "
         "--categories {OUT}/DN_rep1_cats.json --out {output.tsv}"
 
+# Per-region, per-sample FDR-significant bin counts. Reads the per-sample
+# stats tables (pvalue/<sample>.stats.tsv) directly, so it stands alone from
+# the (parallelized) figure jobs that previously produced this as a side effect.
+rule significant_bins_summary:
+    input: psample=out("pvalue_samples.done"), regions=REGIONS
+    output: tsv=out("regional", "significant_bins_summary.tsv")
+    resources: mem_mb=16000, runtime=60
+    params: fdr=P.get("fdr", 0.05)
+    shell:
+        "python {BIN}/significant_bins_summary.py "
+        "--pvalue-dir {OUT}/pvalue --regions {input.regions} "
+        "--fdr {params.fdr} --out {output.tsv}"
+
 # ---- Loop topology (#2 anchor-stratified BES, #3 differential loops) -------
 # B-condition of comparison REF_vs_<c> is <c>. #2 needs <c>'s loops; #3 needs
 # both REF and <c> loops. These run only over comparisons whose required loop
@@ -480,6 +497,7 @@ rule bearing_hic_triangle_one:
         "--no-loops-on-triangle "
         "--regions-file {input.regions} --gtf {GTF} "
         "--categories {OUT}/DN_rep1_cats.json "
+        "--bed {AGR} --bed {CBE} "
         "--label-a {REF} --label-b {params.cond} "
         "--outdir {params.subdir}; "
         # only mark done if PDFs were produced in this comparison's subfolder
@@ -527,6 +545,7 @@ rule bearing_hic_combined_one:
         "--show-hic A,B,diff --resolution {params.res} "
         "--regions-file {input.regions} --gtf {GTF} "
         "--categories {OUT}/DN_rep1_cats.json "
+        "--bed {AGR} --bed {CBE} "
         "--label-a {REF} --label-b {params.cond} "
         "--outdir {params.subdir}; "
         # only mark done if PDFs were produced in this comparison's subfolder
