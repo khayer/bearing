@@ -9,7 +9,7 @@ USAGE
 -----
     python3 bigwig_to_qcat.py \
         --bw  atac.bw rnaseq_plus.bw rnaseq_minus.bw ctcf.bw cohesin.bw \
-               h3k27ac.bw enh4c.bw dj14c.bw dj24c.bw biv_tss.bw \
+               h3k27ac.bw \
         --out  my_experiment.qcat.bgz \
         --genome mm10
 
@@ -92,9 +92,6 @@ ALL_CATEGORIES = [
     ("CTCF",                       "#ff2200"),
     ("Cohesin",                    "#8b0000"),
     ("H3K27ac",                    "#00e676"),
-    ("Enhancer 4C",                "#c9a0ff"),
-    ("DJ1 4C",                     "#7b2fff"),
-    ("DJ2 4C",                     "#4b0082"),
     ("Bivalent/Poised TSS",        "#cd5c5c"),
     ("Flanking Bivalent TSS/Enh",  "#e9967a"),
     ("Bivalent Enhancer",          "#bdb76b"),
@@ -103,7 +100,7 @@ ALL_CATEGORIES = [
     ("Quiescent/Low",              "#ffffff"),
 ]
 MIN_STATES = 5
-MAX_STATES = len(ALL_CATEGORIES)  # 15
+MAX_STATES = len(ALL_CATEGORIES)
 
 # Placeholder built-in feature sets for mm10 around the TCRb locus.
 # TODO: replace with genome-wide coordinates from ENCODE/Ensembl BED files.
@@ -1303,7 +1300,8 @@ def write_blacklist_bed(flagged_dict, chrom_sizes, out_path, bin_size=BIN_SIZE,
 def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
                          normalize_method, neg_strand_states,
                          regions_for_chrom, temp_dir, blacklist=None,
-                         categories=None, min_signal_per_track=None):
+                         categories=None, min_signal_per_track=None,
+                         cohort_ref=None):
     """Compute per-chromosome P matrix and cache to a temp .npz file.
 
     Returns:
@@ -1362,6 +1360,7 @@ def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
         signal_matrix = normalize_signal_matrix(
             signal_matrix,
             method=normalize_method,
+            cohort_ref=cohort_ref,
         )
 
     P = signals_to_prob(signal_matrix)
@@ -1388,11 +1387,17 @@ def _score_chrom_from_cache(chrom, q, npz_path, min_signal, normalize_score,
     bins = data["bins"]
     P = data["P"]
     raw_clipped = data["raw_clipped"]
+    raw_abs = data["raw_abs"]
 
     scores, n_masked = kl_scores_per_bin(
         P,
         q,
-        raw_signal_matrix=raw_clipped,
+        # Floor on the PRE-normalization raw signal (raw_abs), not the
+        # post-normalization raw_clipped, so min_signal gates true data
+        # presence and the scorable-bin set is identical whether or not
+        # normalization is applied. In an un-normalized run raw_abs ==
+        # raw_clipped, so this does not change default behavior.
+        raw_signal_matrix=raw_abs,
         min_signal=min_signal,
         normalize_score=normalize_score,
     )
@@ -1485,7 +1490,7 @@ def quantile_normalize_columns(signal_matrix):
     so that all tracks share the same global signal distribution.
 
     This removes the dynamic range imbalance between broad tracks (e.g.
-    H3K27ac, RNAseq) and focal tracks (e.g. CTCF, 4C viewpoints) before the
+    H3K27ac, RNAseq) and focal tracks (e.g. CTCF) before the
     joint probability normalization, ensuring no single track dominates Q
     simply because it is broadly active genome-wide.
 
@@ -1570,8 +1575,58 @@ def nonzero_quantile_normalize_columns(signal_matrix):
     return normalized
 
 
-def normalize_signal_matrix(signal_matrix, method="nonzero-quantile"):
-    """Apply the requested cross-track normalization method."""
+def cohort_quantile_normalize_columns(signal_matrix, cohort_ref):
+    """Map each track column onto a COHORT-WIDE per-track reference distribution.
+
+    Unlike the within-sample methods (which build the reference from this
+    sample's own tracks), the reference here is supplied per track from a
+    pooled-across-samples quantile grid (see build_cohort_quantile_reference.py).
+    Mapping a sample's track onto the shared per-track reference equalizes
+    between-sample dynamic-range differences for the same assay.
+
+    cohort_ref : (n_states, L) float array -- per-track reference quantile grid,
+                 column order matching signal_matrix columns.
+    """
+    from scipy.stats import rankdata
+    mat = np.clip(signal_matrix, 0.0, None).astype(np.float64)
+    n_bins, n_states = mat.shape
+    normalized = np.zeros_like(mat)
+    for j in range(n_states):
+        if j >= cohort_ref.shape[0]:
+            normalized[:, j] = mat[:, j]
+            continue
+        ref = np.asarray(cohort_ref[j], dtype=np.float64)
+        ref_len = ref.size
+        if ref_len == 0 or not ref.any():
+            # no cohort reference for this track -> leave values unchanged
+            normalized[:, j] = mat[:, j]
+            continue
+        col = mat[:, j]
+        nonzero_mask = col > 0
+        n_nonzero = int(nonzero_mask.sum())
+        if n_nonzero == 0:
+            continue
+        if n_nonzero == 1:
+            normalized[nonzero_mask, j] = ref[ref_len // 2]
+            continue
+        ranks = rankdata(col[nonzero_mask], method="average")
+        idx = ((ranks - 1) / (n_nonzero - 1) * (ref_len - 1)).astype(int)
+        idx = np.clip(idx, 0, ref_len - 1)
+        normalized[nonzero_mask, j] = ref[idx]
+    return normalized
+
+
+def normalize_signal_matrix(signal_matrix, method="nonzero-quantile",
+                            cohort_ref=None):
+    """Apply the requested normalization method.
+
+    method "cohort-quantile" requires cohort_ref (n_states, L); the other
+    methods normalize within the sample across its tracks.
+    """
+    if method == "cohort-quantile":
+        if cohort_ref is None:
+            raise ValueError("cohort-quantile requires a cohort reference")
+        return cohort_quantile_normalize_columns(signal_matrix, cohort_ref)
     if method == "nonzero-quantile":
         return nonzero_quantile_normalize_columns(signal_matrix)
     if method == "quantile":
@@ -2054,7 +2109,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
     jobs=1, summary_chrom=None, skip_preflight=False,
     normalize_score=False, blacklist=None, min_signal_per_track=None,
     min_signal_percentile=None, floors_tsv=None, write_floors_tsv=None,
-    sample_name=None):
+    sample_name=None, cohort_ref=None):
     try:
         import pyBigWig
     except ImportError:
@@ -2250,11 +2305,14 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                 signal_matrix = normalize_signal_matrix(
                     signal_matrix,
                     method=normalize_method,
+                    cohort_ref=cohort_ref,
                 )
 
             P = signals_to_prob(signal_matrix)
             raw_clipped = np.clip(signal_matrix, 0.0, None).astype(np.float32)
-            prob_cache[chrom] = (bins, P, raw_clipped)
+            # carry pre-normalization raw_abs so the min_signal floor gates true
+            # signal (controlled bin set across normalized/un-normalized runs)
+            prob_cache[chrom] = (bins, P, raw_clipped, raw_abs)
             if signal_plots:
                 _raw_signal_cache[chrom]  = raw_abs
                 _norm_signal_cache[chrom] = raw_clipped
@@ -2286,10 +2344,10 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
         with open(tmp_path, "w") as fh:
             bin_id = 1
             for chrom in prob_cache:
-                bins, P, raw_clipped = prob_cache[chrom]
+                bins, P, raw_clipped, raw_abs = prob_cache[chrom]
                 scores, n_masked = kl_scores_per_bin(
                     P, Q,
-                    raw_signal_matrix=raw_clipped,
+                    raw_signal_matrix=raw_abs,
                     min_signal=min_signal,
                     normalize_score=normalize_score,
                 )
@@ -2324,7 +2382,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                 tasks.append((chrom, chrom_len, bw_paths, normalize_tracks,
                               normalize_method, _neg_strand,
                               regions_for_chrom, tmp_dir, blacklist,
-                              _cats, _min_signal_per_track))
+                              _cats, _min_signal_per_track, cohort_ref))
 
             ctx = multiprocessing.get_context("spawn")
             with ctx.Pool(jobs) as pool:
@@ -2745,7 +2803,7 @@ def write_ini(qcat_path, cats_json_path, ini_path, bw_paths=None, categories=Non
     # --- bigwig tracks ---
     if bw_paths and categories:
         lines.append("# --- Input BigWig tracks (colored to match epilogos categories) ---")
-        lines.append("# For low-signal assays (e.g., RNA-seq, sparse 4C viewpoints),")
+        lines.append("# For low-signal assays (e.g., RNA-seq, sparse focal-TF peaks),")
         lines.append(f"# positive-strand max_value is set to {MIN_SIGNAL} to avoid over-amplification of noise.")
         lines.append("")
         
@@ -3009,7 +3067,7 @@ def main():
             "nonzero-only quantile normalization, which preserves low "
             "non-zero values better than the legacy method. This prevents "
             "broad tracks (e.g. H3K27ac, RNAseq) from dominating the "
-            "background Q and ensures focal tracks (e.g. CTCF, 4C) are "
+            "background Q and ensures focal tracks (e.g. CTCF) are "
             "scored on a level playing field."
         ),
     )
@@ -3024,11 +3082,23 @@ def main():
     )
     parser.add_argument(
         "--normalize-method",
-        choices=["nonzero-quantile", "quantile"],
+        choices=["nonzero-quantile", "quantile", "cohort-quantile"],
         default="nonzero-quantile",
         help=(
-            "Normalization method used with --normalize-tracks. "
-            "Default: nonzero-quantile. Use quantile for the legacy method."
+            "Normalization method used with --normalize-tracks. Default: "
+            "nonzero-quantile (within-sample, across this sample's tracks). "
+            "Use quantile for the legacy within-sample method, or "
+            "cohort-quantile to map each track onto a COHORT-WIDE per-track "
+            "reference (requires --cohort-reference), which equalizes "
+            "between-sample dynamic-range differences for the same assay."
+        ),
+    )
+    parser.add_argument(
+        "--cohort-reference", default=None, metavar="NPZ",
+        help=(
+            "Per-track cohort reference (.npz from "
+            "build_cohort_quantile_reference.py). Required for "
+            "--normalize-method cohort-quantile."
         ),
     )
     parser.add_argument(
@@ -3190,7 +3260,21 @@ def main():
 
     args = parser.parse_args()
 
-    # Apply the zero-clamp epsilon from the CLI. signals_to_prob() reads the
+    # Load the cohort-wide per-track reference once if requested. It is a
+    # (n_states, L) array keyed by track-column order, mapped onto each track.
+    cohort_ref = None
+    if args.normalize_method == "cohort-quantile":
+        if not args.cohort_reference:
+            sys.exit("ERROR: --normalize-method cohort-quantile requires "
+                     "--cohort-reference <npz>.")
+        _cref = np.load(args.cohort_reference, allow_pickle=True)
+        cohort_ref = np.asarray(_cref["ref"], dtype=np.float64)
+        print(f"  Cohort reference: {args.cohort_reference} "
+              f"({cohort_ref.shape[0]} tracks x {cohort_ref.shape[1]} quantile points)")
+    elif args.cohort_reference:
+        print("  NOTE: --cohort-reference given but --normalize-method is not "
+              "cohort-quantile; ignoring the reference.")
+
     # module-level PSEUDOCOUNT as a global at call time, so setting it here
     # (before run()) propagates to all scoring without rethreading it through
     # every call site.
@@ -3453,6 +3537,7 @@ def main():
                 chroms=chroms, regions=regions,
                 normalize_tracks=args.normalize_tracks,
                 normalize_method=args.normalize_method,
+                cohort_ref=cohort_ref,
                 normalize_score=args.normalize_score,
                 min_signal=args.min_signal,
                 min_signal_per_track=args.min_signal_per_track,
@@ -3567,6 +3652,7 @@ def main():
                               chroms=chroms, regions=regions,
                               normalize_tracks=args.normalize_tracks,
                               normalize_method=args.normalize_method,
+                              cohort_ref=cohort_ref,
                               normalize_score=args.normalize_score,
                               min_signal=args.min_signal,
                               min_signal_per_track=args.min_signal_per_track,
