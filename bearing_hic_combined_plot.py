@@ -157,7 +157,11 @@ def plot_hic_triangle(ax, mat, bin_starts, binsize, region_start, region_end,
                         edgecolor="none", linewidth=0, antialiased=False)
     ax.add_collection(pc)
     ax.set_xlim(region_start, region_end)
-    ax.set_ylim(0, max_distance / 2.0 + binsize)
+    # Cap the vertical extent at the triangle's actual apex: contacts can't span
+    # farther than the region itself, so for small regions use region_w/2 rather
+    # than max_distance/2 (which would leave whitespace above the triangle).
+    eff_max_d = min(max_distance, region_end - region_start)
+    ax.set_ylim(0, eff_max_d / 2.0 + binsize)
     ax.set_yticks([])
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
@@ -169,9 +173,12 @@ def plot_hic_triangle(ax, mat, bin_starts, binsize, region_start, region_end,
 def _add_inset_colorbar(ax, pc, cbar_label):
     if pc is None:
         return
-    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-    cax = inset_axes(ax, width="10%", height="5%", loc="upper right", borderpad=0.6)
-    cb = plt.colorbar(pc, cax=cax, orientation="horizontal")
+    # Use the native Axes.inset_axes (axes-fraction bounds) rather than
+    # axes_grid1.inset_locator, whose anchored locator can drift at draw time
+    # (frame box correct but the color gradient offset). [x0, y0, w, h] in
+    # axes fraction places the colorbar reliably at the upper-right.
+    cax = ax.inset_axes([0.80, 0.90, 0.18, 0.045])
+    cb = ax.figure.colorbar(pc, cax=cax, orientation="horizontal")
     cb.ax.tick_params(labelsize=5, length=2, pad=1)
     cb.set_label(cbar_label, fontsize=6, labelpad=1)
     vmin, vmax = pc.get_clim()
@@ -668,16 +675,20 @@ def make_combined_figure(
         bed_styles.append(style)
 
     # ---- layout ----
-    # Auto-scale so the Hi-C triangle isn't squished. The triangle's natural
-    # aspect is (max_distance/2) tall per region_w wide. Rather than forcing a
-    # fixed-width column and flattening the panel, pick a target panel HEIGHT
-    # and widen the FIGURE so width/height stays within a sane cap.
+    # Auto-scale so the Hi-C triangle fills its panel without squishing or
+    # leaving whitespace. The triangle only rises to (eff_max_d/2), where
+    # eff_max_d caps the contact distance at the region's own span -- so for a
+    # small region the panel must be SHORTER, and for a wide region WIDER.
     region_w = region_end - region_start
-    hic_height_in = max(2.2, min(5.0, 3.0))  # target Hi-C panel height (in)
-    # desired panel width = height * region_w / (max_distance/2); cap aspect.
-    aspect = (region_w / (max_distance / 2.0)) if max_distance > 0 else 2.0
-    col0_w = hic_height_in * min(max(aspect, 1.0), 4.0)  # cap at 4:1 wide
-    col0_w = max(7.0, min(16.0, col0_w))                 # sane column width
+    eff_max_d = min(max_distance, region_w) if region_w > 0 else max_distance
+    # triangle data aspect width:height = region_w : (eff_max_d/2)
+    aspect = (region_w / (eff_max_d / 2.0)) if eff_max_d > 0 else 2.0
+    aspect = min(max(aspect, 1.6), 4.5)             # cap so neither squished nor too tall
+    hic_height_in = 3.0                              # nominal target height (in)
+    col0_w = hic_height_in * aspect
+    col0_w = max(7.0, min(16.0, col0_w))             # sane Hi-C column width
+    hic_height_in = col0_w / aspect                  # honor the capped aspect
+    hic_height_in = max(1.8, min(4.5, hic_height_in))
     # column 0 is 7.3 of (7.3+2.2) of the figure width
     fig_width_in = col0_w * (7.3 + 2.2) / 7.3
     fig_width_in = max(11.0, min(22.0, fig_width_in))
