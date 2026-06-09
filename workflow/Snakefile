@@ -477,6 +477,7 @@ rule bearing_hic_triangle_one:
         "--pval-diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv --pval-cutoff 0.05 "
         "{params.loops_a} {params.loops_b} "
         "--resolution {params.res} --rgb-hic --rgb-palette red-green "
+        "--no-loops-on-triangle "
         "--regions-file {input.regions} --gtf {GTF} "
         "--categories {OUT}/DN_rep1_cats.json "
         "--label-a {REF} --label-b {params.cond} "

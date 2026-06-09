@@ -810,7 +810,8 @@ def draw_pval_diff_vertical(ax, positions, values, region_start, region_end,
 
 def draw_loops_horizontal(ax, loops, region_start, region_end,
                           highlights=None, label="", color="#4c78a8",
-                          anchor_color="#4c78a8"):
+                          anchor_color="#4c78a8", anchor_height=0.10,
+                          arc_alpha=0.45):
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
 
@@ -830,9 +831,12 @@ def draw_loops_horizontal(ax, loops, region_start, region_end,
             if a1e <= 0 or a2e <= 0 or a1s >= 1 or a2s >= 1:
                 continue
 
-            alpha = 0.35 + 0.55 * min(1.0, score / max_score)
-            ax.axvspan(a1s, a1e, color=anchor_color, alpha=alpha, zorder=1)
-            ax.axvspan(a2s, a2e, color=anchor_color, alpha=alpha, zorder=1)
+            # Short anchor boxes pinned to the baseline (default 10% height) so
+            # they don't obscure the arcs; semi-transparent so overlaps read.
+            ax.axvspan(a1s, a1e, ymin=0.0, ymax=anchor_height,
+                       color=anchor_color, alpha=0.6, zorder=1)
+            ax.axvspan(a2s, a2e, ymin=0.0, ymax=anchor_height,
+                       color=anchor_color, alpha=0.6, zorder=1)
 
             m1 = genomic_to_ax(0.5 * (s1 + e1), region_start, region_end)
             m2 = genomic_to_ax(0.5 * (s2 + e2), region_start, region_end)
@@ -841,11 +845,13 @@ def draw_loops_horizontal(ax, loops, region_start, region_end,
             if width <= 0:
                 continue
             dist_bp = abs((0.5 * (s2 + e2)) - (0.5 * (s1 + e1)))
-            height = 0.10 + 0.65 * (dist_bp / max_dist)
+            height = 0.10 + 0.80 * (dist_bp / max_dist)
 
+            # Constant low alpha on the arc so overlapping loops accumulate
+            # visually (density) rather than the strongest one painting over.
             arc = Arc(((left + right) / 2.0, 0.0), width=width, height=height,
-                      angle=0, theta1=0, theta2=180, lw=0.9,
-                      color=color, alpha=alpha, zorder=3)
+                      angle=0, theta1=0, theta2=180, lw=1.0,
+                      color=color, alpha=arc_alpha, zorder=3)
             ax.add_patch(arc)
 
     ax.set_ylabel(label, fontsize=7, labelpad=3)
