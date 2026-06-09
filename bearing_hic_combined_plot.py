@@ -663,7 +663,7 @@ def make_combined_figure(
     # ---- BED overlays ----
     beds = beds or []
     bed_style_overrides = bed_style_overrides or {}
-    bed_features_list, bed_styles = [], []
+    bed_features_list, bed_styles, bed_paths_kept = [], [], []
     for bed_path in beds:
         feats = load_bed_for_region(bed_path, chrom, region_start, region_end)
         if not feats:
@@ -684,6 +684,7 @@ def make_combined_figure(
             style = "cbe"
         bed_features_list.append(feats)
         bed_styles.append(style)
+        bed_paths_kept.append(bed_path)
 
     # ---- layout ----
     # Auto-scale so the Hi-C triangle fills its panel without squishing or
@@ -705,7 +706,7 @@ def make_combined_figure(
     fig_width_in = max(11.0, min(22.0, fig_width_in))
     fig, axes = _combined_figure_layout(
         show_rgb=rgb_hic, show_hic_list=show_hic_list, hic_height_in=hic_height_in,
-        has_insul=has_insul, num_beds=len(beds), bed_styles=bed_styles,
+        has_insul=has_insul, num_beds=len(bed_features_list), bed_styles=bed_styles,
         num_decomp=num_decomp,
         has_pval_fill=show_pval_fill and (pos_pval_diff is not None),
         fig_width_in=fig_width_in)
@@ -855,7 +856,7 @@ def make_combined_figure(
             axes["pval_fill"].set_axis_off()
 
     # ---- BED rows ----
-    for i, bed_path in enumerate(beds):
+    for i, bed_path in enumerate(bed_paths_kept):
         ax_bed = axes.get("bed_{}".format(i))
         if ax_bed is None:
             continue

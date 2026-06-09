@@ -443,8 +443,16 @@ def make_figure_triangle(
     bed_style_overrides = bed_style_overrides or {}
     bed_features_list = []
     bed_styles = []
+    bed_paths_kept = []
     for bed_path in beds:
         feats = load_bed_for_region(bed_path, chrom, region_start, region_end)
+        if not feats:
+            # Locus-specific annotations (CBE at Tcrb, AgR genes at the AgR
+            # loci): skip the track where it has no features instead of drawing
+            # an empty row.
+            print("  bed %s: no features in region, skipping track"
+                  % Path(bed_path).name)
+            continue
         # determine style: override by exact filename match or basename
         style = None
         key1 = str(bed_path)
@@ -461,8 +469,9 @@ def make_figure_triangle(
                 style = "cbe"
         bed_features_list.append(feats)
         bed_styles.append(style)
+        bed_paths_kept.append(bed_path)
 
-    fig, axes = _triangle_figure_layout(num_beds=len(beds), bed_styles=bed_styles)
+    fig, axes = _triangle_figure_layout(num_beds=len(bed_features_list), bed_styles=bed_styles)
     ax_hic_top = axes["hic_top"]
     ax_loops_a = axes["loops_a"]
     ax_loops_b = axes["loops_b"]
@@ -481,7 +490,7 @@ def make_figure_triangle(
     color_a, color_b = _palette_ab_colors(rgb_palette) if rgb_hic else ("#cc00cc", "#00a83a")
 
     # draw bed tracks if present
-    for i, bed_path in enumerate(beds or []):
+    for i, bed_path in enumerate(bed_paths_kept):
         ax_bed = axes.get(f"bed_{i}")
         if ax_bed is None:
             continue
