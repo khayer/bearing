@@ -19,6 +19,8 @@ from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 
 # canonical condition order; replicates appended in file order
 COND_ORDER = ["DN", "EbKO", "DP", "ProB", "S3T3"]
+# canonical comparison order for diff-mode summaries
+CMP_ORDER = ["DN_vs_EbKO", "DN_vs_DP", "DN_vs_ProB", "DN_vs_S3T3"]
 
 # region grouping for readability (label -> region_names, in display order)
 REGION_GROUPS = [
@@ -33,14 +35,18 @@ REGION_GROUPS = [
 
 
 def order_samples(columns):
-    samples = [c[:-4] for c in columns if c.endswith("_sig")]
+    cols = [c[:-4] for c in columns if c.endswith("_sig")]
+    is_diff = any("_vs_" in c for c in cols)
+    if is_diff:
+        ordered = [c for c in CMP_ORDER if c in cols]
+        ordered.extend(sorted(c for c in cols if c not in ordered))
+        return ordered, True
     ordered = []
     for cond in COND_ORDER:
-        reps = sorted([s for s in samples if s.rsplit("_", 1)[0] == cond])
+        reps = sorted([s for s in cols if s.rsplit("_", 1)[0] == cond])
         ordered.extend(reps)
-    # append any sample whose condition was not in COND_ORDER
-    ordered.extend([s for s in samples if s not in ordered])
-    return ordered
+    ordered.extend([s for s in cols if s not in ordered])
+    return ordered, False
 
 
 def main():
@@ -52,7 +58,7 @@ def main():
     args = ap.parse_args()
 
     df = pd.read_csv(args.summary, sep="\t").set_index("region_name")
-    samples = order_samples(df.columns)
+    samples, is_diff = order_samples(df.columns)
 
     # build ordered region list from groups (only those present), then any extras
     ordered_regions, group_bounds, group_labels = [], [], []
@@ -108,17 +114,18 @@ def main():
     ax.set_yticks(range(nrow))
     ax.set_yticklabels(ordered_regions, fontsize=7)
 
-    # condition separators (between conditions, where the prefix changes)
+    # condition separators + top labels (per-sample mode groups reps by
+    # condition; diff mode shows each comparison as its own column).
     conds = [s.rsplit("_", 1)[0] for s in samples]
-    for j in range(1, ncol):
-        if conds[j] != conds[j - 1]:
-            ax.axvline(j - 0.5, color="black", lw=1.2)
-    # condition labels along the top (just above the grid)
-    for cond in COND_ORDER:
-        idx = [j for j, c in enumerate(conds) if c == cond]
-        if idx:
-            ax.text(np.mean(idx), -0.75, cond, ha="center", va="bottom",
-                    fontsize=9, fontweight="bold")
+    if not is_diff:
+        for j in range(1, ncol):
+            if conds[j] != conds[j - 1]:
+                ax.axvline(j - 0.5, color="black", lw=1.2)
+        for cond in COND_ORDER:
+            idx = [j for j, c in enumerate(conds) if c == cond]
+            if idx:
+                ax.text(np.mean(idx), -0.75, cond, ha="center", va="bottom",
+                        fontsize=9, fontweight="bold")
 
     # region group separators + labels (placed in the LEFT margin, clear of grid)
     for (a, b), label in zip(group_bounds, group_labels):

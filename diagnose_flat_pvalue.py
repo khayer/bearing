@@ -146,6 +146,59 @@ def cross_compare(samples):
     print("    p-floor effect (compare n_perms and pooled-vs-per-bin null).")
 
 
+def null_survival_table(samples, thresholds, n_null=None):
+    """For each sample, report the implied null survival P(null >= s) at matched
+    observed-score thresholds. Since the per-bin p-value IS P(null >= observed
+    score), pval read off at a given score directly gives the null tail mass at
+    that score -- so we can compare null calibration across samples WITHOUT
+    rescoring the permutation files.
+
+    A sample whose null is inflated shows much larger survival at the same score
+    (and, if n_null is known, far more null bins above that score)."""
+    print("=" * 72)
+    print("NULL SURVIVAL  P(null >= score)  at matched observed-score thresholds")
+    print("(reconstructed from per-bin (score, pval); larger = fatter null tail)")
+    if n_null:
+        print("approx null pool N = %g  ->  trailing number is implied null bins "
+              ">= score" % n_null)
+    hdr = "%-14s" % "sample" + "".join("  s>=%-4.1f" % t for t in thresholds)
+    print(hdr)
+    for name, d in samples:
+        score = d["score"]
+        pval = d["pval"]
+        order = np.argsort(score)
+        s_sorted = score[order]
+        p_sorted = pval[order]
+        cells = []
+        for t in thresholds:
+            j = np.searchsorted(s_sorted, t, side="left")
+            if j >= len(s_sorted):
+                cells.append("    --   ")
+                continue
+            # smallest pval among bins with score >= t = tightest tail estimate
+            surv = np.nanmin(p_sorted[j:]) if j < len(p_sorted) else float("nan")
+            if n_null:
+                cells.append(" %8.1e" % surv)
+            else:
+                cells.append(" %8.1e" % surv)
+        print("%-14s" % name + "".join("  %s" % c for c in cells))
+    if n_null:
+        print("")
+        print("implied null bins >= score (survival * N):")
+        print(hdr)
+        for name, d in samples:
+            score = d["score"]; pval = d["pval"]
+            order = np.argsort(score); s_sorted = score[order]; p_sorted = pval[order]
+            cells = []
+            for t in thresholds:
+                j = np.searchsorted(s_sorted, t, side="left")
+                if j >= len(s_sorted):
+                    cells.append("    --   "); continue
+                surv = np.nanmin(p_sorted[j:]) if j < len(p_sorted) else float("nan")
+                cells.append(" %8.0f" % (surv * n_null))
+            print("%-14s" % name + "".join("  %s" % c for c in cells))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pvalue-dir", required=True)
@@ -153,6 +206,9 @@ def main():
                     help="Sample names (e.g. ProB_rep1 ProB_rep2 DN_rep1).")
     ap.add_argument("--n-perms", type=int, default=None,
                     help="n_perms used, to show the per-bin p-value floor.")
+    ap.add_argument("--n-null", type=float, default=None,
+                    help="Approx null pool size (e.g. null_bins * n_perms) to "
+                         "convert survival into an implied null-bin count.")
     ap.add_argument("--null-qcat", default=None,
                     help="Optional permutation-null qcat.bgz for the flat sample "
                          "to report the null score distribution directly.")
@@ -172,6 +228,7 @@ def main():
     for name, d in loaded:
         report_sample(name, d, args.n_perms)
     cross_compare(loaded)
+    null_survival_table(loaded, [2.0, 2.5, 3.0, 3.5], n_null=args.n_null)
 
     if args.null_qcat:
         print("=" * 72)
