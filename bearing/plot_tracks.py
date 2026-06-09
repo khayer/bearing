@@ -845,7 +845,12 @@ def draw_loops_horizontal(ax, loops, region_start, region_end,
             if width <= 0:
                 continue
             dist_bp = abs((0.5 * (s2 + e2)) - (0.5 * (s1 + e1)))
-            height = 0.10 + 0.80 * (dist_bp / max_dist)
+            # Arc is the upper half of an ellipse centered at (xc, 0); its peak
+            # sits at height/2. Use sqrt(distance) scaling so short-range loops
+            # lift off the baseline and arcs spread vertically (peak ~0.30..0.95
+            # of the track) instead of clustering flat near the anchors.
+            norm = min(1.0, (dist_bp / max_dist) ** 0.5)
+            height = 0.60 + 1.30 * norm
 
             # Constant low alpha on the arc so overlapping loops accumulate
             # visually (density) rather than the strongest one painting over.

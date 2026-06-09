@@ -376,12 +376,14 @@ def draw_kl_decomposition_track(ax, centers, vals, color, track_name,
 
 def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
                             has_insul, num_beds, bed_styles,
-                            num_decomp, has_pval_fill):
+                            num_decomp, has_pval_fill, fig_width_in=12.0):
     """Build the combined GridSpec. All data panels live in column 0 so
     genomic coordinates stay vertically aligned across the Hi-C, insulation,
     qcat and KL-decomposition panels. The legend spans column 1 over the
     qcat..genes section. Heights are in approximate inches and the figure
-    height is their sum, so panels stay consistent regardless of count."""
+    height is their sum, so panels stay consistent regardless of count.
+    fig_width_in is auto-scaled by the caller so the Hi-C triangle keeps a
+    sensible aspect (wide regions widen the figure rather than squishing)."""
     bed_styles = bed_styles or []
     rgb_h = 4.3
     qcat_h = 0.95
@@ -421,7 +423,7 @@ def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
 
     height_ratios = [h for _, h in rows]
     total_h = sum(height_ratios) + 1.2
-    fig = plt.figure(figsize=(12.0, total_h), dpi=150)
+    fig = plt.figure(figsize=(fig_width_in, total_h), dpi=150)
     gs = gridspec.GridSpec(
         len(rows), 2, figure=fig,
         width_ratios=[7.3, 2.2], height_ratios=height_ratios,
@@ -666,14 +668,25 @@ def make_combined_figure(
         bed_styles.append(style)
 
     # ---- layout ----
+    # Auto-scale so the Hi-C triangle isn't squished. The triangle's natural
+    # aspect is (max_distance/2) tall per region_w wide. Rather than forcing a
+    # fixed-width column and flattening the panel, pick a target panel HEIGHT
+    # and widen the FIGURE so width/height stays within a sane cap.
     region_w = region_end - region_start
-    hic_height_in = COL0_WIDTH_IN * (max_distance / 2.0) / region_w if region_w > 0 else 4.0
-    hic_height_in = max(2.0, min(7.0, hic_height_in))
+    hic_height_in = max(2.2, min(5.0, 3.0))  # target Hi-C panel height (in)
+    # desired panel width = height * region_w / (max_distance/2); cap aspect.
+    aspect = (region_w / (max_distance / 2.0)) if max_distance > 0 else 2.0
+    col0_w = hic_height_in * min(max(aspect, 1.0), 4.0)  # cap at 4:1 wide
+    col0_w = max(7.0, min(16.0, col0_w))                 # sane column width
+    # column 0 is 7.3 of (7.3+2.2) of the figure width
+    fig_width_in = col0_w * (7.3 + 2.2) / 7.3
+    fig_width_in = max(11.0, min(22.0, fig_width_in))
     fig, axes = _combined_figure_layout(
         show_rgb=rgb_hic, show_hic_list=show_hic_list, hic_height_in=hic_height_in,
         has_insul=has_insul, num_beds=len(beds), bed_styles=bed_styles,
         num_decomp=num_decomp,
-        has_pval_fill=show_pval_fill and (pos_pval_diff is not None))
+        has_pval_fill=show_pval_fill and (pos_pval_diff is not None),
+        fig_width_in=fig_width_in)
 
     # ---- combined RGB triangle (optional overview) ----
     if rgb_hic:
