@@ -384,6 +384,19 @@ def main():
                     help="Passed through to bigwig_to_qcat.py --min-signal "
                          "during perm scoring (default: bigwig_to_qcat.py's "
                          "own default).")
+    # Normalization must match the OBSERVED scoring so the null is on the same
+    # scale. Circular shifting preserves each track's value multiset, so
+    # quantile mapping of a shifted track equals the shifted normalized track;
+    # applying the same normalization here is exact, not approximate.
+    ap.add_argument("--normalize-tracks", action="store_true",
+                    help="Pass --normalize-tracks to bigwig_to_qcat.py during "
+                         "perm scoring (must match the observed run).")
+    ap.add_argument("--normalize-method", default=None, metavar="METHOD",
+                    help="Pass through to bigwig_to_qcat.py --normalize-method "
+                         "during perm scoring (e.g. cohort-quantile).")
+    ap.add_argument("--cohort-reference", default=None, metavar="NPZ",
+                    help="Pass through to bigwig_to_qcat.py --cohort-reference "
+                         "during perm scoring (required for cohort-quantile).")
     ap.add_argument("--no-extras", action="store_true",
                     help="Pass --no-extras to bigwig_to_qcat.py during perm "
                          "scoring (skips cats.json, tracks.ini, plots). "
@@ -743,6 +756,12 @@ def main():
                                   "--sample-name", sample]
                 if args.min_signal is not None:
                     score_cmd += ["--min-signal", str(args.min_signal)]
+                if args.normalize_tracks:
+                    score_cmd += ["--normalize-tracks"]
+                if args.normalize_method:
+                    score_cmd += ["--normalize-method", args.normalize_method]
+                if args.cohort_reference:
+                    score_cmd += ["--cohort-reference", args.cohort_reference]
                 if args.no_extras:
                     score_cmd += ["--no-extras"]
                 if args.jobs > 1:
