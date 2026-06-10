@@ -175,12 +175,12 @@ def null_survival_table(samples, thresholds, n_null=None):
             if j >= len(s_sorted):
                 cells.append("    --   ")
                 continue
-            # smallest pval among bins with score >= t = tightest tail estimate
-            surv = np.nanmin(p_sorted[j:]) if j < len(p_sorted) else float("nan")
-            if n_null:
-                cells.append(" %8.1e" % surv)
-            else:
-                cells.append(" %8.1e" % surv)
+            # P(null >= t) = pval of the bin whose score is just >= t (the
+            # LARGEST pval among bins with score >= t, i.e. the one nearest t).
+            tail_p = p_sorted[j:]
+            tail_p = tail_p[np.isfinite(tail_p)]
+            surv = np.nanmax(tail_p) if tail_p.size else float("nan")
+            cells.append(" %8.1e" % surv)
         print("%-14s" % name + "".join("  %s" % c for c in cells))
     if n_null:
         print("")
@@ -194,7 +194,8 @@ def null_survival_table(samples, thresholds, n_null=None):
                 j = np.searchsorted(s_sorted, t, side="left")
                 if j >= len(s_sorted):
                     cells.append("    --   "); continue
-                surv = np.nanmin(p_sorted[j:]) if j < len(p_sorted) else float("nan")
+                tail_p = p_sorted[j:]; tail_p = tail_p[np.isfinite(tail_p)]
+                surv = np.nanmax(tail_p) if tail_p.size else float("nan")
                 cells.append(" %8.0f" % (surv * n_null))
             print("%-14s" % name + "".join("  %s" % c for c in cells))
 

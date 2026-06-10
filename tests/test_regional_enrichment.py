@@ -166,13 +166,18 @@ chr1	900000	1000000	0.95	0.5
 
     def test_direction_only_enrichment(self):
         """Test region with all significant bins in same direction."""
+        # Region (chr1:0-300000) bins are all significant and POSITIVE; an equal
+        # number of out-of-region bins are significant and NEGATIVE, so the
+        # genome-wide directional baseline g_dir = 3 / 6 = 0.5. The region's
+        # all-positive concordance is then tested for EXCESS over that baseline
+        # (recalibrated one-sided test), not against a fixed 0.5.
         directional_pvals = """chrom	start	end	pval	bearing_score
 chr1	0	100000	0.01	1.0
 chr1	100000	200000	0.01	1.0
 chr1	200000	300000	0.01	1.0
-chr1	300000	400000	0.1	0.5
-chr1	400000	500000	0.1	0.5
-chr1	500000	600000	0.1	0.5
+chr1	300000	400000	0.01	-1.0
+chr1	400000	500000	0.01	-1.0
+chr1	500000	600000	0.01	-1.0
 chr1	600000	700000	0.1	0.5
 chr1	700000	800000	0.1	0.5
 chr1	800000	900000	0.1	0.5
@@ -201,12 +206,15 @@ chr1	900000	1000000	0.1	0.5
             )
 
             result = results[0]
-            self.assertEqual(result['k'], 3)  # 3 bins below 0.05 in region
-            self.assertEqual(result['n_locus'], 3)  # 3 bins below 0.05 total
-            self.assertEqual(result['k_pos'], 3)  # all positive direction
+            self.assertEqual(result['k'], 3)  # 3 sig bins in region
+            self.assertEqual(result['n_locus'], 6)  # 6 sig bins total (3 pos + 3 neg)
+            self.assertEqual(result['k_pos'], 3)  # region all positive
             self.assertEqual(result['k_neg'], 0)
-            # p_directional with k=3, all positive: 2 * binom.sf(2, 3, 0.5) = 0.25
-            self.assertAlmostEqual(result['p_directional'], 0.25, places=3)
+            # Recalibrated one-sided excess-concordance test against the
+            # genome-wide directional baseline g_dir = 3 / 6 = 0.5:
+            #   binom.sf(k_pos - 1, k, g_dir) = binom.sf(2, 3, 0.5) = 0.125
+            self.assertAlmostEqual(result['g_dir'], 0.5, places=6)
+            self.assertAlmostEqual(result['p_directional'], 0.125, places=3)
 
     def test_boundary_cases(self):
         """Test edge cases: zero bins, all bins, region = locus."""

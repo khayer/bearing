@@ -13,7 +13,7 @@ categories:    "../categories/mm10_6track_panel.yaml"
 chrom_sizes:   "resources/mm10.chrom.sizes"
 regions_file:  "config/regions.tsv"
 genes_bed:     "resources/mm10_genes.bed"
-agr_genes_bed: "resources/AgRgenes_mm10_s.bed"
+agr_genes_bed: "annotations/AgRgenes_mm10_s.bed"
 gtf:           "resources/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf"
 blacklist_external: "resources/mm10-blacklist.v2.bed"   # merged with detected
 

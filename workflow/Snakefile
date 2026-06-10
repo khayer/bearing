@@ -76,6 +76,18 @@ SAMPLE_OUT = {r["sample"]: r["out"] for _, r in BEARING_ROWS.iterrows()}
 REF = config["reference_condition"]
 CONDS = list(dict.fromkeys(BEARING_ROWS["condition"].tolist()))
 COMPARISONS = ["%s_vs_%s" % (REF, c) for c in CONDS if c != REF]
+
+# Regional-enrichment loci (Methods M.7): one jointly BH-corrected test family
+# per locus (regions x comparisons), using the recalibrated one-sided
+# directional test against a per-comparison genome-wide baseline g_dir.
+REGIONAL_LOCI = config.get("regional_loci", {
+    "tcrb": {"bed": "annotations/tcrb_regions_v5.bed", "window": "chr6:40790000-41690000"},
+    "igh":  {"bed": "annotations/igh_regions_v4.bed",  "window": "chr12:113000000-116100000"},
+})
+REGIONAL_PTHRESH = config.get("regional_p_thresh", 0.05)
+REGIONAL_LOCUS_RE = "|".join(REGIONAL_LOCI.keys())
+REGIONAL_CMP_RE = "|".join(COMPARISONS)
+
 PERM_INDICES = list(range(1, int(config["n_perms"]) + 1))
 
 wildcard_constraints:
@@ -114,11 +126,13 @@ def all_targets():
         out("compare.done"),
         out("region_qc.done"),
         out("pvalue.done"),
-        out("regional", "consolidated_enrichment.tsv"),
+        *expand(out("regional", "consolidated_enrichment_{locus}.tsv"),
+                locus=list(REGIONAL_LOCI.keys())),
         out("regional", "cbe_point_query.tsv"),
         out("regional", "significant_bins_summary.tsv"),
         out("loops", "topology.done"),
-        out("regional", "panel_E_heatmap.pdf"),
+        *expand(out("regional", "panel_E_heatmap_{locus}.pdf"),
+                locus=list(REGIONAL_LOCI.keys())),
         out("calibration.done"),
         out("decomposition.done"),
         out("benchmark", "recovery.done"),
@@ -210,12 +224,40 @@ rule merge_blacklist:
 # across chromosomes within a sample via --jobs. Outputs are written with
 # absolute --out paths, so no cd is needed and input bw paths (absolute, built
 # from data_dir) resolve regardless of working directory.
+# ---- optional cohort-wide per-track normalization reference ---------------
+# Built once across ALL samples when config cohort_reference: true. Each
+# score_sample job then maps its tracks onto this shared per-track reference
+# (--normalize-method cohort-quantile), equalizing between-sample dynamic-range
+# differences for the same assay. Gated by config so the default run is
+# unaffected.
+COHORT_NORM = bool(config.get("cohort_reference", False))
+COHORT_REF  = out("cohort_quantile_reference.npz")
+
+rule cohort_reference:
+    input: sheet=out("samples.bearing.tsv"), blacklist=BL
+    output: ref=COHORT_REF
+    resources: mem_mb=64000, runtime=480
+    shell:
+        "python {BIN}/build_cohort_quantile_reference.py "
+        "--sheet {input.sheet} --chrom-sizes {CS} --blacklist {input.blacklist} "
+        "--categories {CATS} --out {output.ref}"
+
+def _score_norm_flag(wc):
+    # cohort mode overrides the within-sample normalize knob with the
+    # cohort-quantile method + the reference path.
+    if COHORT_NORM:
+        return ("--normalize-tracks --normalize-method cohort-quantile "
+                "--cohort-reference %s" % COHORT_REF)
+    return P["normalize"]
+
 rule score_sample:
-    input: blacklist=BL
+    input:
+        blacklist=BL,
+        cohort=(COHORT_REF if COHORT_NORM else [])
     output: qcat=out("{sample}.qcat.bgz")
     params:
         bw=lambda wc: " ".join(SAMPLE_BW[wc.sample]),
-        minsig=P["min_signal"], norm=P["normalize"]
+        minsig=P["min_signal"], norm=_score_norm_flag
     threads: 8
     resources: mem_mb=96000, runtime=720, cpus_per_task=8
     shell:
@@ -262,9 +304,13 @@ rule region_qc:
 # aggregator then waits for all samples before the differential step (which
 # needs every condition present) runs for that permutation.
 rule perm_sample_one:
-    input: sheet=out("samples.bearing.tsv"), score=out("score.done"), blacklist=BL
+    input:
+        sheet=out("samples.bearing.tsv"), score=out("score.done"), blacklist=BL,
+        cohort=(COHORT_REF if COHORT_NORM else [])
     output: out("perm", "perm{idx}", "{sample}", "{sample}_perm{idx}.qcat.bgz")
-    params: n=P["n_perms"], shift=P["min_shift"], seed=P["seed"], minsig=P["min_signal"]
+    params:
+        n=P["n_perms"], shift=P["min_shift"], seed=P["seed"], minsig=P["min_signal"],
+        norm=_score_norm_flag
     threads: 8
     resources: mem_mb=96000, runtime=720, cpus_per_task=8
     shell:
@@ -273,6 +319,7 @@ rule perm_sample_one:
         "--only-sample {wildcards.sample} "
         "--blacklist {input.blacklist} --min-signal {params.minsig} "
         "--min-shift {params.shift} --seed {params.seed} "
+        "{params.norm} "
         "--shift-workers {threads} --jobs {threads}"
 
 # Per-index aggregator: all samples' observed nulls for this permutation exist.
@@ -340,23 +387,32 @@ rule pvalue_samples:
     output: touch(out("pvalue_samples.done"))
 
 
-# ---- Phase 5: regional enrichment -----------------------------------------
+# ---- Phase 5: regional enrichment (per locus, joint 20-test BH) -----------
+# Per-comparison rule emits RAW p_combined (--bh-by none); the consolidate rule
+# applies the joint BH across the whole region x comparison family per locus.
 rule regional_enrichment:
     input: pvalue=out("pvalue.done")
-    output: out("regional", "enrich_{cmp}_tcrb_regions_v5.tsv")
+    output: out("regional", "enrich_{cmp}_{locus}.tsv")
+    wildcard_constraints: cmp=REGIONAL_CMP_RE, locus=REGIONAL_LOCUS_RE
+    params:
+        bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[wc.locus]["bed"]),
+        window=lambda wc: REGIONAL_LOCI[wc.locus]["window"],
+        pthresh=REGIONAL_PTHRESH,
     resources: mem_mb=100000, runtime=1440
     shell:
         "python {BIN}/regional_enrichment.py batch "
         "--diff-table {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
-        "--regions {BIN}/annotations/tcrb_regions_v5.bed --locus chr6:40790000-41690000 "
-        "--out {output}"
+        "--regions {params.bed} --locus {params.window} "
+        "--p-thresh {params.pthresh} --bh-by none --out {output}"
 
 rule regional_consolidate:
-    input: expand(out("regional", "enrich_{cmp}_tcrb_regions_v5.tsv"), cmp=COMPARISONS)
-    output: tsv=out("regional", "consolidated_enrichment.tsv"),
-            pdf=out("regional", "panel_E_heatmap.pdf")
+    input: lambda wc: expand(out("regional", "enrich_{cmp}_%s.tsv" % wc.locus), cmp=COMPARISONS)
+    output: tsv=out("regional", "consolidated_enrichment_{locus}.tsv"),
+            pdf=out("regional", "panel_E_heatmap_{locus}.pdf")
+    wildcard_constraints: locus=REGIONAL_LOCUS_RE
     shell:
         "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} "
+        "--joint-bh "
         "--out {output.tsv} --heatmap-out {output.pdf} "
         "--comparisons " + " ".join(COMPARISONS)
 
@@ -376,18 +432,18 @@ rule cbe_point_query:
         "--cbe-bed {BIN}/annotations/cbe_mm10.bed "
         "--categories {OUT}/DN_rep1_cats.json --out {output.tsv}"
 
-# Per-region, per-sample FDR-significant bin counts. Reads the per-sample
-# stats tables (pvalue/<sample>.stats.tsv) directly, so it stands alone from
-# the (parallelized) figure jobs that previously produced this as a side effect.
+# Per-region, per-comparison FDR-significant bin counts from the differential
+# p-value tables (diff_<cmp>.stats.tsv). Stands alone from the (parallelized)
+# figure jobs that previously produced this as a side effect.
 rule significant_bins_summary:
-    input: psample=out("pvalue_samples.done"), regions=REGIONS
+    input: pvalue=out("pvalue.done"), regions=REGIONS
     output: tsv=out("regional", "significant_bins_summary.tsv")
     resources: mem_mb=16000, runtime=60
     params: fdr=P.get("fdr", 0.05)
     shell:
         "python {BIN}/significant_bins_summary.py "
         "--pvalue-dir {OUT}/pvalue --regions {input.regions} "
-        "--fdr {params.fdr} --out {output.tsv}"
+        "--mode diff --fdr {params.fdr} --out {output.tsv}"
 
 # ---- Loop topology (#2 anchor-stratified BES, #3 differential loops) -------
 # B-condition of comparison REF_vs_<c> is <c>. #2 needs <c>'s loops; #3 needs

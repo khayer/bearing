@@ -31,14 +31,44 @@ import csv
 import sys
 
 
+def bh_fdr(pvals):
+    """Benjamini-Hochberg q-values for a list of p-values. ASCII-only, no numpy.
+
+    Returns a list of q-values in the original order. Used to apply the joint
+    20-test BH correction across the full region x comparison family at a locus
+    (Methods M.7), rather than the per-comparison 5-test correction.
+    """
+    n = len(pvals)
+    if n == 0:
+        return []
+    order = sorted(range(n), key=lambda i: pvals[i])
+    q = [0.0] * n
+    prev = 1.0
+    # walk from largest p to smallest, enforcing monotonicity
+    for rank, i in enumerate(reversed(order)):
+        k = n - rank
+        val = min(prev, pvals[i] * n / k)
+        q[i] = val
+        prev = val
+    return q
+
+
 def read_tsv(path):
     with open(path, newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         return list(reader), (reader.fieldnames or [])
 
 
-def consolidate(tsv_paths, out_path):
-    """Stack per-comparison TSVs into one long table. Returns (rows, header)."""
+def consolidate(tsv_paths, out_path, joint_bh=False):
+    """Stack per-comparison TSVs into one long table. Returns (rows, header).
+
+    When joint_bh is True, the q_combined column is recomputed by Benjamini-
+    Hochberg across ALL stacked rows (the full region x comparison family for the
+    locus, e.g. 5 regions x 4 comparisons = 20 tests), overwriting whatever
+    per-file q_combined was present. This is the correct joint correction for
+    sub-locus claims (Methods M.7); per-comparison inputs should therefore be
+    produced with --bh-by none so their q_combined equals the raw p_combined.
+    """
     all_rows = []
     header = None
     for p in tsv_paths:
@@ -50,6 +80,19 @@ def consolidate(tsv_paths, out_path):
         all_rows.extend(rows)
     if header is None:
         sys.exit("ERROR: no readable input TSVs (no header found in any).")
+    if joint_bh:
+        if "p_combined" not in header:
+            sys.exit("ERROR: --joint-bh requires a p_combined column in inputs.")
+        if "q_combined" not in header:
+            header = header + ["q_combined"]
+        pvals = [float(r["p_combined"]) for r in all_rows]
+        qvals = bh_fdr(pvals)
+        for r, q in zip(all_rows, qvals):
+            r["q_combined"] = "%.12g" % q
+        sys.stderr.write(
+            "Applied joint BH across %d tests (overwrote q_combined).\n"
+            % len(all_rows)
+        )
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=header, delimiter="\t")
         writer.writeheader()
@@ -154,6 +197,10 @@ def main():
                          "heatmap.")
     ap.add_argument("--value-col", default="q_combined",
                     help="Column to color the heatmap by (default q_combined).")
+    ap.add_argument("--joint-bh", action="store_true",
+                    help="Recompute q_combined by BH across all stacked rows "
+                         "(the joint region x comparison family for the locus, "
+                         "Methods M.7). Inputs should use --bh-by none.")
     args = ap.parse_args()
 
     if args.from_consolidated:
@@ -168,7 +215,7 @@ def main():
     if not args.tsvs or not args.out:
         sys.exit("ERROR: provide --tsvs and --out (or use --from-consolidated).")
 
-    rows, _ = consolidate(args.tsvs, args.out)
+    rows, _ = consolidate(args.tsvs, args.out, joint_bh=args.joint_bh)
     if args.heatmap_out:
         render_heatmap(rows, args.heatmap_out, comparisons=args.comparisons,
                        value_col=args.value_col)
