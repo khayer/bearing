@@ -109,6 +109,40 @@ def equal_coverage_segments(coverage_fine, fine_edges, n_bins, keep_mask=None):
     return [s for s in segs if s[3] > s[2]]
 
 
+def uniform_bp_segments(fine_edges, keep_mask, fixed_bp, fine_bp):
+    """
+    Uniform fixed_bp-wide bins over the RETAINED fine grid (the production-style
+    fixed reference), independent of the fine-grid resolution used to build the
+    adaptive grid. fixed_bp is grouped from K = round(fixed_bp/fine_bp) fine bins,
+    breaking at gaps so a fixed bin never spans dropped space.
+    """
+    K = max(1, int(round(fixed_bp / float(fine_bp))))
+    keep_idx = np.flatnonzero(np.asarray(keep_mask, dtype=bool))
+    if keep_idx.size == 0:
+        return []
+    segs = []
+    # split retained indices into contiguous runs, then chunk each run by K
+    cuts = np.flatnonzero(np.diff(keep_idx) != 1)
+    starts = [0] + (cuts + 1).tolist()
+    ends = (cuts + 1).tolist() + [len(keep_idx)]
+    for s, e in zip(starts, ends):
+        run = keep_idx[s:e]
+        for c in range(0, len(run), K):
+            chunk = run[c:c + K]
+            lo = int(chunk[0])
+            hi = int(chunk[-1]) + 1
+            segs.append((int(fine_edges[lo]), int(fine_edges[hi]), lo, hi))
+    return segs
+
+
+def fill_full(segments, vals, n_fine):
+    """Expand a per-segment array onto the full fine grid (NaN outside segments)."""
+    arr = np.full(n_fine, np.nan)
+    for (_s, _e, lo, hi), v in zip(segments, vals):
+        arr[lo:hi] = v
+    return arr
+
+
 def aggregate_to_segments(signal_fine, fine_widths, segments):
     """
     Width-weighted mean signal per track per segment.
@@ -269,6 +303,10 @@ def main():
                          "profile; this is the FLOOR on adaptive bin width, so "
                          "lower it (e.g. 50) to allow sub-200 bins in dense "
                          "regions. Ignored in --demo mode (always 200).")
+    ap.add_argument("--fixed-bp", type=int, default=200,
+                    help="resolution (bp) of the FIXED reference grid for the "
+                         "before/after comparison (default 200 = production "
+                         "grid), independent of --fine-bp.")
     ap.add_argument("--min-signal", type=float, default=0.0,
                     help="drop fine bins below this summed-signal floor in EVERY "
                          "sample (production excludes dead regions this way; "
@@ -348,9 +386,10 @@ def main():
     segments = equal_coverage_segments(pooled, fine_edges, args.target_bins, keep_mask)
 
     keep_idx = np.flatnonzero(keep_mask)
-    # fixed grid = each RETAINED fine bin (production scores only these)
-    fixed_segments = [(int(fine_edges[i]), int(fine_edges[i + 1]), int(i), int(i + 1))
-                      for i in keep_idx]
+    # fixed reference grid = uniform --fixed-bp bins over retained territory
+    # (default 200 bp = production grid), independent of the fine-grid resolution.
+    fixed_bp = 200 if args.demo else args.fixed_bp
+    fixed_segments = uniform_bp_segments(fine_edges, keep_mask, fixed_bp, fine_bp)
 
     # equal-COUNT uniform reference over the retained span: same bin count as
     # adaptive, uniform width, gap-aware. Isolates strategy from bin count.
@@ -379,17 +418,14 @@ def main():
 
     # ---- sweep mode: resolution-vs-calibration curve ----------------------
     if args.sweep:
-        fixed_diff_keep = diff_fix              # per retained fine bin (keep_idx order)
+        fixed_diff_fine = fill_full(fixed_segments, diff_fix, n_fine)
         targets = [int(t) for t in args.sweep_bins.split(",")]
         rows = []
         for t in targets:
             segs_t = equal_coverage_segments(pooled, fine_edges, t, keep_mask)
             wt, _sc, diff_t = score_grid(segs_t)
-            # map adaptive diff back onto the fine grid, then onto retained bins
-            adiff_fine = np.full(n_fine, np.nan)
-            for j, (_s, _e, lo, hi) in enumerate(segs_t):
-                adiff_fine[lo:hi] = diff_t[j]
-            rho = spearman(adiff_fine[keep_idx], fixed_diff_keep)
+            adiff_fine = fill_full(segs_t, diff_t, n_fine)
+            rho = spearman(adiff_fine[keep_idx], fixed_diff_fine[keep_idx])
             cov_t = np.array([pooled[lo:hi].sum() for (_a, _b, lo, hi) in segs_t])
             rows.append((t, len(segs_t), cv(cov_t), rho, int(np.median(wt)), int(wt.max())))
             print("target=%5d  bins=%5d  covCV=%.3f  diff_rho=%.3f  medW=%d  maxW=%d"
@@ -435,11 +471,11 @@ def main():
     print("locus            : %s:%d-%d" % (chrom, fine_edges[0], fine_edges[-1]))
     print("excluded fine bins: %d blacklisted, %d below-floor (dead in all samples); "
           "%d of %d retained" % (n_bl, n_floor, int(keep_mask.sum()), n_fine))
-    print("fixed bins       : %d (uniform %d bp, retained only)" % (len(fixed_segments), fine_bp))
+    print("fixed bins       : %d (uniform %d bp, retained only)" % (len(fixed_segments), fixed_bp))
     print("adaptive bins    : %d (median width %d bp, range %d-%d)"
           % (len(segments), int(np.median(w_ada)), int(w_ada.min()), int(w_ada.max())))
     print("coverage-per-bin CV:")
-    print("  fixed %3d bp           (%5d bins) : %.3f" % (fine_bp, len(fixed_segments), cv_fixed))
+    print("  fixed %3d bp           (%5d bins) : %.3f" % (fixed_bp, len(fixed_segments), cv_fixed))
     print("  uniform, matched count (%5d bins) : %.3f" % (len(uniform_segments), cv_uni))
     print("  adaptive equal-coverage(%5d bins) : %.3f  <- most equal weight" % (len(segments), cv_adapt))
     print("  adaptive vs matched-uniform CV reduction: %.1fx"
@@ -474,33 +510,31 @@ def main():
         ax[0].set_title("Equal-coverage adaptive binning prototype (%s:%d-%d)"
                         % (chrom, fine_edges[0], fine_edges[-1]), fontweight="bold")
 
-        for b in fine_edges[::max(1, n_fine // 80)]:
+        fixed_starts = np.array([s[0] for s in fixed_segments], dtype=np.float64)
+        for b in fixed_starts[::max(1, len(fixed_starts) // 80)]:
             ax[1].axvline(b / 1e6, color="#94a3b8", lw=0.3)
         for (s, _e, _l, _h) in segments:
             ax[1].axvline(s / 1e6, color="#C2410C", lw=0.4)
         ax[1].set_ylabel("bin edges")
         ax[1].set_yticks([])
-        ax[1].text(0.005, 0.78, "grey = fixed %d bp" % fine_bp, transform=ax[1].transAxes,
+        ax[1].text(0.005, 0.78, "grey = fixed %d bp" % fixed_bp, transform=ax[1].transAxes,
                    fontsize=8, color="#64748b")
         ax[1].text(0.005, 0.55, "orange = adaptive (dense where coverage high)",
                    transform=ax[1].transAxes, fontsize=8, color="#C2410C")
 
-        # map retained-only fixed arrays back onto the full grid so they align
-        # with xt and break (NaN) across dropped/dead regions
-        cov_fixed_full = np.full(n_fine, np.nan)
-        cov_fixed_full[keep_idx] = cov_fixed
-        diff_fix_full = np.full(n_fine, np.nan)
-        diff_fix_full[keep_idx] = diff_fix
+        # expand retained fixed-grid arrays onto the full grid (NaN at gaps)
+        cov_fixed_full = fill_full(fixed_segments, cov_fixed, n_fine)
+        diff_fix_full = fill_full(fixed_segments, diff_fix, n_fine)
 
         ax[2].plot(xt, cov_fixed_full, color="#94a3b8", lw=0.8,
-                   label="fixed %d bp (CV=%.2f)" % (fine_bp, cv_fixed))
+                   label="fixed %d bp (CV=%.2f)" % (fixed_bp, cv_fixed))
         ax[2].bar(seg_mid, cov_adapt, width=seg_w_mb, color="#C2410C", alpha=0.55,
                   label="adaptive (CV=%.2f)" % cv_adapt)
         ax[2].set_ylabel("coverage\nper bin")
         ax[2].legend(fontsize=8, loc="upper right")
 
         ax[3].step(xt, diff_fix_full, where="mid", color="#aab2bd", lw=0.7,
-                   alpha=0.7, label="fixed %d bp" % fine_bp)
+                   alpha=0.7, label="fixed %d bp" % fixed_bp)
         ax[3].bar(seg_mid, diff_ada, width=seg_w_mb, color="#C2410C", alpha=0.8,
                   label="adaptive")
         ax[3].axhline(0, color="k", lw=0.5)
