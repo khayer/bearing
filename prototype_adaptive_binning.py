@@ -499,9 +499,9 @@ def main():
         ax[2].set_ylabel("coverage\nper bin")
         ax[2].legend(fontsize=8, loc="upper right")
 
-        ax[3].step(xt, diff_fix_full, where="mid", color="#94a3b8", lw=0.9,
-                   label="fixed %d bp" % fine_bp)
-        ax[3].bar(seg_mid, diff_ada, width=seg_w_mb, color="#1D5C8A", alpha=0.6,
+        ax[3].step(xt, diff_fix_full, where="mid", color="#aab2bd", lw=0.7,
+                   alpha=0.7, label="fixed %d bp" % fine_bp)
+        ax[3].bar(seg_mid, diff_ada, width=seg_w_mb, color="#C2410C", alpha=0.8,
                   label="adaptive")
         ax[3].axhline(0, color="k", lw=0.5)
         ax[3].set_ylabel("BEARING diff\n(%s - %s)" % (condA, condB))
