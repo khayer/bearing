@@ -147,14 +147,14 @@ def cv(x):
 # signal extraction
 # --------------------------------------------------------------------------
 def extract_real(sheet, categories_yaml, chrom_sizes_path, blacklist_path,
-                 chrom, start, end):
+                 chrom, start, end, fine_bp=FINE_BP):
     """Return {sample: (n_fine, n_tracks) signal}, fine_edges. Reuses pipeline loaders."""
     from bigwig_to_qcat import mean_signal_in_bins, NEGATIVE_STRAND_STATES
     import pyBigWig
 
     neg_cols = sorted(s - 1 for s in NEGATIVE_STRAND_STATES)
     # fine grid over the locus
-    edges = list(range(start, end, FINE_BP)) + [end]
+    edges = list(range(start, end, fine_bp)) + [end]
     bins = [(edges[i], edges[i + 1]) for i in range(len(edges) - 1)]
     fine_edges = np.array(edges, dtype=np.int64)
 
@@ -232,6 +232,11 @@ def main():
     ap.add_argument("--compare", default="A,B", help="two conditions, e.g. DN,ProB")
     ap.add_argument("--target-bins", type=int, default=1500,
                     help="number of adaptive bins (consensus segmentation)")
+    ap.add_argument("--fine-bp", type=int, default=200,
+                    help="fine-grid resolution (bp) used to build the coverage "
+                         "profile; this is the FLOOR on adaptive bin width, so "
+                         "lower it (e.g. 50) to allow sub-200 bins in dense "
+                         "regions. Ignored in --demo mode (always 200).")
     ap.add_argument("--score-method", choices=["kl", "jsd"], default="kl")
     ap.add_argument("--out-prefix", required=True)
     args = ap.parse_args()
@@ -263,8 +268,11 @@ def main():
         chrom, rng = args.locus.split(":")
         start, end = (int(v) for v in rng.split("-"))
         per_sample, fine_edges = extract_real(sheet, args.categories, args.chrom_sizes,
-                                              args.blacklist, chrom, start, end)
+                                              args.blacklist, chrom, start, end,
+                                              fine_bp=args.fine_bp)
         condA, condB = args.compare.split(",")
+
+    fine_bp = 200 if args.demo else args.fine_bp
 
     fine_widths = np.diff(fine_edges).astype(np.float64)
     n_fine = len(fine_widths)
@@ -313,11 +321,11 @@ def main():
     cv_fixed, cv_adapt = cv(cov_fixed), cv(cov_adapt)
     cv_uni = cv(cov_uni)
     print("locus            : %s:%d-%d" % (chrom, fine_edges[0], fine_edges[-1]))
-    print("fixed bins       : %d (uniform %d bp)" % (len(fixed_segments), FINE_BP))
+    print("fixed bins       : %d (uniform %d bp)" % (len(fixed_segments), fine_bp))
     print("adaptive bins    : %d (median width %d bp, range %d-%d)"
           % (len(segments), int(np.median(w_ada)), int(w_ada.min()), int(w_ada.max())))
     print("coverage-per-bin CV:")
-    print("  fixed 200 bp           (%5d bins) : %.3f" % (len(fixed_segments), cv_fixed))
+    print("  fixed %3d bp           (%5d bins) : %.3f" % (fine_bp, len(fixed_segments), cv_fixed))
     print("  uniform, matched count (%5d bins) : %.3f" % (len(uniform_segments), cv_uni))
     print("  adaptive equal-coverage(%5d bins) : %.3f  <- most equal weight" % (len(segments), cv_adapt))
     print("  adaptive vs matched-uniform CV reduction: %.1fx"
@@ -358,20 +366,20 @@ def main():
             ax[1].axvline(s / 1e6, color="#C2410C", lw=0.4)
         ax[1].set_ylabel("bin edges")
         ax[1].set_yticks([])
-        ax[1].text(0.005, 0.78, "grey = fixed 200 bp", transform=ax[1].transAxes,
+        ax[1].text(0.005, 0.78, "grey = fixed %d bp" % fine_bp, transform=ax[1].transAxes,
                    fontsize=8, color="#64748b")
         ax[1].text(0.005, 0.55, "orange = adaptive (dense where coverage high)",
                    transform=ax[1].transAxes, fontsize=8, color="#C2410C")
 
         ax[2].plot(xt, cov_fixed, color="#94a3b8", lw=0.8,
-                   label="fixed (CV=%.2f)" % cv_fixed)
+                   label="fixed %d bp (CV=%.2f)" % (fine_bp, cv_fixed))
         ax[2].bar(seg_mid, cov_adapt, width=seg_w_mb, color="#C2410C", alpha=0.55,
                   label="adaptive (CV=%.2f)" % cv_adapt)
         ax[2].set_ylabel("coverage\nper bin")
         ax[2].legend(fontsize=8, loc="upper right")
 
         ax[3].step(xt, diff_fix, where="mid", color="#94a3b8", lw=0.9,
-                   label="fixed 200 bp")
+                   label="fixed %d bp" % fine_bp)
         ax[3].bar(seg_mid, diff_ada, width=seg_w_mb, color="#1D5C8A", alpha=0.6,
                   label="adaptive")
         ax[3].axhline(0, color="k", lw=0.5)
