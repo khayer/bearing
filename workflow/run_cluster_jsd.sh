@@ -63,7 +63,8 @@ echo "== Preflight =="
 python3 "$REPO/workflow/preflight.py" --configfile "$CONFIG" --core-only
 echo
 
-SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done")
+SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
+            "$REPO/workflow/$OUT/pvalue_samples.done")
 [ "$FULL" = "1" ] && SM_TARGETS=()
 
 echo "== Dry run =="

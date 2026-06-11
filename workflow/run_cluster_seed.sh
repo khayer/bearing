@@ -71,8 +71,10 @@ echo "== Preflight =="
 python3 "$REPO/workflow/preflight.py" --configfile "$CONFIG" --core-only
 echo
 
-# Only the p-value layer is needed to compare call sets; core-only by default.
-SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done")
+# The p-value layers are needed to compare call sets AND per-sample calibration;
+# core-only by default (no Hi-C/figures).
+SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
+            "$REPO/workflow/$OUT/pvalue_samples.done")
 [ "$FULL" = "1" ] && SM_TARGETS=()
 
 echo "== Dry run =="
