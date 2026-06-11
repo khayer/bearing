@@ -57,38 +57,56 @@ NEG_STRAND_COL = 2       # 0-indexed column for RNAseq- (state 3): abs() applied
 # --------------------------------------------------------------------------
 # segmentation
 # --------------------------------------------------------------------------
-def equal_coverage_segments(coverage_fine, fine_edges, n_bins):
+def equal_coverage_segments(coverage_fine, fine_edges, n_bins, keep_mask=None):
     """
-    Build n_bins variable-width segments that each carry ~equal pooled coverage.
+    Build ~equal-coverage segments over the RETAINED fine bins.
+
+    Segments break at any gap (run of dropped bins), so a bin never spans
+    blacklisted / below-floor dead space -- the dead regions become gaps, exactly
+    as the production min_signal floor excludes them, instead of being swallowed
+    into one giant bin.
 
     coverage_fine : (n_fine,) pooled signal per fine bin (>= 0)
     fine_edges    : (n_fine + 1,) genomic coordinates of fine-bin boundaries
+    keep_mask     : (n_fine,) bool; None = keep all
     returns       : list of (start_bp, end_bp, lo_fine, hi_fine) with hi exclusive
     """
     cov = np.asarray(coverage_fine, dtype=np.float64)
-    total = cov.sum()
+    n = len(cov)
+    keep_idx = np.flatnonzero(np.ones(n, dtype=bool) if keep_mask is None
+                              else np.asarray(keep_mask, dtype=bool))
+    if keep_idx.size == 0:
+        return []
+    r_cov = cov[keep_idx]
+    total = r_cov.sum()
     if total <= 0:
-        # degenerate: fall back to uniform merge
-        idx = np.linspace(0, len(cov), n_bins + 1).round().astype(int)
+        bnd = np.linspace(0, len(keep_idx), n_bins + 1).round().astype(int)
     else:
-        cum = np.concatenate([[0.0], np.cumsum(cov)])      # (n_fine + 1,)
+        cum = np.concatenate([[0.0], np.cumsum(r_cov)])
         targets = np.linspace(0.0, total, n_bins + 1)
-        # first fine boundary whose cumulative coverage reaches each target
-        idx = np.searchsorted(cum, targets, side="left")
-        idx[0] = 0
-        idx[-1] = len(cov)
-        # enforce strictly increasing so no zero-width segments
-        for k in range(1, len(idx)):
-            if idx[k] <= idx[k - 1]:
-                idx[k] = min(idx[k - 1] + 1, len(cov))
-        idx = np.minimum(idx, len(cov))
+        bnd = np.searchsorted(cum, targets, side="left")
+        bnd[0] = 0
+        bnd[-1] = len(keep_idx)
+        for k in range(1, len(bnd)):          # strictly increasing
+            if bnd[k] <= bnd[k - 1]:
+                bnd[k] = min(bnd[k - 1] + 1, len(keep_idx))
+        bnd = np.minimum(bnd, len(keep_idx))
+
     segs = []
-    for k in range(len(idx) - 1):
-        lo, hi = int(idx[k]), int(idx[k + 1])
-        if hi <= lo:
+    for k in range(len(bnd) - 1):
+        a, b = int(bnd[k]), int(bnd[k + 1])
+        if b <= a:
             continue
-        segs.append((int(fine_edges[lo]), int(fine_edges[hi]), lo, hi))
-    return segs
+        block = keep_idx[a:b]                  # retained fine indices in this quota
+        # split the quota into contiguous runs so a bin never spans a gap
+        cuts = np.flatnonzero(np.diff(block) != 1)
+        starts = [0] + (cuts + 1).tolist()
+        ends = (cuts + 1).tolist() + [len(block)]
+        for s, e in zip(starts, ends):
+            lo = int(block[s])
+            hi = int(block[e - 1]) + 1
+            segs.append((int(fine_edges[lo]), int(fine_edges[hi]), lo, hi))
+    return [s for s in segs if s[3] > s[2]]
 
 
 def aggregate_to_segments(signal_fine, fine_widths, segments):
@@ -141,6 +159,20 @@ def cv(x):
     x = np.asarray(x, dtype=np.float64)
     m = x.mean()
     return float(x.std() / m) if m > 0 else float("nan")
+
+
+def spearman(a, b):
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    ok = np.isfinite(a) & np.isfinite(b)
+    if ok.sum() < 3:
+        return float("nan")
+    ra = np.argsort(np.argsort(a[ok]))
+    rb = np.argsort(np.argsort(b[ok]))
+    ra = ra - ra.mean()
+    rb = rb - rb.mean()
+    denom = np.sqrt((ra ** 2).sum() * (rb ** 2).sum())
+    return float((ra * rb).sum() / denom) if denom > 0 else float("nan")
 
 
 # --------------------------------------------------------------------------
@@ -237,7 +269,17 @@ def main():
                          "profile; this is the FLOOR on adaptive bin width, so "
                          "lower it (e.g. 50) to allow sub-200 bins in dense "
                          "regions. Ignored in --demo mode (always 200).")
+    ap.add_argument("--min-signal", type=float, default=0.0,
+                    help="drop fine bins below this summed-signal floor in EVERY "
+                         "sample (production excludes dead regions this way; "
+                         "use your config value, e.g. 0.1). Default 0 = off.")
     ap.add_argument("--score-method", choices=["kl", "jsd"], default="kl")
+    ap.add_argument("--sweep", action="store_true",
+                    help="run several --target-bins values and plot coverage-CV "
+                         "and differential-preservation (Spearman vs fixed) vs "
+                         "bin count, in one figure (resolution-vs-calibration curve).")
+    ap.add_argument("--sweep-bins", default="400,800,1500,3000,6000",
+                    help="comma-separated target-bin counts for --sweep")
     ap.add_argument("--out-prefix", required=True)
     args = ap.parse_args()
 
@@ -281,21 +323,39 @@ def main():
     pooled = np.zeros(n_fine, dtype=np.float64)
     for mat in per_sample.values():
         pooled += mat.sum(axis=1)
-    segments = equal_coverage_segments(pooled, fine_edges, args.target_bins)
 
-    # fixed grid = the fine 200 bp grid itself
-    fixed_segments = [(int(fine_edges[i]), int(fine_edges[i + 1]), i, i + 1)
-                      for i in range(n_fine)]
+    # keep_mask: drop fine bins that production would not score, so equal-coverage
+    # bins never span dead/blacklisted space (the source of giant merged bins).
+    #  - blacklist: artifact / unmappable regions (when --blacklist given, non-demo)
+    #  - min_signal floor: a bin is dropped only if it is below floor in EVERY
+    #    sample (dead everywhere); a bin active in any sample is kept, because
+    #    that is exactly where a differential can live.
+    keep_mask = np.ones(n_fine, dtype=bool)
+    n_bl = n_floor = 0
+    if (not args.demo) and args.blacklist:
+        from bigwig_to_qcat import load_blacklist, bins_overlapping_blacklist
+        bl = load_blacklist(args.blacklist)
+        fine_bins = [(int(fine_edges[i]), int(fine_edges[i + 1])) for i in range(n_fine)]
+        bl_mask = bins_overlapping_blacklist(fine_bins, bl, chrom)
+        n_bl = int(bl_mask.sum())
+        keep_mask &= ~bl_mask
+    if args.min_signal > 0:
+        per_sample_total = np.vstack([m.sum(axis=1) for m in per_sample.values()])
+        alive_anywhere = per_sample_total.max(axis=0) >= args.min_signal
+        n_floor = int((~alive_anywhere & keep_mask).sum())
+        keep_mask &= alive_anywhere
 
-    # equal-COUNT uniform reference: same number of bins as adaptive, uniform
-    # width. Isolates the binning STRATEGY (where boundaries go) from the bin
-    # COUNT, so the coverage-CV comparison is strategy vs strategy.
-    uni_idx = np.linspace(0, n_fine, len(segments) + 1).round().astype(int)
-    uniform_segments = []
-    for k in range(len(uni_idx) - 1):
-        lo, hi = int(uni_idx[k]), int(uni_idx[k + 1])
-        if hi > lo:
-            uniform_segments.append((int(fine_edges[lo]), int(fine_edges[hi]), lo, hi))
+    segments = equal_coverage_segments(pooled, fine_edges, args.target_bins, keep_mask)
+
+    keep_idx = np.flatnonzero(keep_mask)
+    # fixed grid = each RETAINED fine bin (production scores only these)
+    fixed_segments = [(int(fine_edges[i]), int(fine_edges[i + 1]), int(i), int(i + 1))
+                      for i in keep_idx]
+
+    # equal-COUNT uniform reference over the retained span: same bin count as
+    # adaptive, uniform width, gap-aware. Isolates strategy from bin count.
+    uniform_segments = equal_coverage_segments(
+        np.ones(n_fine), fine_edges, len(segments), keep_mask)
 
     # coverage per bin, all grids
     cov_fixed = np.array([pooled[lo:hi].sum() for (_a, _b, lo, hi) in fixed_segments])
@@ -316,12 +376,66 @@ def main():
         return widths, out, diff
 
     w_fix, sc_fix, diff_fix = score_grid(fixed_segments)
+
+    # ---- sweep mode: resolution-vs-calibration curve ----------------------
+    if args.sweep:
+        fixed_diff_keep = diff_fix              # per retained fine bin (keep_idx order)
+        targets = [int(t) for t in args.sweep_bins.split(",")]
+        rows = []
+        for t in targets:
+            segs_t = equal_coverage_segments(pooled, fine_edges, t, keep_mask)
+            wt, _sc, diff_t = score_grid(segs_t)
+            # map adaptive diff back onto the fine grid, then onto retained bins
+            adiff_fine = np.full(n_fine, np.nan)
+            for j, (_s, _e, lo, hi) in enumerate(segs_t):
+                adiff_fine[lo:hi] = diff_t[j]
+            rho = spearman(adiff_fine[keep_idx], fixed_diff_keep)
+            cov_t = np.array([pooled[lo:hi].sum() for (_a, _b, lo, hi) in segs_t])
+            rows.append((t, len(segs_t), cv(cov_t), rho, int(np.median(wt)), int(wt.max())))
+            print("target=%5d  bins=%5d  covCV=%.3f  diff_rho=%.3f  medW=%d  maxW=%d"
+                  % rows[-1])
+        os.makedirs(os.path.dirname(os.path.abspath(args.out_prefix)) or ".", exist_ok=True)
+        stsv = args.out_prefix + "_sweep.tsv"
+        with open(stsv, "w") as fh:
+            fh.write("target_bins\tactual_bins\tcoverage_cv\tdiff_spearman\tmedian_width\tmax_width\n")
+            for r in rows:
+                fh.write("%d\t%d\t%.5f\t%.5f\t%d\t%d\n" % r)
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            nb = [r[1] for r in rows]
+            cvs = [r[2] for r in rows]
+            rhos = [r[3] for r in rows]
+            fig, axL = plt.subplots(figsize=(8, 5))
+            axR = axL.twinx()
+            l1 = axL.plot(nb, cvs, "o-", color="#C2410C", label="coverage-per-bin CV")
+            l2 = axR.plot(nb, rhos, "s-", color="#1D5C8A",
+                          label="differential preservation (Spearman vs fixed)")
+            axL.set_xlabel("number of adaptive bins")
+            axL.set_ylabel("coverage CV (lower = better calibration)", color="#C2410C")
+            axR.set_ylabel("diff Spearman (higher = better resolution)", color="#1D5C8A")
+            axL.set_title("Resolution vs calibration tradeoff (%s, %s-%s)"
+                          % (chrom, condA, condB), fontweight="bold")
+            axL.grid(alpha=0.25)
+            lines = l1 + l2
+            axL.legend(lines, [ln.get_label() for ln in lines], fontsize=9, loc="center right")
+            fig.tight_layout()
+            fig.savefig(args.out_prefix + "_sweep.pdf", dpi=150)
+            fig.savefig(args.out_prefix + "_sweep.png", dpi=130)
+            print("wrote %s, %s_sweep.pdf/png" % (stsv, args.out_prefix))
+        except Exception as exc:               # noqa: BLE001
+            print("wrote %s (figure skipped: %s)" % (stsv, exc))
+        return
+
     w_ada, sc_ada, diff_ada = score_grid(segments)
 
     cv_fixed, cv_adapt = cv(cov_fixed), cv(cov_adapt)
     cv_uni = cv(cov_uni)
     print("locus            : %s:%d-%d" % (chrom, fine_edges[0], fine_edges[-1]))
-    print("fixed bins       : %d (uniform %d bp)" % (len(fixed_segments), fine_bp))
+    print("excluded fine bins: %d blacklisted, %d below-floor (dead in all samples); "
+          "%d of %d retained" % (n_bl, n_floor, int(keep_mask.sum()), n_fine))
+    print("fixed bins       : %d (uniform %d bp, retained only)" % (len(fixed_segments), fine_bp))
     print("adaptive bins    : %d (median width %d bp, range %d-%d)"
           % (len(segments), int(np.median(w_ada)), int(w_ada.min()), int(w_ada.max())))
     print("coverage-per-bin CV:")
@@ -371,14 +485,21 @@ def main():
         ax[1].text(0.005, 0.55, "orange = adaptive (dense where coverage high)",
                    transform=ax[1].transAxes, fontsize=8, color="#C2410C")
 
-        ax[2].plot(xt, cov_fixed, color="#94a3b8", lw=0.8,
+        # map retained-only fixed arrays back onto the full grid so they align
+        # with xt and break (NaN) across dropped/dead regions
+        cov_fixed_full = np.full(n_fine, np.nan)
+        cov_fixed_full[keep_idx] = cov_fixed
+        diff_fix_full = np.full(n_fine, np.nan)
+        diff_fix_full[keep_idx] = diff_fix
+
+        ax[2].plot(xt, cov_fixed_full, color="#94a3b8", lw=0.8,
                    label="fixed %d bp (CV=%.2f)" % (fine_bp, cv_fixed))
         ax[2].bar(seg_mid, cov_adapt, width=seg_w_mb, color="#C2410C", alpha=0.55,
                   label="adaptive (CV=%.2f)" % cv_adapt)
         ax[2].set_ylabel("coverage\nper bin")
         ax[2].legend(fontsize=8, loc="upper right")
 
-        ax[3].step(xt, diff_fix, where="mid", color="#94a3b8", lw=0.9,
+        ax[3].step(xt, diff_fix_full, where="mid", color="#94a3b8", lw=0.9,
                    label="fixed %d bp" % fine_bp)
         ax[3].bar(seg_mid, diff_ada, width=seg_w_mb, color="#1D5C8A", alpha=0.6,
                   label="adaptive")
