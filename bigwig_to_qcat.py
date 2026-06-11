@@ -1379,7 +1379,7 @@ def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
 
 
 def _score_chrom_from_cache(chrom, q, npz_path, min_signal, normalize_score,
-                            start_id, out_tmp_path):
+                            start_id, out_tmp_path, score_method="kl"):
     """Score a chromosome (from cached npz) and write qcat rows."""
     import numpy as np
 
@@ -1400,6 +1400,7 @@ def _score_chrom_from_cache(chrom, q, npz_path, min_signal, normalize_score,
         raw_signal_matrix=raw_abs,
         min_signal=min_signal,
         normalize_score=normalize_score,
+        score_method=score_method,
     )
 
     chrom_sum = float(scores.sum())
@@ -1646,20 +1647,28 @@ def signals_to_prob(signal_matrix):
 
 
 def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
-                      normalize_score=False):
+                      normalize_score=False, score_method="kl"):
     """
-    Compute per-state S1 epilogos scores.
+    Compute per-state per-bin BEARING scores.
 
-    For each bin b and state i:
-        score_{b,i} = P_{b,i} * log2( P_{b,i} / Q_i )
+    score_method="kl" (default): clamped per-state KL contribution
+        score_{b,i} = max( P_{b,i} * log2(P_{b,i} / Q_i), 0 )
+    Unbounded above; negative (depleted) states clamped to 0.
 
-    Negative contributions (suppressed states) are clamped to 0.
+    score_method="jsd": bounded per-state Jensen-Shannon contribution
+        m_i      = (P_{b,i} + Q_i) / 2
+        jsd_{b,i}= 0.5 * (P_{b,i} log2(P_{b,i}/m_i) + Q_i log2(Q_i/m_i))
+    kept only where P_{b,i} > Q_i (same enrichment-only convention as KL).
+    Each per-state term is in [0, 1] and the per-bin total is <= 1, so JSD is a
+    bounded, directly comparable analog of the KL score. base-2 logs.
+
+    Negative contributions (suppressed/depleted states) are clamped to 0.
 
     Bins where the total raw signal across all states is below min_signal are
-    explicitly zeroed out before scoring. This prevents spurious positive KL
-    scores in low-signal or repeat-masked regions caused by the pseudocount
-    making the uniform distribution P = [1/N, ..., 1/N] appear to diverge
-    from Q for focal tracks with Q_i < 1/N.
+    explicitly zeroed out before scoring. This prevents spurious positive scores
+    in low-signal or repeat-masked regions caused by the pseudocount making the
+    uniform distribution P = [1/N, ..., 1/N] appear to diverge from Q for focal
+    tracks with Q_i < 1/N.
 
     Parameters
     ----------
@@ -1669,14 +1678,29 @@ def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
                        (after abs() for negative strands, before pseudocount).
                        If None, no low-signal masking is applied.
     min_signal       : float -- bins with total raw signal below this are zeroed
+    normalize_score  : bool  -- divide KL by log2(num_states) (KL only; JSD is
+                       already bounded, so this is ignored for JSD).
+    score_method     : "kl" | "jsd"
 
     Returns
     -------
     scores : (num_bins, num_states) float array
     """
-    ratio = P / (Q[np.newaxis, :] + 1e-300)
-    scores = P * np.log2(ratio + 1e-300)
-    scores = np.clip(scores, 0.0, None)
+    Qb = Q[np.newaxis, :]
+    if score_method == "jsd":
+        M = 0.5 * (P + Qb)
+        termP = P * np.log2((P + 1e-300) / (M + 1e-300))
+        termQ = Qb * np.log2((Qb + 1e-300) / (M + 1e-300))
+        scores = 0.5 * (termP + termQ)          # per-state JSD term (>= 0)
+        scores = np.where(P > Qb, scores, 0.0)  # enrichment-only (match KL)
+        scores = np.clip(scores, 0.0, None)     # guard tiny numerical negatives
+    else:
+        ratio = P / (Qb + 1e-300)
+        scores = P * np.log2(ratio + 1e-300)
+        scores = np.clip(scores, 0.0, None)
+
+    # JSD is already bounded in [0,1]; the log2(N) rescale only applies to KL.
+    do_norm = normalize_score and score_method != "jsd"
 
     # Zero out bins with insufficient total signal
     if raw_signal_matrix is not None:
@@ -1684,14 +1708,14 @@ def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
         low_signal_mask = total_signal < min_signal
         scores[low_signal_mask, :] = 0.0
         n_masked = low_signal_mask.sum()
-        if normalize_score:
+        if do_norm:
             num_states = scores.shape[1]
             norm_denom = math.log2(max(num_states, 2))
             scores = scores / norm_denom
         if n_masked > 0:
             return scores, int(n_masked)
 
-    if normalize_score:
+    if do_norm:
         num_states = scores.shape[1]
         norm_denom = math.log2(max(num_states, 2))
         scores = scores / norm_denom
@@ -1700,7 +1724,7 @@ def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
 
 
 def compute_score_statistics(prob_cache, categories, metrics=["mean", "median", "p90"],
-                             normalize_score=False):
+                             normalize_score=False, score_method="kl"):
     """
     Compute per-category quality statistics from the scored data in prob_cache.
     
@@ -1736,6 +1760,7 @@ def compute_score_statistics(prob_cache, categories, metrics=["mean", "median", 
             Q,
             raw_signal_matrix=raw_clipped,
             normalize_score=normalize_score,
+            score_method=score_method,
         )
         
         # Accumulate scores for each category
@@ -2109,7 +2134,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
     jobs=1, summary_chrom=None, skip_preflight=False,
     normalize_score=False, blacklist=None, min_signal_per_track=None,
     min_signal_percentile=None, floors_tsv=None, write_floors_tsv=None,
-    sample_name=None, cohort_ref=None):
+    sample_name=None, cohort_ref=None, score_method="kl"):
     try:
         import pyBigWig
     except ImportError:
@@ -2350,6 +2375,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     raw_signal_matrix=raw_abs,
                     min_signal=min_signal,
                     normalize_score=normalize_score,
+                    score_method=score_method,
                 )
                 total_masked += n_masked
                 # accumulate chromosome-level and global KL sums
@@ -2426,6 +2452,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     normalize_score,
                     start_id,
                     out_tmp,
+                    score_method,
                 ))
                 start_id += n_bins
 
@@ -2532,6 +2559,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
             cats_dict,
             metrics=stats_metrics,
             normalize_score=normalize_score,
+            score_method=score_method,
         )
         
         # Write TSV (includes q_background column automatically)
@@ -3081,6 +3109,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--score-method", choices=["kl", "jsd"], default="kl",
+        help=(
+            "Per-bin scoring divergence. 'kl' (default): clamped per-state KL "
+            "contribution (unbounded above). 'jsd': bounded Jensen-Shannon "
+            "contribution, per-state in [0,1] and per-bin total <= 1, using the "
+            "same enrichment-only convention as KL -- a bounded analog of the "
+            "KL score that is more robust to focal/outlier tracks."
+        ),
+    )
+    parser.add_argument(
         "--normalize-method",
         choices=["nonzero-quantile", "quantile", "cohort-quantile"],
         default="nonzero-quantile",
@@ -3538,6 +3576,7 @@ def main():
                 normalize_tracks=args.normalize_tracks,
                 normalize_method=args.normalize_method,
                 cohort_ref=cohort_ref,
+                score_method=args.score_method,
                 normalize_score=args.normalize_score,
                 min_signal=args.min_signal,
                 min_signal_per_track=args.min_signal_per_track,
@@ -3653,6 +3692,7 @@ def main():
                               normalize_tracks=args.normalize_tracks,
                               normalize_method=args.normalize_method,
                               cohort_ref=cohort_ref,
+                              score_method=args.score_method,
                               normalize_score=args.normalize_score,
                               min_signal=args.min_signal,
                               min_signal_per_track=args.min_signal_per_track,

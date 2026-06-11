@@ -233,6 +233,12 @@ rule merge_blacklist:
 COHORT_NORM = bool(config.get("cohort_reference", False))
 COHORT_REF  = out("cohort_quantile_reference.npz")
 
+# Per-bin scoring divergence: "kl" (default, unbounded clamped-KL) or "jsd"
+# (bounded Jensen-Shannon, per-bin total <= 1). The SAME method is used for the
+# observed scores AND the permutation null so the null matches the observed
+# scale; the differential null inherits it via compare_qcat on the perm qcats.
+SCORE_METHOD = config.get("score_method", "kl")
+
 rule cohort_reference:
     input: sheet=out("samples.bearing.tsv"), blacklist=BL
     output: ref=COHORT_REF
@@ -264,7 +270,7 @@ rule score_sample:
         "python {BIN}/bigwig_to_qcat.py --bw {params.bw} "
         "--sample-name {wildcards.sample} --out {output.qcat} "
         "--categories {CATS} --chrom-sizes {CS} --blacklist {input.blacklist} "
-        "--min-signal {params.minsig} {params.norm} --jobs {threads} --signal-plots"
+        "--min-signal {params.minsig} {params.norm} --score-method %s --jobs {threads} --signal-plots" % SCORE_METHOD
 
 # Aggregator: depends on every per-sample qcat; downstream rules wait on this.
 rule score:
@@ -319,8 +325,8 @@ rule perm_sample_one:
         "--only-sample {wildcards.sample} "
         "--blacklist {input.blacklist} --min-signal {params.minsig} "
         "--min-shift {params.shift} --seed {params.seed} "
-        "{params.norm} "
-        "--shift-workers {threads} --jobs {threads}"
+        "{params.norm} --score-method %s "
+        "--shift-workers {threads} --jobs {threads}" % SCORE_METHOD
 
 # Per-index aggregator: all samples' observed nulls for this permutation exist.
 rule perm_null_one:

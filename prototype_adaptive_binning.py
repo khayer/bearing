@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""
+prototype_adaptive_binning.py -- single-locus proof-of-concept for adaptive,
+equal-coverage binning as an alternative to the fixed 200 bp grid.
+
+Goal (advisor's idea): instead of uniform 200 bp bins, derive ONE consensus
+segmentation in which every bin carries comparable coverage, computed once on
+POOLED data (all samples, all tracks). Wide bins in sparse regions, narrow bins
+where signal is dense -> every bin carries roughly equal statistical weight.
+
+This is a deliberately scoped prototype to show before/after on one locus
+(default Tcrb). It demonstrates the three things that matter for whether the
+BEARING math survives non-uniform bins:
+
+  1. ONE shared grid for all samples (so the differential A - B stays defined).
+     The segmentation is built from pooled signal, NOT per-sample.
+  2. Width-weighted background Q (so Q is not biased by how regions were chopped).
+  3. The KL / JSD differential computed on variable-width bins.
+
+It also reports the key calibration number: the coefficient of variation (CV)
+of coverage-per-bin, fixed vs adaptive. Lower CV = more equal statistical
+weight per bin, which is the mechanism that could improve the per-sample null
+calibration that normalization alone did not fully fix.
+
+LIMITATION (stated honestly): on a single locus the background Q is computed
+LOCALLY (width-weighted over the locus), not genome-wide as in production. Both
+the fixed and adaptive arms use the SAME local-Q convention, so the before/after
+isolates the binning. Extending to a genome-wide Q is a follow-up if this looks
+promising.
+
+Real data:
+  python prototype_adaptive_binning.py \
+    --sheet workflow/results/samples.bearing.tsv \
+    --categories categories/mm10_6track_panel.yaml \
+    --chrom-sizes workflow/resources/mm10.chrom.sizes \
+    --blacklist workflow/resources/mm10-blacklist.v2.bed \
+    --locus chr6:40790000-41688054 \
+    --compare DN,ProB --target-bins 1500 \
+    --score-method kl --out-prefix results/adaptive_proto/tcrb
+
+Self-test (no BigWigs, runs anywhere):
+  python prototype_adaptive_binning.py --demo --out-prefix /tmp/adaptive_demo
+
+ASCII only.
+"""
+import argparse
+import os
+import sys
+
+import numpy as np
+
+PSEUDOCOUNT = 1e-6
+FINE_BP = 200            # fine grid used to build the coverage profile
+NEG_STRAND_COL = 2       # 0-indexed column for RNAseq- (state 3): abs() applied
+
+
+# --------------------------------------------------------------------------
+# segmentation
+# --------------------------------------------------------------------------
+def equal_coverage_segments(coverage_fine, fine_edges, n_bins):
+    """
+    Build n_bins variable-width segments that each carry ~equal pooled coverage.
+
+    coverage_fine : (n_fine,) pooled signal per fine bin (>= 0)
+    fine_edges    : (n_fine + 1,) genomic coordinates of fine-bin boundaries
+    returns       : list of (start_bp, end_bp, lo_fine, hi_fine) with hi exclusive
+    """
+    cov = np.asarray(coverage_fine, dtype=np.float64)
+    total = cov.sum()
+    if total <= 0:
+        # degenerate: fall back to uniform merge
+        idx = np.linspace(0, len(cov), n_bins + 1).round().astype(int)
+    else:
+        cum = np.concatenate([[0.0], np.cumsum(cov)])      # (n_fine + 1,)
+        targets = np.linspace(0.0, total, n_bins + 1)
+        # first fine boundary whose cumulative coverage reaches each target
+        idx = np.searchsorted(cum, targets, side="left")
+        idx[0] = 0
+        idx[-1] = len(cov)
+        # enforce strictly increasing so no zero-width segments
+        for k in range(1, len(idx)):
+            if idx[k] <= idx[k - 1]:
+                idx[k] = min(idx[k - 1] + 1, len(cov))
+        idx = np.minimum(idx, len(cov))
+    segs = []
+    for k in range(len(idx) - 1):
+        lo, hi = int(idx[k]), int(idx[k + 1])
+        if hi <= lo:
+            continue
+        segs.append((int(fine_edges[lo]), int(fine_edges[hi]), lo, hi))
+    return segs
+
+
+def aggregate_to_segments(signal_fine, fine_widths, segments):
+    """
+    Width-weighted mean signal per track per segment.
+
+    signal_fine : (n_fine, n_tracks)
+    fine_widths : (n_fine,) bp width of each fine bin
+    returns     : (n_seg, n_tracks), (n_seg,) segment widths in bp
+    """
+    n_tracks = signal_fine.shape[1]
+    out = np.zeros((len(segments), n_tracks), dtype=np.float64)
+    widths = np.zeros(len(segments), dtype=np.float64)
+    for j, (_s, _e, lo, hi) in enumerate(segments):
+        w = fine_widths[lo:hi]
+        wsum = w.sum()
+        widths[j] = wsum
+        if wsum > 0:
+            out[j] = (signal_fine[lo:hi] * w[:, None]).sum(axis=0) / wsum
+    return out, widths
+
+
+# --------------------------------------------------------------------------
+# scoring (mirrors bigwig_to_qcat: compositional P vs Q, clamped KL or JSD)
+# --------------------------------------------------------------------------
+def to_prob(signal_matrix):
+    m = np.clip(signal_matrix, 0.0, None) + PSEUDOCOUNT
+    return m / m.sum(axis=1, keepdims=True)
+
+
+def width_weighted_Q(P, widths):
+    w = np.asarray(widths, dtype=np.float64)
+    return (P * w[:, None]).sum(axis=0) / w.sum()
+
+
+def bearing_scores(P, Q, method="kl"):
+    Qb = Q[np.newaxis, :]
+    if method == "jsd":
+        M = 0.5 * (P + Qb)
+        termP = P * np.log2((P + 1e-300) / (M + 1e-300))
+        termQ = Qb * np.log2((Qb + 1e-300) / (M + 1e-300))
+        s = 0.5 * (termP + termQ)
+        s = np.where(P > Qb, s, 0.0)
+    else:
+        s = P * np.log2(P / (Qb + 1e-300) + 1e-300)
+    return np.clip(s, 0.0, None)
+
+
+def cv(x):
+    x = np.asarray(x, dtype=np.float64)
+    m = x.mean()
+    return float(x.std() / m) if m > 0 else float("nan")
+
+
+# --------------------------------------------------------------------------
+# signal extraction
+# --------------------------------------------------------------------------
+def extract_real(sheet, categories_yaml, chrom_sizes_path, blacklist_path,
+                 chrom, start, end):
+    """Return {sample: (n_fine, n_tracks) signal}, fine_edges. Reuses pipeline loaders."""
+    from bigwig_to_qcat import mean_signal_in_bins, NEGATIVE_STRAND_STATES
+    import pyBigWig
+
+    neg_cols = sorted(s - 1 for s in NEGATIVE_STRAND_STATES)
+    # fine grid over the locus
+    edges = list(range(start, end, FINE_BP)) + [end]
+    bins = [(edges[i], edges[i + 1]) for i in range(len(edges) - 1)]
+    fine_edges = np.array(edges, dtype=np.int64)
+
+    per_sample = {}
+    for name, bw_paths in sheet:
+        cols = []
+        for p in bw_paths:
+            bw = pyBigWig.open(p)
+            v = mean_signal_in_bins(bw, chrom, bins)
+            bw.close()
+            cols.append(np.asarray(v, dtype=np.float64))
+        mat = np.vstack(cols).T            # (n_fine, n_tracks)
+        for c in neg_cols:
+            if c < mat.shape[1]:
+                mat[:, c] = np.abs(mat[:, c])
+        per_sample[name] = mat
+    return per_sample, fine_edges
+
+
+def make_demo(seed=42):
+    """Synthetic locus: a focal dense region + broad sparse flanks, 2 conditions."""
+    rng = np.random.default_rng(seed)
+    n_fine = 1000                          # 200 kb at 200 bp
+    start = 40790000
+    fine_edges = np.array([start + i * FINE_BP for i in range(n_fine + 1)], dtype=np.int64)
+    x = np.arange(n_fine)
+    # pooled coverage shape: low baseline + two sharp peaks (dense regions)
+    base = 0.3 + 0.0 * x
+    peak1 = 6.0 * np.exp(-((x - 350) ** 2) / (2 * 12 ** 2))
+    peak2 = 4.0 * np.exp(-((x - 640) ** 2) / (2 * 20 ** 2))
+    shape = base + peak1 + peak2
+
+    def sample(track_focus, diff_boost=0.0):
+        mat = np.zeros((n_fine, 6))
+        for t in range(6):
+            amp = shape * (0.5 + 0.5 * ((t == track_focus)))
+            if t == track_focus:
+                amp = amp + diff_boost * peak1   # condition-specific enrichment at peak1
+            mat[:, t] = np.clip(amp + rng.normal(0, 0.05, n_fine), 0, None)
+        return mat
+
+    per_sample = {
+        "A_rep1": sample(3, diff_boost=2.5),   # CTCF-focused, enriched at peak1
+        "A_rep2": sample(3, diff_boost=2.3),
+        "B_rep1": sample(3, diff_boost=0.0),   # same focus, no peak1 enrichment
+        "B_rep2": sample(3, diff_boost=0.2),
+    }
+    return per_sample, fine_edges, ("A", "B")
+
+
+# --------------------------------------------------------------------------
+# main
+# --------------------------------------------------------------------------
+def condition_of(sample_name):
+    return sample_name.split("_rep")[0].split("_")[0]
+
+
+def mean_over_condition(per_sample, cond):
+    mats = [m for s, m in per_sample.items() if condition_of(s) == cond]
+    if not mats:
+        raise SystemExit("no samples for condition '%s' (have %s)"
+                         % (cond, sorted({condition_of(s) for s in per_sample})))
+    return np.mean(mats, axis=0)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--demo", action="store_true", help="synthetic self-test (no BigWigs)")
+    ap.add_argument("--sheet")
+    ap.add_argument("--categories")
+    ap.add_argument("--chrom-sizes")
+    ap.add_argument("--blacklist")
+    ap.add_argument("--locus", help="chrom:start-end")
+    ap.add_argument("--compare", default="A,B", help="two conditions, e.g. DN,ProB")
+    ap.add_argument("--target-bins", type=int, default=1500,
+                    help="number of adaptive bins (consensus segmentation)")
+    ap.add_argument("--score-method", choices=["kl", "jsd"], default="kl")
+    ap.add_argument("--out-prefix", required=True)
+    args = ap.parse_args()
+
+    if args.demo:
+        per_sample, fine_edges, (condA, condB) = make_demo()
+        chrom = "chr6"
+    else:
+        from bigwig_to_qcat import load_categories_yaml  # noqa: F401 (validates env)
+        need = [args.sheet, args.categories, args.chrom_sizes, args.locus]
+        if any(v is None for v in need):
+            ap.error("real mode needs --sheet --categories --chrom-sizes --locus")
+        sheet_dir = os.path.dirname(os.path.abspath(args.sheet))
+        sheet = []
+        with open(args.sheet) as fh:
+            header = fh.readline().rstrip("\n").split("\t")
+            idx = {h: i for i, h in enumerate(header)}
+            si, bi = idx.get("sample", 0), idx.get("bw", 1)
+            for line in fh:
+                line = line.rstrip("\n")
+                if not line or line.startswith("#"):
+                    continue
+                f = line.split("\t")
+                if len(f) <= bi:
+                    continue
+                paths = [p if os.path.isabs(p) else os.path.join(sheet_dir, p)
+                         for p in (q.strip() for q in f[bi].split(",")) if p]
+                sheet.append((f[si], paths))
+        chrom, rng = args.locus.split(":")
+        start, end = (int(v) for v in rng.split("-"))
+        per_sample, fine_edges = extract_real(sheet, args.categories, args.chrom_sizes,
+                                              args.blacklist, chrom, start, end)
+        condA, condB = args.compare.split(",")
+
+    fine_widths = np.diff(fine_edges).astype(np.float64)
+    n_fine = len(fine_widths)
+
+    # pooled coverage across ALL samples and tracks -> consensus segmentation
+    pooled = np.zeros(n_fine, dtype=np.float64)
+    for mat in per_sample.values():
+        pooled += mat.sum(axis=1)
+    segments = equal_coverage_segments(pooled, fine_edges, args.target_bins)
+
+    # fixed grid = the fine 200 bp grid itself
+    fixed_segments = [(int(fine_edges[i]), int(fine_edges[i + 1]), i, i + 1)
+                      for i in range(n_fine)]
+
+    # equal-COUNT uniform reference: same number of bins as adaptive, uniform
+    # width. Isolates the binning STRATEGY (where boundaries go) from the bin
+    # COUNT, so the coverage-CV comparison is strategy vs strategy.
+    uni_idx = np.linspace(0, n_fine, len(segments) + 1).round().astype(int)
+    uniform_segments = []
+    for k in range(len(uni_idx) - 1):
+        lo, hi = int(uni_idx[k]), int(uni_idx[k + 1])
+        if hi > lo:
+            uniform_segments.append((int(fine_edges[lo]), int(fine_edges[hi]), lo, hi))
+
+    # coverage per bin, all grids
+    cov_fixed = np.array([pooled[lo:hi].sum() for (_a, _b, lo, hi) in fixed_segments])
+    cov_adapt = np.array([pooled[lo:hi].sum() for (_a, _b, lo, hi) in segments])
+    cov_uni = np.array([pooled[lo:hi].sum() for (_a, _b, lo, hi) in uniform_segments])
+
+    # per-condition mean signal -> P -> width-weighted Q -> scores, both grids
+    def score_grid(segs):
+        widths = np.array([s[1] - s[0] for s in segs], dtype=np.float64)
+        out = {}
+        for cond in (condA, condB):
+            mat = mean_over_condition(per_sample, cond)        # (n_fine, tracks)
+            agg, _w = aggregate_to_segments(mat, fine_widths, segs)
+            P = to_prob(agg)
+            Q = width_weighted_Q(P, widths)
+            out[cond] = bearing_scores(P, Q, args.score_method).sum(axis=1)  # per-bin total
+        diff = out[condA] - out[condB]
+        return widths, out, diff
+
+    w_fix, sc_fix, diff_fix = score_grid(fixed_segments)
+    w_ada, sc_ada, diff_ada = score_grid(segments)
+
+    cv_fixed, cv_adapt = cv(cov_fixed), cv(cov_adapt)
+    cv_uni = cv(cov_uni)
+    print("locus            : %s:%d-%d" % (chrom, fine_edges[0], fine_edges[-1]))
+    print("fixed bins       : %d (uniform %d bp)" % (len(fixed_segments), FINE_BP))
+    print("adaptive bins    : %d (median width %d bp, range %d-%d)"
+          % (len(segments), int(np.median(w_ada)), int(w_ada.min()), int(w_ada.max())))
+    print("coverage-per-bin CV:")
+    print("  fixed 200 bp           (%5d bins) : %.3f" % (len(fixed_segments), cv_fixed))
+    print("  uniform, matched count (%5d bins) : %.3f" % (len(uniform_segments), cv_uni))
+    print("  adaptive equal-coverage(%5d bins) : %.3f  <- most equal weight" % (len(segments), cv_adapt))
+    print("  adaptive vs matched-uniform CV reduction: %.1fx"
+          % (cv_uni / cv_adapt if cv_adapt > 0 else float("nan")))
+    print("differential (%s - %s) preserved on shared adaptive grid: "
+          "max|diff| fixed=%.3f adaptive=%.3f" % (condA, condB,
+          float(np.abs(diff_fix).max()), float(np.abs(diff_ada).max())))
+
+    # write adaptive bins TSV
+    os.makedirs(os.path.dirname(os.path.abspath(args.out_prefix)) or ".", exist_ok=True)
+    tsv = args.out_prefix + "_adaptive_bins.tsv"
+    with open(tsv, "w") as fh:
+        fh.write("chrom\tstart\tend\twidth_bp\tpooled_cov\t%s_score\t%s_score\tdiff\n"
+                 % (condA, condB))
+        for j, (s, e, _lo, _hi) in enumerate(segments):
+            fh.write("%s\t%d\t%d\t%d\t%.4f\t%.5f\t%.5f\t%.5f\n"
+                     % (chrom, s, e, e - s, cov_adapt[j],
+                        sc_ada[condA][j], sc_ada[condB][j], diff_ada[j]))
+
+    # figure
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        xt = (fine_edges[:-1] + fine_edges[1:]) / 2.0 / 1e6   # Mb
+        seg_mid = np.array([(s + e) / 2.0 for (s, e, _l, _h) in segments]) / 1e6
+        seg_w_mb = w_ada / 1e6
+        fig, ax = plt.subplots(4, 1, figsize=(11, 10), sharex=True)
+
+        ax[0].fill_between(xt, pooled, step="mid", color="#0E7C7B", alpha=0.85, lw=0)
+        ax[0].set_ylabel("pooled\ncoverage")
+        ax[0].set_title("Equal-coverage adaptive binning prototype (%s:%d-%d)"
+                        % (chrom, fine_edges[0], fine_edges[-1]), fontweight="bold")
+
+        for b in fine_edges[::max(1, n_fine // 80)]:
+            ax[1].axvline(b / 1e6, color="#94a3b8", lw=0.3)
+        for (s, _e, _l, _h) in segments:
+            ax[1].axvline(s / 1e6, color="#C2410C", lw=0.4)
+        ax[1].set_ylabel("bin edges")
+        ax[1].set_yticks([])
+        ax[1].text(0.005, 0.78, "grey = fixed 200 bp", transform=ax[1].transAxes,
+                   fontsize=8, color="#64748b")
+        ax[1].text(0.005, 0.55, "orange = adaptive (dense where coverage high)",
+                   transform=ax[1].transAxes, fontsize=8, color="#C2410C")
+
+        ax[2].plot(xt, cov_fixed, color="#94a3b8", lw=0.8,
+                   label="fixed (CV=%.2f)" % cv_fixed)
+        ax[2].bar(seg_mid, cov_adapt, width=seg_w_mb, color="#C2410C", alpha=0.55,
+                  label="adaptive (CV=%.2f)" % cv_adapt)
+        ax[2].set_ylabel("coverage\nper bin")
+        ax[2].legend(fontsize=8, loc="upper right")
+
+        ax[3].step(xt, diff_fix, where="mid", color="#94a3b8", lw=0.9,
+                   label="fixed 200 bp")
+        ax[3].bar(seg_mid, diff_ada, width=seg_w_mb, color="#1D5C8A", alpha=0.6,
+                  label="adaptive")
+        ax[3].axhline(0, color="k", lw=0.5)
+        ax[3].set_ylabel("BEARING diff\n(%s - %s)" % (condA, condB))
+        ax[3].set_xlabel("position (Mb)")
+        ax[3].legend(fontsize=8, loc="upper right")
+
+        fig.tight_layout()
+        pdf = args.out_prefix + "_prototype.pdf"
+        fig.savefig(pdf, dpi=150)
+        png = args.out_prefix + "_prototype.png"
+        fig.savefig(png, dpi=130)
+        print("wrote %s, %s, %s" % (tsv, pdf, png))
+    except Exception as exc:               # noqa: BLE001
+        print("wrote %s (figure skipped: %s)" % (tsv, exc))
+
+
+if __name__ == "__main__":
+    main()

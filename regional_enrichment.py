@@ -178,6 +178,24 @@ def compute_regional_enrichment(diff_qcat_bins, diff_pvals_bins, regions,
     n_locus = sum(1 for p_val, _ in locus_pvals.values() if p_val < p_thresh)
     L_locus_bins = len(locus_bins)
 
+    # Genome-wide directional baseline g for the directional-concordance null.
+    # Computed over ALL significant bins in the diff table (genome-wide when the
+    # full diff stats are supplied), NOT within the locus, which would be
+    # circular. g = P(signed_score > 0 | bin significant). The directional test
+    # below uses g rather than 0.5 so that comparisons with a global sign
+    # imbalance (e.g. a condition with systematically higher architectural
+    # signal genome-wide) are not flagged as regionally concordant merely for
+    # reproducing that genome-wide skew.
+    gw_signs = [s for (p_val, s) in diff_pvals_bins.values() if p_val < p_thresh]
+    n_gw_sig = len(gw_signs)
+    if n_gw_sig > 0:
+        g_dir = sum(1 for s in gw_signs if s > 0) / n_gw_sig
+    else:
+        g_dir = 0.5
+    # Guard against degenerate 0/1 baselines that would make the binomial null
+    # ill-defined.
+    g_dir = min(max(g_dir, 1e-6), 1.0 - 1e-6)
+
     results = []
     for chrom, start, end, name in regions:
         # Validate region is within locus
@@ -217,12 +235,21 @@ def compute_regional_enrichment(diff_qcat_bins, diff_pvals_bins, regions,
             p_spatial = scipy.stats.binom.sf(k - 1, n=n_locus, p=pi)
             p_spatial = min(p_spatial, 1.0)
 
-        # Directional concordance test
+        # Directional concordance test. One-sided exact binomial test for EXCESS
+        # concordance in the region's own majority direction, relative to the
+        # genome-wide directional baseline g_dir (not 0.5). A region is called
+        # concordant only if its dominant-direction bin count exceeds what the
+        # genome-wide sign balance predicts, in whichever direction the region
+        # leans (so genuine against-the-skew regional effects are still
+        # detected); a region that is merely more balanced than a skewed
+        # background is not flagged.
         if k == 0:
             p_directional = 1.0
         else:
-            k_majority = max(k_pos, k_neg)
-            p_directional = 2 * scipy.stats.binom.sf(k_majority - 1, n=k, p=0.5)
+            if k_pos >= k_neg:
+                p_directional = float(scipy.stats.binom.sf(k_pos - 1, n=k, p=g_dir))
+            else:
+                p_directional = float(scipy.stats.binom.sf(k_neg - 1, n=k, p=1.0 - g_dir))
             p_directional = min(p_directional, 1.0)
 
         # Fisher's combined
@@ -244,6 +271,7 @@ def compute_regional_enrichment(diff_qcat_bins, diff_pvals_bins, regions,
             'n_locus': n_locus,
             'k_pos': k_pos,
             'k_neg': k_neg,
+            'g_dir': g_dir,
             'p_spatial': p_spatial,
             'p_directional': p_directional,
             'p_combined': p_combined,
@@ -426,7 +454,7 @@ def main():
         fieldnames = ['comparison', 'region_name', 'chrom', 'start', 'end',
                       'L_region_bins', 'L_locus_bins', 'pi', 'k', 'n_locus',
                       'k_pos', 'k_neg', 'p_spatial', 'p_directional',
-                      'p_combined', 'q_combined']
+                      'p_combined', 'q_combined', 'g_dir']
         writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter='\t')
         writer.writeheader()
         for r in all_results:

@@ -397,6 +397,9 @@ def main():
     ap.add_argument("--cohort-reference", default=None, metavar="NPZ",
                     help="Pass through to bigwig_to_qcat.py --cohort-reference "
                          "during perm scoring (required for cohort-quantile).")
+    ap.add_argument("--score-method", default=None, choices=["kl", "jsd"],
+                    help="Pass through to bigwig_to_qcat.py --score-method during "
+                         "perm scoring, so the null matches the observed scoring.")
     ap.add_argument("--no-extras", action="store_true",
                     help="Pass --no-extras to bigwig_to_qcat.py during perm "
                          "scoring (skips cats.json, tracks.ini, plots). "
@@ -762,6 +765,8 @@ def main():
                     score_cmd += ["--normalize-method", args.normalize_method]
                 if args.cohort_reference:
                     score_cmd += ["--cohort-reference", args.cohort_reference]
+                if args.score_method:
+                    score_cmd += ["--score-method", args.score_method]
                 if args.no_extras:
                     score_cmd += ["--no-extras"]
                 if args.jobs > 1:
