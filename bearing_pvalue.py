@@ -545,10 +545,16 @@ def main():
                     help="Output path prefix.")
     ap.add_argument("--fdr",          type=float, default=0.05,
                     help="FDR threshold for BH correction (default 0.05).")
-    ap.add_argument("--min-signal",   type=float, default=0.5,
+    ap.add_argument("--min-signal",   type=float, default=None,
                     help="Minimum score (or |score| in --diff mode) to "
-                         "include in null fitting and significance testing "
-                         "(default 0.5).")
+                         "include in null fitting and significance testing. "
+                         "If unset, defaults to the score floor for the score "
+                         "method: 0.5 for KL, 0.05 for the bounded JSD scale.")
+    ap.add_argument("--score-method", choices=["kl", "jsd"], default="kl",
+                    help="Score method the qcats were built with. Only used to "
+                         "pick the default --min-signal floor; JSD scores are "
+                         "bounded (per-bin total <= 1) so the KL-scaled 0.5 "
+                         "floor would reject nearly all bins.")
     ap.add_argument("--fit-quantile", type=float, default=None,
                     metavar="FLOAT",
                     help="Parametric fallback: fit the Gamma null to the "
@@ -594,6 +600,15 @@ def main():
                         "Suitable for use as a ranked feature list."
                     ))
     args = ap.parse_args()
+
+    # Method-aware score floor: KL scores run up to ~6, JSD is bounded
+    # (per-bin total <= 1), so the KL-scaled 0.5 floor would reject nearly all
+    # JSD bins (notably weakly-enriched samples like S3T3). Pick the floor from
+    # the score method unless the user set --min-signal explicitly.
+    if args.min_signal is None:
+        args.min_signal = 0.5 if args.score_method == "kl" else 0.05
+    print("Score method: %s; min-signal floor: %g"
+          % (args.score_method, args.min_signal), file=sys.stderr)
 
     # ── 0. Determine null method ───────────────────────────────────────────
     if args.null_qcat:

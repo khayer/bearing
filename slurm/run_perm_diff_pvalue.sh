@@ -8,6 +8,12 @@ COMPARISON_DIR="${1:-comparison_vdj}"
 N_PERMS="${2:-4}"
 PERM_PREFIX="${3:-perm}"
 RESULTS_DIR="${4:-results}"
+SCORE_METHOD="${5:-kl}"
+PV_MINSIG="${6:-}"
+PV_FLAGS="--score-method ${SCORE_METHOD}"
+if [[ -n "$PV_MINSIG" ]]; then
+  PV_FLAGS="$PV_FLAGS --min-signal ${PV_MINSIG}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # bearing_pvalue.py lives at the repo root; this script may sit in slurm/.
@@ -80,7 +86,7 @@ while IFS= read -r comp; do
     --null-qcat "${nulls[@]}" \
     --diff \
     --out-prefix "$out_prefix" \
-    --fdr 0.05 --score-plot; then
+    --fdr 0.05 --score-plot $PV_FLAGS; then
     echo "[$(date)] Completed: $comp"
   else
     echo "[$(date)] WARNING: p-value computation skipped for $comp (no bins with signal, or insufficient nulls); continuing." >&2

@@ -238,6 +238,10 @@ COHORT_REF  = out("cohort_quantile_reference.npz")
 # observed scores AND the permutation null so the null matches the observed
 # scale; the differential null inherits it via compare_qcat on the perm qcats.
 SCORE_METHOD = config.get("score_method", "kl")
+# Optional explicit override for the p-value-stage score floor. If unset,
+# bearing_pvalue.py picks it from --score-method (0.5 KL, 0.05 JSD).
+_PV_MINSIG = config.get("pvalue_min_signal", None)
+_PV_MINSIG_FLAG = ("--min-signal %s" % _PV_MINSIG) if _PV_MINSIG is not None else ""
 
 rule cohort_reference:
     input: sheet=out("samples.bearing.tsv"), blacklist=BL
@@ -364,7 +368,8 @@ rule pvalue_diff:
     resources: mem_mb=256000, runtime=1440, cpus_per_task=4
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
-        "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue"
+        "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue %s %s"
+        % (SCORE_METHOD, ("'%s'" % _PV_MINSIG) if _PV_MINSIG is not None else "''")
 
 # Per-sample (non-diff) p-values: run bearing_pvalue.py for each sample against
 # its OWN permutation nulls (perm/perm{idx}/{sample}/{sample}_perm{idx}.qcat.bgz,
@@ -386,7 +391,8 @@ rule pvalue_sample:
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "python {BIN}/bearing_pvalue.py --qcat {input.qcat} "
-        "--null-qcat {params.nulls} --out-prefix {params.prefix} --fdr 0.05"
+        "--null-qcat {params.nulls} --out-prefix {params.prefix} --fdr 0.05 "
+        "--score-method %s %s" % (SCORE_METHOD, _PV_MINSIG_FLAG)
 
 rule pvalue_samples:
     input: [out("pvalue", "%s.neglog10p.bw" % s) for s in SAMPLES]
