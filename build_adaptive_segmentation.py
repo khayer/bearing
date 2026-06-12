@@ -33,6 +33,8 @@ ASCII only.
 import argparse
 import os
 import sys
+import tempfile
+import multiprocessing
 
 import numpy as np
 
@@ -137,6 +139,24 @@ def chrom_profile(sheet, chrom, chrom_len, fine_bp, blacklist, min_signal):
     return fine_edges, pooled, keep
 
 
+def _profile_to_npz(task):
+    """Worker: compute one chromosome's profile and cache it to a temp .npz.
+
+    Returns (chrom, n_fine, n_retained, chrom_cov, npz_path). Caching to disk
+    (instead of returning the full arrays) keeps memory flat and IPC cheap when
+    pass 1 is parallelized across chromosomes.
+    """
+    chrom, chrom_len, sheet, fine_bp, blacklist, min_signal, tmp_dir = task
+    fe, pooled, keep = chrom_profile(sheet, chrom, chrom_len, fine_bp,
+                                     blacklist, min_signal)
+    npz_path = os.path.join(tmp_dir, chrom + ".npz")
+    np.savez_compressed(npz_path,
+                        fine_edges=fe.astype(np.int64),
+                        pooled=pooled.astype(np.float32),
+                        keep=keep)
+    return (chrom, len(pooled), int(keep.sum()), float(pooled[keep].sum()), npz_path)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -153,6 +173,9 @@ def main():
                     help="comma-separated subset; default = all in chrom-sizes")
     ap.add_argument("--with-stats", action="store_true",
                     help="emit width and pooled-coverage columns")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="parallel worker processes for pass 1 (per-chromosome "
+                         "signal extraction). Default 1 (serial).")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -171,28 +194,43 @@ def main():
               else [c for c in sizes if c in sizes])
     chroms = [c for c in chroms if c in sizes]
 
-    # pass 1: per-chrom pooled coverage + keep mask; accumulate total coverage
-    cache = {}
+    # pass 1: per-chrom pooled coverage + keep mask, cached to temp npz files.
+    # Parallelized across chromosomes (each worker reads its own bigwigs).
+    tmp = tempfile.TemporaryDirectory(prefix="adaptive_seg_")
+    tasks = [(chrom, sizes[chrom], sheet, args.fine_bp, blacklist,
+              args.min_signal, tmp.name) for chrom in chroms]
+
+    if args.jobs > 1:
+        ctx = multiprocessing.get_context("spawn")
+        with ctx.Pool(args.jobs) as pool:
+            results = pool.map(_profile_to_npz, tasks)
+    else:
+        results = [_profile_to_npz(t) for t in tasks]
+
+    npz_for = {}
     total_cov = 0.0
-    for chrom in chroms:
-        fe, pooled, keep = chrom_profile(sheet, chrom, sizes[chrom],
-                                         args.fine_bp, blacklist, args.min_signal)
-        cache[chrom] = (fe, pooled, keep)
-        total_cov += float(pooled[keep].sum())
+    for chrom, n_fine, n_ret, chrom_cov, npz_path in results:
+        npz_for[chrom] = npz_path
+        total_cov += chrom_cov
         sys.stderr.write("[pass1] %s: %d fine bins, %d retained, cov=%.3g\n"
-                         % (chrom, len(pooled), int(keep.sum()), float(pooled[keep].sum())))
+                         % (chrom, n_fine, n_ret, chrom_cov))
 
     if total_cov <= 0:
         sys.exit("[ERROR] zero total retained coverage")
     quota = total_cov / max(args.target_bins, 1)
 
-    # pass 2: segment each chromosome with the global quota
+    # pass 2: segment each chromosome with the global quota (fast; no bigwig I/O)
     n_total = 0
     widths = []
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
     with open(args.out, "w") as out:
         for chrom in chroms:
-            fe, pooled, keep = cache[chrom]
+            if chrom not in npz_for:
+                continue
+            with np.load(npz_for[chrom]) as d:
+                fe = d["fine_edges"]
+                pooled = d["pooled"]
+                keep = d["keep"]
             chrom_cov = float(pooled[keep].sum())
             n_bins = max(1, int(round(chrom_cov / quota))) if chrom_cov > 0 else 0
             if n_bins == 0:
@@ -208,6 +246,7 @@ def main():
                     out.write("%s\t%d\t%d\n" % (chrom, s, e))
                 widths.append(e - s)
             n_total += len(segs)
+    tmp.cleanup()
 
     widths = np.array(widths) if widths else np.array([0])
     sys.stderr.write(
