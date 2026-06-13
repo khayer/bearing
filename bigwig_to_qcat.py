@@ -2249,6 +2249,26 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
             "ERROR: no chromosomes selected for processing. "
             "Check --regions content and chromosome names."
         )
+
+    # An explicit bin grid (adaptive segmentation) defines the chromosome
+    # universe: restrict processing to chroms present in the BED (e.g. main
+    # chromosomes only) so contigs absent from the grid are skipped instead of
+    # raising a KeyError on chrom_bin_counts downstream.
+    if bins_bed is not None:
+        bed_chroms = set(bins_bed.keys())
+        dropped = [c for c in chroms if c not in bed_chroms]
+        chroms = [c for c in chroms if c in bed_chroms]
+        if dropped:
+            _ex = ", ".join(dropped[:5]) + ("..." if len(dropped) > 5 else "")
+            print(f"  --bins-bed covers {len(bed_chroms)} chroms; skipping "
+                  f"{len(dropped)} chrom(s) absent from the grid ({_ex}).")
+        if len(chroms) == 0:
+            sys.exit(
+                "ERROR: none of the requested chromosomes are present in "
+                "--bins-bed. Check chromosome naming between the grid and "
+                "--chrom-sizes/--regions."
+            )
+
     print(f"Processing {len(chroms)} chromosomes: {', '.join(chroms)}")
 
     # Data-driven per-track floors: compute Nth percentile of non-zero
