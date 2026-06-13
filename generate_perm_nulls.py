@@ -400,6 +400,10 @@ def main():
     ap.add_argument("--score-method", default=None, choices=["kl", "jsd"],
                     help="Pass through to bigwig_to_qcat.py --score-method during "
                          "perm scoring, so the null matches the observed scoring.")
+    ap.add_argument("--bins-bed", default=None, metavar="BED",
+                    help="Pass through to bigwig_to_qcat.py --bins-bed during perm "
+                         "scoring, so the null is scored on the SAME adaptive "
+                         "consensus grid as the observed data.")
     ap.add_argument("--no-extras", action="store_true",
                     help="Pass --no-extras to bigwig_to_qcat.py during perm "
                          "scoring (skips cats.json, tracks.ini, plots). "
@@ -767,6 +771,8 @@ def main():
                     score_cmd += ["--cohort-reference", args.cohort_reference]
                 if args.score_method:
                     score_cmd += ["--score-method", args.score_method]
+                if args.bins_bed:
+                    score_cmd += ["--bins-bed", args.bins_bed]
                 if args.no_extras:
                     score_cmd += ["--no-extras"]
                 if args.jobs > 1:

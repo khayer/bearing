@@ -87,6 +87,7 @@ echo "== Snakemake dry run (validate DAG) =="
 SM_TARGETS=()
 if [ "$CORE_ONLY" = "1" ]; then
   SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
+              "$REPO/workflow/$OUT/pvalue_samples.done"
               "$REPO/workflow/$OUT/region_qc.done")
 fi
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" -n "${SM_TARGETS[@]}"

@@ -2579,6 +2579,84 @@ def write_per_track_jsd_tsv(per_track_records, track_names, out_path):
     print(f"  Per-track JSD TSV: {out_path}")
 
 
+# Canonical 6-track palette (matches ALL_CATEGORIES / DN_rep1_cats.json). Keyed
+# by every name spelling the per-track records may carry.
+_TRACK_COLOR_MAP = {
+    "ATAC": "#be92e0",
+    "RNAseq_pos": "#6495ed", "RNAseq +": "#6495ed", "RNAseq+": "#6495ed",
+    "RNAseq_neg": "#1a3a8f", "RNAseq -": "#1a3a8f", "RNAseq-": "#1a3a8f",
+    "CTCF": "#ff2200",
+    "RAD21": "#8b0000", "Cohesin": "#8b0000",
+    "H3K27ac": "#00e676",
+}
+
+
+def _track_colors_for(track_names):
+    """Resolve a color per track name, canonical palette first, cycle fallback."""
+    import matplotlib.pyplot as plt
+    fallback = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    out = []
+    fi = 0
+    for name in track_names:
+        c = _TRACK_COLOR_MAP.get(name)
+        if c is None:
+            c = fallback[fi % len(fallback)] if fallback else "#888888"
+            fi += 1
+        out.append(c)
+    return out
+
+
+def plot_per_track_jsd_stacked_bar(per_track_records, track_names, out_path,
+                                   warn_threshold=0.05, track_colors=None):
+    """
+    Supplementary Figure S1 panel B: stacked-bar decomposition of the per-track
+    Q-vector JSD for every sample pair. One horizontal bar per pair, ranked top
+    to bottom by total JSD; segments are each track's JSD contribution (which sum
+    to the scalar JSD), colored by the canonical track palette. A vertical dashed
+    line marks the all-track warn threshold.
+
+    per_track_records : output of compute_per_track_jsd_decomposition
+    track_names       : track names; sets the stack-segment order
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if track_colors is None:
+        track_colors = _track_colors_for(track_names)
+
+    # Ascending sort: barh draws bottom-to-top, so the largest JSD lands at top.
+    recs = sorted(per_track_records, key=lambda r: r["jsd_total"])
+    labels = ["%s vs %s" % (r["sample_A"], r["sample_B"]) for r in recs]
+    y = np.arange(len(recs))
+
+    fig_h = max(4.0, 0.22 * len(recs) + 1.5)
+    fig, ax = plt.subplots(figsize=(8.5, fig_h))
+    left = np.zeros(len(recs))
+    for k, name in enumerate(track_names):
+        vals = np.array([r["jsd_per_track"].get(name, 0.0) for r in recs])
+        ax.barh(y, vals, left=left, color=track_colors[k], label=name,
+                edgecolor="none", height=0.8)
+        left += vals
+
+    ax.axvline(warn_threshold, ls="--", lw=1.0, color="black",
+               label="warn (%.3g)" % warn_threshold)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=6)
+    ax.set_ylim(-0.6, len(recs) - 0.4)
+    ax.set_xlabel("Per-track JSD contribution (sums to total JSD)")
+    ax.set_title("Per-track JSD decomposition, all sample pairs (ranked)")
+    ax.legend(loc="lower right", fontsize=7, framealpha=0.9)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  Per-track JSD stacked bar: %s" % out_path)
+
+
 def plot_per_track_jsd_heatmaps(per_sample_q, sample_names, conditions,
                                 track_names, out_path):
     """
@@ -3100,10 +3178,16 @@ def run(sheet_path, out_dir, chroms=None, skip_diff=False, skip_pca=False,
             per_track_tsv = out_dir / "q_pair_jsd_per_track.tsv"
             write_per_track_jsd_tsv(per_track_records, track_names, per_track_tsv)
 
-            # Plot per-track heatmaps (small multiples)
+            # Plot per-track heatmaps (small multiples) -- S1 panel A
             per_track_pdf = out_dir / "q_pair_jsd_per_track.pdf"
             plot_per_track_jsd_heatmaps(
                 per_sample_q, sample_names, conditions, track_names, per_track_pdf
+            )
+
+            # Plot per-track stacked-bar decomposition -- S1 panel B
+            per_track_bar_pdf = out_dir / "q_pair_jsd_per_track_stacked.pdf"
+            plot_per_track_jsd_stacked_bar(
+                per_track_records, track_names, per_track_bar_pdf
             )
 
             # Print summary of dominant tracks

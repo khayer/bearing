@@ -171,6 +171,9 @@ def main():
                     help="approximate genome-wide bin count (sets the coverage quota)")
     ap.add_argument("--chroms", default=None,
                     help="comma-separated subset; default = all in chrom-sizes")
+    ap.add_argument("--main-chroms", action="store_true",
+                    help="restrict to main chromosomes only: chr1..chr<N>, chrX, "
+                         "chrY (drops chrM, *_random, chrUn_*). Overrides --chroms.")
     ap.add_argument("--with-stats", action="store_true",
                     help="emit width and pooled-coverage columns")
     ap.add_argument("--jobs", type=int, default=1,
@@ -192,6 +195,10 @@ def main():
                 sizes[f[0]] = int(f[1])
     chroms = (args.chroms.split(",") if args.chroms
               else [c for c in sizes if c in sizes])
+    if args.main_chroms:
+        import re
+        keep_re = re.compile(r"^chr([0-9]+|X|Y)$")
+        chroms = [c for c in sizes if keep_re.match(c)]
     chroms = [c for c in chroms if c in sizes]
 
     # pass 1: per-chrom pooled coverage + keep mask, cached to temp npz files.

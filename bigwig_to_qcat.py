@@ -967,6 +967,29 @@ def bins_for_chrom(chrom_len, bin_size=BIN_SIZE):
     return [(s, min(s + bin_size, chrom_len)) for s in starts]
 
 
+def load_bins_bed(path):
+    """
+    Load a consensus segmentation BED into {chrom: [(start, end), ...]} with each
+    chromosome's intervals sorted by start. Used for opt-in adaptive (variable-
+    width) binning: when supplied, these intervals replace the fixed grid and the
+    background Q is computed width-weighted. Extra columns are ignored.
+    """
+    out = {}
+    with open(path) as fh:
+        for line in fh:
+            if not line.strip() or line.startswith(("#", "track", "browser")):
+                continue
+            f = line.split("\t") if "\t" in line else line.split()
+            if len(f) < 3:
+                continue
+            chrom, start, end = f[0], int(f[1]), int(f[2])
+            if end > start:
+                out.setdefault(chrom, []).append((start, end))
+    for chrom in out:
+        out[chrom].sort(key=lambda se: se[0])
+    return out
+
+
 def load_regions_bed(path):
     """
     Parse regions from either:
@@ -1301,19 +1324,22 @@ def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
                          normalize_method, neg_strand_states,
                          regions_for_chrom, temp_dir, blacklist=None,
                          categories=None, min_signal_per_track=None,
-                         cohort_ref=None):
+                         cohort_ref=None, bins_override=None):
     """Compute per-chromosome P matrix and cache to a temp .npz file.
 
     Returns:
-      (chrom, n_bins, P_sum, npz_path, n_pertrack_zeroed)
+      (chrom, n_bins, P_sum, q_denom, npz_path, n_pertrack_zeroed)
 
-    The cached file contains arrays: bins (n_bins x 2 int32), P, raw_clipped, raw_abs.
-    n_pertrack_zeroed is the count of (bin, track) cells zeroed by per-track
-    noise-floor masking (0 if per-track masking was not requested).
+    q_denom is n_bins for fixed/region bins (so Q stays the unweighted mean) and
+    the sum of bin widths when bins_override (adaptive grid) is given (so Q is
+    width-weighted). The cached file contains arrays: bins (n_bins x 2 int32), P,
+    raw_clipped, raw_abs.
     """
     import pyBigWig
 
-    if regions_for_chrom is not None:
+    if bins_override is not None:
+        bins = bins_override
+    elif regions_for_chrom is not None:
         bins = bins_for_regions(regions_for_chrom)
     else:
         bins = bins_for_chrom(chrom_len)
@@ -1366,7 +1392,13 @@ def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
     P = signals_to_prob(signal_matrix)
     raw_clipped = np.clip(signal_matrix, 0.0, None).astype(np.float32)
 
-    P_sum = P.sum(axis=0)
+    if bins_override is not None:
+        widths = np.array([e - s for (s, e) in bins], dtype=np.float64)
+        P_sum = (P * widths[:, None]).sum(axis=0)
+        q_denom = float(widths.sum())
+    else:
+        P_sum = P.sum(axis=0)
+        q_denom = float(n)
 
     npz_path = str(Path(temp_dir) / f"{chrom}.npz")
     np.savez_compressed(npz_path,
@@ -1375,7 +1407,7 @@ def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
                         raw_clipped=raw_clipped,
                         raw_abs=raw_abs)
 
-    return chrom, n, P_sum, npz_path, n_pertrack_zeroed
+    return chrom, n, P_sum, q_denom, npz_path, n_pertrack_zeroed
 
 
 def _score_chrom_from_cache(chrom, q, npz_path, min_signal, normalize_score,
@@ -2134,7 +2166,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
     jobs=1, summary_chrom=None, skip_preflight=False,
     normalize_score=False, blacklist=None, min_signal_per_track=None,
     min_signal_percentile=None, floors_tsv=None, write_floors_tsv=None,
-    sample_name=None, cohort_ref=None, score_method="kl"):
+    sample_name=None, cohort_ref=None, score_method="kl", bins_bed=None):
     try:
         import pyBigWig
     except ImportError:
@@ -2278,13 +2310,18 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
     _norm_signal_cache = {}  # populated only when signal_plots=True
     Q_accumulator = np.zeros(num_states, dtype=np.float64)
     total_bins    = 0
+    Q_denom       = 0.0   # bins (no-bed) or sum of widths (bed) -> width-weighted Q
 
     tmp_path = str(out_path) + ".tmp.tsv"
 
     if jobs == 1:
         for chrom in chroms:
             chrom_len = chrom_sizes[chrom]
-            if regions is not None:
+            if bins_bed is not None:
+                bins = bins_bed.get(chrom, [])
+                if not bins:
+                    continue
+            elif regions is not None:
                 chrom_regions = regions.get(chrom, [])
                 if not chrom_regions:
                     continue
@@ -2341,11 +2378,17 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
             if signal_plots:
                 _raw_signal_cache[chrom]  = raw_abs
                 _norm_signal_cache[chrom] = raw_clipped
-            Q_accumulator += P.sum(axis=0)
+            if bins_bed is not None:
+                widths = np.array([e - s for (s, e) in bins], dtype=np.float64)
+                Q_accumulator += (P * widths[:, None]).sum(axis=0)
+                Q_denom += float(widths.sum())
+            else:
+                Q_accumulator += P.sum(axis=0)
+                Q_denom += n
             total_bins += n
             print(f"  {chrom}: {n:,} bins")
 
-        Q = Q_accumulator / total_bins
+        Q = Q_accumulator / Q_denom
         cats_dict = build_categories(num_states, _cats)
         print(f"\nBackground Q computed over {total_bins:,} bins.")
         print("  Top states by Q: " + ", ".join(
@@ -2405,10 +2448,14 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
             for chrom in chroms:
                 chrom_len = chrom_sizes[chrom]
                 regions_for_chrom = regions.get(chrom, []) if regions is not None else None
+                bins_override = bins_bed.get(chrom, []) if bins_bed is not None else None
+                if bins_bed is not None and not bins_override:
+                    continue   # no consensus bins on this chrom
                 tasks.append((chrom, chrom_len, bw_paths, normalize_tracks,
                               normalize_method, _neg_strand,
                               regions_for_chrom, tmp_dir, blacklist,
-                              _cats, _min_signal_per_track, cohort_ref))
+                              _cats, _min_signal_per_track, cohort_ref,
+                              bins_override))
 
             ctx = multiprocessing.get_context("spawn")
             with ctx.Pool(jobs) as pool:
@@ -2420,15 +2467,17 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
 
             chrom_npz_paths = {}
             chrom_bin_counts = {}
-            for chrom, n, P_sum, npz_path, n_pertrack_zeroed in results:
+            Q_denom = 0.0
+            for chrom, n, P_sum, q_denom, npz_path, n_pertrack_zeroed in results:
                 chrom_npz_paths[chrom] = npz_path
                 chrom_bin_counts[chrom] = n
                 Q_accumulator += P_sum
+                Q_denom += q_denom
                 total_bins += n
                 total_pertrack_zeroed += int(n_pertrack_zeroed)
                 print(f"  {chrom}: {n:,} bins")
 
-            Q = Q_accumulator / total_bins
+            Q = Q_accumulator / Q_denom
             cats_dict = build_categories(num_states, _cats)
             print(f"\nBackground Q computed over {total_bins:,} bins.")
             print("  Top states by Q: " + ", ".join(
@@ -3119,6 +3168,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--bins-bed", default=None, metavar="BED",
+        help=(
+            "Opt-in adaptive (variable-width) binning. Score on the consensus "
+            "segmentation in this BED (chrom start end ...) instead of the fixed "
+            "grid; the background Q is computed width-weighted. Build the BED with "
+            "build_adaptive_segmentation.py. When omitted, fixed binning is used "
+            "(bit-identical to the default)."
+        ),
+    )
+    parser.add_argument(
         "--normalize-method",
         choices=["nonzero-quantile", "quantile", "cohort-quantile"],
         default="nonzero-quantile",
@@ -3297,6 +3356,15 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Opt-in adaptive binning: load the consensus segmentation once and pass it
+    # to run(); when None, fixed binning is used (bit-identical to default).
+    bins_bed = None
+    if args.bins_bed:
+        bins_bed = load_bins_bed(args.bins_bed)
+        _nb = sum(len(v) for v in bins_bed.values())
+        print(f"  Adaptive binning: {_nb:,} consensus bins from {args.bins_bed} "
+              f"({len(bins_bed)} chroms); Q will be width-weighted.")
 
     # Load the cohort-wide per-track reference once if requested. It is a
     # (n_states, L) array keyed by track-column order, mapped onto each track.
@@ -3593,6 +3661,7 @@ def main():
                 summary_chrom=summary_chrom,
                 skip_preflight=True,
                 blacklist=combined_blacklist,
+                bins_bed=bins_bed,
             )
 
             if not args.no_extras:
@@ -3707,7 +3776,8 @@ def main():
                               negative_strand_states=_cli_neg_strand,
                               jobs=args.jobs,
                               summary_chrom=summary_chrom,
-                              blacklist=combined_blacklist)
+                              blacklist=combined_blacklist,
+                              bins_bed=bins_bed)
 
     if not args.no_extras:
         base = str(out_path).replace(".qcat.bgz", "").replace(".bgz", "")

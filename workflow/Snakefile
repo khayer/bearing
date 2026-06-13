@@ -139,6 +139,7 @@ def all_targets():
         out("paper_figures", "graphical_abstract_panel3.png"),
         out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
         out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
+        out("paper_figures", "collect.done"),
     ]
     if HAS_HIC:
         t += [out("figures.done"),
@@ -986,3 +987,83 @@ rule bes_hic_within:
         "--cool-A {params.cool_a} --cool-B {params.cool_b} "
         "--region chr6:40400000-42400000 --hic-bin {params.res} "
         "--n-perm 1000 --prefix {OUT}/hic/bes_hic_within_DN_vs_DP"
+
+
+# ---------------------------------------------------------------------------
+# collect_figures: gather every paper figure into one paper_figures/ folder as
+# relative symlinks, so they are easy to find after a run. Tolerant: scans only
+# curated figure dirs (skips QC/diagnostic noise) and silently skips any that a
+# given run did not produce (e.g. Hi-C figs when HAS_HIC is false). Extra dirs
+# from separate compare_qcat invocations (S1 per-track JSD, S5 Igh Spearman) can
+# be folded in via config["extra_figure_dirs"].
+# ---------------------------------------------------------------------------
+# (subdir glob relative to OUT, name prefix); each scanned for *.pdf/*.png
+_FIG_SCAN = [
+    ("figures/triangle/*", "triangle"),
+    ("figures/combined/*", "combined"),
+    ("calibration/*/*",    "calibration"),
+    ("regional",           "regional"),
+    ("decomposition",      "decomp"),
+]
+
+def _collect_fig_inputs():
+    figs = [out("calibration.done"), out("decomposition.done"),
+            out("paper_figures", "graphical_abstract_panel3.png"),
+            out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
+            *expand(out("regional", "panel_E_heatmap_{locus}.pdf"),
+                    locus=list(REGIONAL_LOCI.keys()))]
+    if HAS_HIC:
+        figs += [out("figures.done"), out("figures_combined.done"),
+                 out("paper_figures", "fig3_panelB_oe_grid.png"),
+                 out("paper_figures", "fig4_panelA_self_contact_grid.png"),
+                 out("paper_figures", "suppS7_panelB_compartment_res.png"),
+                 out("hic", "bes_hic_within.done")]
+    return figs
+
+rule collect_figures:
+    input: _collect_fig_inputs()
+    output: touch(out("paper_figures", "collect.done"))
+    run:
+        import os, glob
+        pf = out("paper_figures")
+        os.makedirs(pf, exist_ok=True)
+        count = [0]
+
+        def link(src, name):
+            src = os.path.abspath(src)
+            base, ext = os.path.splitext(name)
+            dst = os.path.join(pf, name)
+            k = 1
+            while os.path.exists(dst) and \
+                    os.path.realpath(dst) != os.path.realpath(src):
+                dst = os.path.join(pf, "%s_%d%s" % (base, k, ext))
+                k += 1
+            if os.path.lexists(dst):
+                return
+            try:
+                os.symlink(os.path.relpath(src, pf), dst)
+                count[0] += 1
+            except OSError:
+                pass
+
+        for sub, prefix in _FIG_SCAN:
+            multi = "*" in sub
+            for d in glob.glob(os.path.join(OUT, sub)):
+                if not os.path.isdir(d):
+                    continue
+                tag = os.path.basename(d.rstrip("/"))
+                for pat in ("*.pdf", "*.png"):
+                    for f in sorted(glob.glob(os.path.join(d, pat))):
+                        bn = os.path.basename(f)
+                        name = ("%s_%s_%s" % (prefix, tag, bn) if multi
+                                else "%s_%s" % (prefix, bn))
+                        link(f, name)
+
+        for d in config.get("extra_figure_dirs", []):
+            d = d if os.path.isabs(d) else os.path.join(OUT, d)
+            for pat in ("*.pdf", "*.png"):
+                for f in sorted(glob.glob(os.path.join(d, "**", pat),
+                                          recursive=True)):
+                    link(f, os.path.basename(f))
+
+        print("[collect_figures] linked %d figures into %s" % (count[0], pf))
