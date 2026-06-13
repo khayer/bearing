@@ -243,6 +243,31 @@ SCORE_METHOD = config.get("score_method", "kl")
 _PV_MINSIG = config.get("pvalue_min_signal", None)
 _PV_MINSIG_FLAG = ("--min-signal %s" % _PV_MINSIG) if _PV_MINSIG is not None else ""
 
+# Opt-in adaptive (variable-width) binning. When on, a single consensus
+# segmentation BED is built once and every sample + the permutation null are
+# scored on it (--bins-bed). Default off -> fixed 200 bp grid, pipeline unchanged.
+ADAPTIVE            = bool(config.get("adaptive_binning", False))
+ADAPTIVE_SEG        = out("adaptive_segmentation.bed")
+ADAPTIVE_FINE_BP    = config.get("adaptive_fine_bp", 50)
+ADAPTIVE_MIN_SIGNAL = config.get("adaptive_min_signal", 0.1)
+ADAPTIVE_TARGET     = config.get("adaptive_target_bins", 2000000)
+_BINS_BED_FLAG      = ("--bins-bed %s" % ADAPTIVE_SEG) if ADAPTIVE else ""
+_SEG_INPUT          = (ADAPTIVE_SEG if ADAPTIVE else [])
+
+# Build the genome-wide consensus equal-coverage grid (main chromosomes only).
+# Only required when ADAPTIVE (it is wired in as an input to scoring below).
+rule build_adaptive_segmentation:
+    input: sheet=out("samples.bearing.tsv"), blacklist=BL
+    output: ADAPTIVE_SEG
+    params: fine=ADAPTIVE_FINE_BP, minsig=ADAPTIVE_MIN_SIGNAL, target=ADAPTIVE_TARGET
+    threads: 8
+    resources: mem_mb=96000, runtime=720, cpus_per_task=8
+    shell:
+        "python {BIN}/build_adaptive_segmentation.py --sheet {input.sheet} "
+        "--categories {CATS} --chrom-sizes {CS} --blacklist {input.blacklist} "
+        "--fine-bp {params.fine} --min-signal {params.minsig} --target-bins {params.target} "
+        "--main-chroms --jobs {threads} --with-stats --out {output}"
+
 rule cohort_reference:
     input: sheet=out("samples.bearing.tsv"), blacklist=BL
     output: ref=COHORT_REF
@@ -263,7 +288,8 @@ def _score_norm_flag(wc):
 rule score_sample:
     input:
         blacklist=BL,
-        cohort=(COHORT_REF if COHORT_NORM else [])
+        cohort=(COHORT_REF if COHORT_NORM else []),
+        seg=_SEG_INPUT
     output: qcat=out("{sample}.qcat.bgz")
     params:
         bw=lambda wc: " ".join(SAMPLE_BW[wc.sample]),
@@ -274,7 +300,8 @@ rule score_sample:
         "python {BIN}/bigwig_to_qcat.py --bw {params.bw} "
         "--sample-name {wildcards.sample} --out {output.qcat} "
         "--categories {CATS} --chrom-sizes {CS} --blacklist {input.blacklist} "
-        "--min-signal {params.minsig} {params.norm} --score-method %s --jobs {threads} --signal-plots" % SCORE_METHOD
+        "--min-signal {params.minsig} {params.norm} --score-method %s %s --jobs {threads} --signal-plots"
+        % (SCORE_METHOD, _BINS_BED_FLAG)
 
 # Aggregator: depends on every per-sample qcat; downstream rules wait on this.
 rule score:
@@ -316,7 +343,8 @@ rule region_qc:
 rule perm_sample_one:
     input:
         sheet=out("samples.bearing.tsv"), score=out("score.done"), blacklist=BL,
-        cohort=(COHORT_REF if COHORT_NORM else [])
+        cohort=(COHORT_REF if COHORT_NORM else []),
+        seg=_SEG_INPUT
     output: out("perm", "perm{idx}", "{sample}", "{sample}_perm{idx}.qcat.bgz")
     params:
         n=P["n_perms"], shift=P["min_shift"], seed=P["seed"], minsig=P["min_signal"],
@@ -329,8 +357,8 @@ rule perm_sample_one:
         "--only-sample {wildcards.sample} "
         "--blacklist {input.blacklist} --min-signal {params.minsig} "
         "--min-shift {params.shift} --seed {params.seed} "
-        "{params.norm} --score-method %s "
-        "--shift-workers {threads} --jobs {threads}" % SCORE_METHOD
+        "{params.norm} --score-method %s %s "
+        "--shift-workers {threads} --jobs {threads}" % (SCORE_METHOD, _BINS_BED_FLAG)
 
 # Per-index aggregator: all samples' observed nulls for this permutation exist.
 rule perm_null_one:
