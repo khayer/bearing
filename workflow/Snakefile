@@ -773,6 +773,16 @@ rule calibration_one:
         "--n-perms {params.nperms} --obs-qcat-col qcat --scripts-dir {BIN} "
         "--conditions {wildcards.cond}"
 
+rule calibration_summary_fig:
+    # S10 cross-condition composite (lambda / BH hits / floor fraction) from the
+    # aggregated table. Distinct from the per-condition {cond}_calibration.pdf.
+    input: table=out("calibration", "calibration_summary.tsv")
+    output: out("calibration", "suppS10_calibration_summary.pdf")
+    shell:
+        "python {BIN}/plot_calibration_summary.py "
+        "--summary-tsv {input.table} --out {output}"
+
+
 rule calibration:
     # Aggregate the per-condition summaries into one combined table. Built fresh
     # here (rather than relying on the script's in-loop append) because the
@@ -1002,12 +1012,16 @@ _FIG_SCAN = [
     ("figures/triangle/*", "triangle"),
     ("figures/combined/*", "combined"),
     ("calibration/*/*",    "calibration"),
+    ("calibration",        "calibration"),
+    ("hic",                "hic"),
+    ("hic/*",              "hic"),
     ("regional",           "regional"),
     ("decomposition",      "decomp"),
 ]
 
 def _collect_fig_inputs():
     figs = [out("calibration.done"), out("decomposition.done"),
+            out("calibration", "suppS10_calibration_summary.pdf"),
             out("paper_figures", "graphical_abstract_panel3.png"),
             out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
             *expand(out("regional", "panel_E_heatmap_{locus}.pdf"),
