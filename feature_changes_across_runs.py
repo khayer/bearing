@@ -60,6 +60,21 @@ def build(run_path, qpath, kind, categories, features):
     return True
 
 
+_POINT_BASE = {"comparison", "feature", "chrom", "feat_start", "feat_end",
+               "bin_status", "bin_start", "bin_end", "bearing_score", "direction",
+               "pval", "pval_adj_bh", "fdr_significant"}
+
+
+def derive_tracks(path, kind, agg):
+    """All track names present in a feature_track_changes file."""
+    with open(path) as fh:
+        cols = (csv.reader(fh, delimiter="\t").__next__())
+    if kind == "cbe":
+        return [c for c in cols if c not in _POINT_BASE]
+    suf = "_" + agg
+    return [c[:-len(suf)] for c in cols if c.endswith(suf)]
+
+
 def load(path, tracks, kind, agg):
     """Return {(feature, comparison, track): value} for the requested tracks."""
     out = {}
@@ -85,8 +100,9 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--kind", choices=["cbe", "agr"], required=True)
     ap.add_argument("--query", action="append", required=True, metavar="LABEL=PATH")
-    ap.add_argument("--tracks", default="CTCF,Cohesin",
-                    help="comma-separated tracks (default CTCF,Cohesin)")
+    ap.add_argument("--tracks", default=None,
+                    help="comma-separated tracks (default: ALL tracks in the file, "
+                         "e.g. ATAC,RNAseqPos,RNAseqNeg,CTCF,Cohesin,H3K27ac)")
     ap.add_argument("--agg", choices=["sum", "mean", "peak"], default="sum",
                     help="AgR/region aggregate column to read (default sum)")
     ap.add_argument("--features", default=None,
@@ -96,10 +112,10 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    tracks = [t.strip() for t in args.tracks.split(",") if t.strip()]
     fname = KIND[args.kind]["file"]
 
-    runs = []
+    # Pass 1: resolve each run to its query file, building on demand.
+    resolved = []
     for spec in args.query:
         if "=" not in spec:
             sys.exit("[ERROR] --query expects LABEL=PATH, got: %s" % spec)
@@ -111,7 +127,18 @@ def main():
             if not build(path, qpath, args.kind, args.categories, args.features):
                 sys.exit("[ERROR] run '%s' has no pvalue/diff_*.stats.tsv at %s"
                          % (label, path))
-        runs.append((label, load(qpath, tracks, args.kind, args.agg)))
+        resolved.append((label, qpath))
+
+    # Default to every track present in the file.
+    if args.tracks:
+        tracks = [t.strip() for t in args.tracks.split(",") if t.strip()]
+    else:
+        tracks = derive_tracks(resolved[0][1], args.kind, args.agg)
+        sys.stderr.write("[tracks] using all: %s\n" % ", ".join(tracks))
+
+    # Pass 2: load values.
+    runs = [(label, load(qpath, tracks, args.kind, args.agg))
+            for label, qpath in resolved]
 
     keys = []
     seen = set()
