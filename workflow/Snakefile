@@ -463,7 +463,8 @@ rule regional_consolidate:
 # bin's BES / p-value / FDR / per-track decomposition, across all comparisons.
 rule cbe_point_query:
     input: pvalue=out("pvalue.done")
-    output: tsv=out("regional", "cbe_point_query.tsv")
+    output: tsv=out("regional", "cbe_point_query.tsv"),
+            summary=out("regional", "cbe_significant_summary.tsv")
     resources: mem_mb=32000, runtime=120
     params:
         diffs=lambda wc: " ".join(
@@ -471,7 +472,8 @@ rule cbe_point_query:
     shell:
         "python {BIN}/cbe_point_query.py --diffs {params.diffs} "
         "--cbe-bed {BIN}/annotations/cbe_mm10.bed "
-        "--categories {OUT}/DN_rep1_cats.json --out {output.tsv}"
+        "--categories {OUT}/DN_rep1_cats.json --out {output.tsv} "
+        "--summary-out {output.summary}"
 
 # Per-region, per-comparison FDR-significant bin counts from the differential
 # p-value tables (diff_<cmp>.stats.tsv). Stands alone from the (parallelized)

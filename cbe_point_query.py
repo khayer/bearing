@@ -114,6 +114,9 @@ def main():
     ap.add_argument("--categories", default=None,
                     help="optional categories JSON to label kl_N columns by track name")
     ap.add_argument("--out", required=True, help="output long-format TSV")
+    ap.add_argument("--summary-out", default=None,
+                    help="optional per-comparison significance summary TSV "
+                         "(n CBEs, n FDR-sig, n no-bin, significant CBE names)")
     args = ap.parse_args()
 
     # kl_1, kl_2, ... (numeric suffix, file order) -> kl_<TrackName>, mapped
@@ -195,6 +198,7 @@ def main():
     sys.stderr.write("Wrote per-CBE point query: %s (%d rows)\n"
                      % (args.out, len(out_rows)))
     by_comp = {}
+    sig_names = {}
     for rec in out_rows:
         c = rec["comparison"]
         sig = str(rec.get("fdr_significant", "")) in ("1", "1.0")
@@ -203,9 +207,24 @@ def main():
         d[0] += 1
         d[1] += 1 if sig else 0
         d[2] += 1 if nobin else 0
+        if sig:
+            sig_names.setdefault(c, []).append(rec["cbe_name"])
     for c, (n, nsig, nnb) in sorted(by_comp.items()):
         sys.stderr.write("  %-16s %d CBEs | %d FDR-sig | %d with no bin\n"
                          % (c, n, nsig, nnb))
+    total_sig = sum(v[1] for v in by_comp.values())
+    sys.stderr.write("TOTAL FDR-significant CBE x comparison cells: %d\n" % total_sig)
+
+    if args.summary_out:
+        with open(args.summary_out, "w", newline="") as fh:
+            w = csv.writer(fh, delimiter="\t")
+            w.writerow(["comparison", "n_cbe", "n_fdr_sig", "n_no_bin",
+                        "significant_cbes"])
+            for c in sorted(by_comp):
+                n, nsig, nnb = by_comp[c]
+                w.writerow([c, n, nsig, nnb,
+                            ";".join(sorted(sig_names.get(c, []))) or "."])
+        sys.stderr.write("Wrote significance summary: %s\n" % args.summary_out)
 
 
 if __name__ == "__main__":
