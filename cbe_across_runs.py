@@ -23,14 +23,37 @@ a cbe_point_query.tsv file directly. ASCII only.
 """
 import argparse
 import csv
+import glob
 import os
+import subprocess
 import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def resolve(path):
     if os.path.isdir(path):
         return os.path.join(path, "regional", "cbe_point_query.tsv")
     return path
+
+
+def build_query(run_path, qpath, cbe_bed, categories):
+    """Generate a missing cbe_point_query.tsv from a run dir's diff stats by
+    invoking cbe_point_query.py. Returns True on success, False if no diffs."""
+    diffs = sorted(glob.glob(os.path.join(run_path, "pvalue", "diff_*.stats.tsv")))
+    if not diffs:
+        return False
+    os.makedirs(os.path.join(run_path, "regional"), exist_ok=True)
+    summary = os.path.join(run_path, "regional", "cbe_significant_summary.tsv")
+    cmd = [sys.executable, os.path.join(HERE, "cbe_point_query.py"),
+           "--diffs", *diffs, "--cbe-bed", cbe_bed,
+           "--out", qpath, "--summary-out", summary]
+    cats = categories or os.path.join(run_path, "DN_rep1_cats.json")
+    if os.path.exists(cats):
+        cmd += ["--categories", cats]
+    sys.stderr.write("[build] %s -> %s\n" % (os.path.basename(run_path.rstrip("/")), qpath))
+    subprocess.run(cmd, check=True)
+    return True
 
 
 def load_query(path):
@@ -53,6 +76,12 @@ def main():
     ap.add_argument("--query", action="append", required=True, metavar="LABEL=PATH",
                     help="run label and its run dir or cbe_point_query.tsv "
                          "(repeatable)")
+    ap.add_argument("--cbe-bed", default=os.path.join(HERE, "annotations", "cbe_mm10.bed"),
+                    help="CBE BED for on-the-fly build of missing queries")
+    ap.add_argument("--categories", default=None,
+                    help="categories JSON for build (default <run>/DN_rep1_cats.json)")
+    ap.add_argument("--no-build", action="store_true",
+                    help="error on a missing query instead of building it")
     ap.add_argument("--out", default=None, help="combined matrix TSV")
     args = ap.parse_args()
 
@@ -63,9 +92,13 @@ def main():
         label, path = spec.split("=", 1)
         qpath = resolve(path)
         if not os.path.exists(qpath):
-            sys.exit("[ERROR] no cbe_point_query.tsv for run '%s' at %s\n"
-                     "        build it: snakemake .../%s/regional/cbe_point_query.tsv"
-                     % (label, qpath, os.path.basename(path.rstrip("/"))))
+            if args.no_build or not os.path.isdir(path):
+                sys.exit("[ERROR] no cbe_point_query.tsv for run '%s' at %s\n"
+                         "        build it: snakemake .../%s/regional/cbe_point_query.tsv"
+                         % (label, qpath, os.path.basename(path.rstrip("/"))))
+            if not build_query(path, qpath, args.cbe_bed, args.categories):
+                sys.exit("[ERROR] run '%s' has no pvalue/diff_*.stats.tsv at %s "
+                         "-- did the run finish?" % (label, path))
         runs.append((label, load_query(qpath)))
 
     # universe of CBEs and comparisons
