@@ -140,6 +140,7 @@ def all_targets():
         out("benchmark", "recovery.done"),
         out("paper_figures", "graphical_abstract_panel3.png"),
         out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
+        out("paper_figures", "suppS1_jsd_decomposition.pdf"),
         out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
         out("paper_figures", "collect.done"),
     ]
@@ -322,6 +323,22 @@ rule compare:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} --out {OUT}/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
         "--no-clip --workers {threads}"
+
+# Supplementary Figure S1: per-track decomposition of the pairwise Q-vector JSD
+# (companion to Fig 2B, the scalar q_pair_jsd_heatmap from the compare step). Uses
+# the same samples.qcat.tsv, so the sample order matches Fig 2B; reads each
+# sample's _cats.json (present once score.done). Panels sum to the Fig 2B scalar;
+# the script asserts the reconstruction to 1e-9.
+rule suppfig_s1_jsd:
+    input: sheet=out("samples.qcat.tsv"), score=out("score.done")
+    output:
+        pdf=out("paper_figures", "suppS1_jsd_decomposition.pdf"),
+        png=out("paper_figures", "suppS1_jsd_decomposition.png"),
+        tsv=out("paper_figures", "suppS1_jsd_per_track.tsv")
+    resources: mem_mb=8000, runtime=30
+    shell:
+        "python {BIN}/suppfig_s1_jsd_decomposition.py --qcat-sheet {input.sheet} "
+        "--outdir {OUT}/paper_figures --prefix suppS1_jsd_decomposition"
 
 # ---- Phase 2b: per-region raw-signal QC PNGs (pyGenomeTracks) --------------
 # One PNG per sample per region (raw BigWig tracks + BEARING score track), for
