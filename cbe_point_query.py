@@ -56,53 +56,52 @@ def read_cbes(path):
     return cbes
 
 
-def load_bins(path):
-    """Return (rows, fields, fdr_col, kl_cols). rows are dicts with typed
-    chrom/start/end retained as r['_chrom'], r['_start'], r['_end']."""
-    fh = _open(path)
-    reader = csv.DictReader(fh, delimiter="\t")
-    fields = reader.fieldnames or []
-    fdr_col = next((c for c in fields if c.startswith("significant_fdr")), None)
-    kl_cols = [c for c in fields if c.startswith("kl_")]
-    rows = []
-    for r in reader:
-        try:
-            r["_chrom"] = r["chrom"]
-            r["_start"] = int(r["start"])
-            r["_end"] = int(r["end"])
-        except (KeyError, ValueError):
-            continue
-        rows.append(r)
-    fh.close()
-    return rows, fields, fdr_col, kl_cols
-
-
-def index_by_chrom(rows):
-    """Group bin rows by chrom, each sorted by start, with a parallel starts
-    list for binary search."""
-    import bisect
+def build_cbe_index(cbes):
+    """{chrom: sorted [(mid, cbe_idx), ...]} for the CBE midpoints."""
     by = {}
-    for r in rows:
-        by.setdefault(r["_chrom"], []).append(r)
-    index = {}
-    for c, rs in by.items():
-        rs.sort(key=lambda x: x["_start"])
-        starts = [x["_start"] for x in rs]
-        index[c] = (rs, starts)
-    return index, bisect
+    for i, (chrom, start, end, _name) in enumerate(cbes):
+        mid = (start + end) // 2
+        by.setdefault(chrom, []).append((mid, i))
+    for c in by:
+        by[c].sort()
+    return by
 
 
-def find_bin(index, bisect, chrom, pos):
-    """Return the bin row whose [start,end) contains pos, or None."""
-    if chrom not in index:
-        return None
-    rs, starts = index[chrom]
-    i = bisect.bisect_right(starts, pos) - 1
-    if 0 <= i < len(rs):
-        r = rs[i]
-        if r["_start"] <= pos < r["_end"]:
-            return r
-    return None
+def query_diff_for_cbes(path, mids_by_chrom):
+    """Stream a diff stats TSV ONCE, keeping only the bins whose [start,end)
+    contains a CBE midpoint. Returns (header, col, fdr_col, kl_cols, hits) where
+    hits maps cbe_idx -> the matching row (list of cells). Memory is O(#CBEs),
+    not O(#bins) -- the genome-wide table is never held in memory."""
+    import bisect
+    fh = _open(path)
+    reader = csv.reader(fh, delimiter="\t")
+    header = next(reader)
+    col = {name: i for i, name in enumerate(header)}
+    fdr_col = next((c for c in header if c.startswith("significant_fdr")), None)
+    kl_cols = [c for c in header if c.startswith("kl_")]
+    try:
+        ci_c, ci_s, ci_e = col["chrom"], col["start"], col["end"]
+    except KeyError:
+        fh.close()
+        raise SystemExit("[ERROR] %s lacks chrom/start/end columns" % path)
+    hits = {}
+    for parts in reader:
+        if len(parts) <= ci_e:
+            continue
+        mids = mids_by_chrom.get(parts[ci_c])
+        if not mids:
+            continue
+        try:
+            s = int(parts[ci_s]); e = int(parts[ci_e])
+        except ValueError:
+            continue
+        # CBE midpoints with mid >= s, scanning upward while mid < e
+        j = bisect.bisect_left(mids, (s, -1))
+        while j < len(mids) and mids[j][0] < e:
+            hits[mids[j][1]] = parts
+            j += 1
+    fh.close()
+    return header, col, fdr_col, kl_cols, hits
 
 
 def main():
@@ -138,42 +137,45 @@ def main():
             kl_label = {}
 
     cbes = read_cbes(args.cbe_bed)
+    mids_by_chrom = build_cbe_index(cbes)
 
-    # Determine track set from the first readable diff (for consistent columns).
+    # Stream each diff once, pulling only the CBE-containing bins.
     kl_union = []
     out_rows = []
     for diff_path in args.diffs:
         comp = parse_comparison_name(diff_path)
-        rows, fields, fdr_col, kl_cols = load_bins(diff_path)
+        header, col, fdr_col, kl_cols, hits = query_diff_for_cbes(
+            diff_path, mids_by_chrom)
         for k in kl_cols:
             if k not in kl_union:
                 kl_union.append(k)
-        index, bisect = index_by_chrom(rows)
-        for (chrom, start, end, name) in cbes:
-            mid = (start + end) // 2
-            b = find_bin(index, bisect, chrom, mid)
+        for ci, (chrom, start, end, name) in enumerate(cbes):
             rec = {
                 "comparison": comp, "cbe_name": name, "cbe_chrom": chrom,
                 "cbe_start": start, "cbe_end": end,
             }
-            if b is None:
+            parts = hits.get(ci)
+            if parts is None:
                 rec.update({"bin_status": "no_bin", "bin_start": "", "bin_end": "",
                             "bearing_score": "", "direction": "", "pval": "",
                             "pval_adj_bh": "", "fdr_significant": ""})
                 for k in kl_cols:
                     rec[k] = ""
             else:
+                def cell(name, default=""):
+                    i = col.get(name)
+                    return parts[i] if i is not None and i < len(parts) else default
                 rec.update({
                     "bin_status": "ok",
-                    "bin_start": b["_start"], "bin_end": b["_end"],
-                    "bearing_score": b.get("bearing_score", ""),
-                    "direction": b.get("direction", ""),
-                    "pval": b.get("pval", ""),
-                    "pval_adj_bh": b.get("pval_adj_bh", ""),
-                    "fdr_significant": b.get(fdr_col, "") if fdr_col else "",
+                    "bin_start": cell("start"), "bin_end": cell("end"),
+                    "bearing_score": cell("bearing_score"),
+                    "direction": cell("direction"),
+                    "pval": cell("pval"),
+                    "pval_adj_bh": cell("pval_adj_bh"),
+                    "fdr_significant": cell(fdr_col) if fdr_col else "",
                 })
                 for k in kl_cols:
-                    rec[k] = b.get(k, "")
+                    rec[k] = cell(k)
             out_rows.append(rec)
 
     base_cols = ["comparison", "cbe_name", "cbe_chrom", "cbe_start", "cbe_end",
