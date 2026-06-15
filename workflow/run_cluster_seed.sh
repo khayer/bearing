@@ -74,7 +74,10 @@ echo
 # The p-value layers are needed to compare call sets AND per-sample calibration;
 # core-only by default (no Hi-C/figures).
 SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
-            "$REPO/workflow/$OUT/pvalue_samples.done")
+            "$REPO/workflow/$OUT/pvalue_samples.done"
+            "$REPO/workflow/$OUT/regional/cbe_point_query.tsv"
+            "$REPO/workflow/$OUT/regional/cbe_track_changes.tsv"
+            "$REPO/workflow/$OUT/regional/agr_track_changes.tsv")
 [ "$FULL" = "1" ] && SM_TARGETS=()
 
 echo "== Dry run =="

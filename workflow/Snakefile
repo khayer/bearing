@@ -129,6 +129,8 @@ def all_targets():
         *expand(out("regional", "consolidated_enrichment_{locus}.tsv"),
                 locus=list(REGIONAL_LOCI.keys())),
         out("regional", "cbe_point_query.tsv"),
+        out("regional", "cbe_track_changes.tsv"),
+        out("regional", "agr_track_changes.tsv"),
         out("regional", "significant_bins_summary.tsv"),
         out("loops", "topology.done"),
         *expand(out("regional", "panel_E_heatmap_{locus}.pdf"),
@@ -474,6 +476,33 @@ rule cbe_point_query:
         "--cbe-bed {BIN}/annotations/cbe_mm10.bed "
         "--categories {OUT}/DN_rep1_cats.json --out {output.tsv} "
         "--summary-out {output.summary}"
+
+# Per-track differential changes (signed kl_<track> + p-values) at known CTCF
+# elements (point: containing bin) and AgR genes (region: aggregated over the
+# gene body). For the "what happens to CTCF/cohesin here" question.
+rule feature_changes_cbe:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "cbe_track_changes.tsv")
+    resources: mem_mb=16000, runtime=120
+    params:
+        diffs=lambda wc: " ".join(
+            "%s/pvalue/diff_%s.stats.tsv" % (OUT, c) for c in COMPARISONS)
+    shell:
+        "python {BIN}/feature_track_changes.py "
+        "--features {BIN}/annotations/cbe_mm10.bed --diffs {params.diffs} "
+        "--categories {OUT}/DN_rep1_cats.json --mode point --out {output}"
+
+rule feature_changes_agr:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "agr_track_changes.tsv")
+    resources: mem_mb=16000, runtime=120
+    params:
+        diffs=lambda wc: " ".join(
+            "%s/pvalue/diff_%s.stats.tsv" % (OUT, c) for c in COMPARISONS)
+    shell:
+        "python {BIN}/feature_track_changes.py "
+        "--features {BIN}/annotations/AgRgenes_mm10_s.bed --diffs {params.diffs} "
+        "--categories {OUT}/DN_rep1_cats.json --mode region --out {output}"
 
 # Per-region, per-comparison FDR-significant bin counts from the differential
 # p-value tables (diff_<cmp>.stats.tsv). Stands alone from the (parallelized)

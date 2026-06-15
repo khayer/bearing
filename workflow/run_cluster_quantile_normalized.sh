@@ -88,6 +88,9 @@ SM_TARGETS=()
 if [ "$CORE_ONLY" = "1" ]; then
   SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
               "$REPO/workflow/$OUT/pvalue_samples.done"
+              "$REPO/workflow/$OUT/regional/cbe_point_query.tsv"
+              "$REPO/workflow/$OUT/regional/cbe_track_changes.tsv"
+              "$REPO/workflow/$OUT/regional/agr_track_changes.tsv"
               "$REPO/workflow/$OUT/region_qc.done")
 fi
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" -n "${SM_TARGETS[@]}"
