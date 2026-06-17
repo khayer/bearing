@@ -58,7 +58,16 @@ while IFS= read -r comp; do
   
   main_qcat="$COMPARISON_DIR/diff_${comp}.qcat.bgz"
   out_prefix="$RESULTS_DIR/diff_${comp}"
-  
+
+  # Resume guard: if this comparison's stats.tsv already exists and is non-empty,
+  # it finished on a previous (possibly time-limited) run -- skip it so a restart
+  # picks up where it stopped instead of recomputing all comparisons from scratch.
+  # Set FORCE_PVALUE=1 to recompute everything regardless.
+  if [[ "${FORCE_PVALUE:-0}" != "1" && -s "${out_prefix}.stats.tsv" ]]; then
+    echo "[resume] ${comp}: ${out_prefix}.stats.tsv exists, skipping"
+    continue
+  fi
+
   if [[ ! -f "$main_qcat" ]]; then
     echo "WARNING: main qcat not found: $main_qcat" >&2
     continue

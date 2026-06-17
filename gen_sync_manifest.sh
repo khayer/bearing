@@ -10,6 +10,8 @@ files=$( {
   ls workflow/Snakefile 2>/dev/null || true
   ls workflow/*.sh 2>/dev/null || true
   ls workflow/*.py 2>/dev/null || true
+  ls slurm/*.sh 2>/dev/null || true
+  ls slurm/*.py 2>/dev/null || true
 } | sort -u )
 [ -n "$files" ] || { echo "no tracked files found"; exit 1; }
 sha256sum $files > sync_manifest.sha256

@@ -88,6 +88,15 @@ REGIONAL_PTHRESH = config.get("regional_p_thresh", 0.05)
 REGIONAL_LOCUS_RE = "|".join(REGIONAL_LOCI.keys())
 REGIONAL_CMP_RE = "|".join(COMPARISONS)
 
+# All pairwise comparisons, named exactly as compare_qcat.py emits them:
+# combinations(sorted(conditions), 2) -> diff_<A>_vs_<B>. COMPARISONS above is
+# only REF-vs-rest; the differential p-value step covers every pair, so the
+# per-comparison pvalue rule keys on this full list (e.g. EbKO_vs_ProB).
+from itertools import combinations as _combinations
+ALL_PAIRWISE = ["%s_vs_%s" % (a, b)
+                for a, b in _combinations(sorted(CONDS), 2)]
+ALL_PAIRWISE_RE = "|".join(ALL_PAIRWISE)
+
 PERM_INDICES = list(range(1, int(config["n_perms"]) + 1))
 
 wildcard_constraints:
@@ -407,17 +416,27 @@ rule perm_nulls_diff:
     output: touch(out("perm_diff.done"))
 
 
-# ---- Phase 4: differential p-values (sbatch-free wrapper) -----------------
-rule pvalue_diff:
+# ---- Phase 4: differential p-values --------------------------------------
+# Per-comparison so the 10 comparisons run concurrently (was one ~37h serial
+# job). Each job loads one comparison's nulls and is independently restart-safe
+# via the resume guard in run_pvalue_one.sh. The aggregator just gates on all
+# per-comparison outputs.
+rule pvalue_diff_one:
     input: compare=out("compare.done"), perm_diff=out("perm_diff.done")
-    output: done=touch(out("pvalue.done"))
+    output: stats=out("pvalue", "diff_{comp}.stats.tsv")
+    wildcard_constraints: comp=ALL_PAIRWISE_RE
     params: n=P["n_perms"]
     threads: 4
-    resources: mem_mb=256000, runtime=1440, cpus_per_task=4
+    resources: mem_mb=256000, runtime=600, cpus_per_task=4
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
-        "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/compare {params.n} {OUT}/perm/perm {OUT}/pvalue %s %s"
+        "bash {BIN}/slurm/run_pvalue_one.sh {OUT}/compare {wildcards.comp} {params.n} "
+        "{OUT}/perm/perm {OUT}/pvalue %s %s"
         % (SCORE_METHOD, ("'%s'" % _PV_MINSIG) if _PV_MINSIG is not None else "''")
+
+rule pvalue_diff:
+    input: expand(out("pvalue", "diff_{comp}.stats.tsv"), comp=ALL_PAIRWISE)
+    output: done=touch(out("pvalue.done"))
 
 # Per-sample (non-diff) p-values: run bearing_pvalue.py for each sample against
 # its OWN permutation nulls (perm/perm{idx}/{sample}/{sample}_perm{idx}.qcat.bgz,
