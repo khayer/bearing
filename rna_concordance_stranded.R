@@ -78,6 +78,7 @@ bearing_min_abs    <- 0.0
 
 fdr_cut  <- 0.05     # edgeR FDR for "independently significant"
 rank_pct <- 10.0     # top-% of edgeR universe for rank enrichment
+force_recount <- FALSE  # TRUE to rerun featureCounts even if the edgeR CSV exists
 outdir   <- "."
 prefix   <- sprintf("rna_concordance_%s", comp)
 
@@ -139,36 +140,43 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
   saf <- saf_base
   saf$Strand <- strand_sym   # count this transcription strand
 
-  fc <- featureCounts(
-    files                  = bam_files,
-    annot.ext              = saf,
-    isPairedEnd            = paired_end,
-    strandSpecific         = strand_specific,
-    countMultiMappingReads = FALSE,
-    ignoreDup              = dups_marked,
-    minMQS                 = 20,
-    nthreads               = 4)
-  counts <- fc$counts
-  colnames(counts) <- sub("\\.bam$", "", basename(bam_files))
-
-  y <- DGEList(counts = counts, group = condition)
-  keep <- filterByExpr(y, group = condition)
-  y <- y[keep, , keep.lib.sizes = FALSE]
-  y <- calcNormFactors(y, method = "TMM")
-  design <- model.matrix(~condition)
-  y <- estimateDisp(y, design)
-  fit <- glmQLFit(y, design)
-  qlf <- glmQLFTest(fit, coef = 2)
-  res <- topTags(qlf, n = Inf, sort.by = "none")$table
-  kept_idx  <- as.integer(sub("bin_", "", rownames(res)))
-  res$chr   <- as.character(seqnames(bins))[kept_idx]
-  res$start <- start(bins)[kept_idx]
-  res$end   <- end(bins)[kept_idx]
-
   edger_csv <- file.path(outdir, sprintf("%s_%s_edgeR_allbins.csv", prefix, strand_label))
-  write.csv(res[, c("logFC", "logCPM", "F", "PValue", "FDR", "chr", "start", "end")],
-            edger_csv, row.names = FALSE)
-  message("  wrote ", edger_csv, " (", nrow(res), " tested bins)")
+  if (file.exists(edger_csv) && file.info(edger_csv)$size > 0 && !force_recount) {
+    n_tested <- max(0L, length(readLines(edger_csv)) - 1L)
+    message("  [resume] ", edger_csv, " exists (", n_tested,
+            " bins); skipping featureCounts + edgeR (set force_recount=TRUE to redo)")
+  } else {
+    fc <- featureCounts(
+      files                  = bam_files,
+      annot.ext              = saf,
+      isPairedEnd            = paired_end,
+      strandSpecific         = strand_specific,
+      countMultiMappingReads = FALSE,
+      ignoreDup              = dups_marked,
+      minMQS                 = 20,
+      nthreads               = 4)
+    counts <- fc$counts
+    colnames(counts) <- sub("\\.bam$", "", basename(bam_files))
+
+    y <- DGEList(counts = counts, group = condition)
+    keep <- filterByExpr(y, group = condition)
+    y <- y[keep, , keep.lib.sizes = FALSE]
+    y <- calcNormFactors(y, method = "TMM")
+    design <- model.matrix(~condition)
+    y <- estimateDisp(y, design)
+    fit <- glmQLFit(y, design)
+    qlf <- glmQLFTest(fit, coef = 2)
+    res <- topTags(qlf, n = Inf, sort.by = "none")$table
+    kept_idx  <- as.integer(sub("bin_", "", rownames(res)))
+    res$chr   <- as.character(seqnames(bins))[kept_idx]
+    res$start <- start(bins)[kept_idx]
+    res$end   <- end(bins)[kept_idx]
+
+    write.csv(res[, c("logFC", "logCPM", "F", "PValue", "FDR", "chr", "start", "end")],
+              edger_csv, row.names = FALSE)
+    n_tested <- nrow(res)
+    message("  wrote ", edger_csv, " (", n_tested, " tested bins)")
+  }
 
   # Directional BEARING BED for this strand's track.
   bearing_bed <- file.path(outdir, sprintf("%s_%s_bearing.bed", prefix, strand_label))
@@ -183,7 +191,7 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
     ex_args <- c(ex_args, "--top-percent", format(bearing_top_percent),
                  "--min-abs", format(bearing_min_abs))
   }
-  st <- system2(python_bin, ex_args, stdout = TRUE, stderr = TRUE)
+  st <- system2(python_bin, shQuote(ex_args), stdout = TRUE, stderr = TRUE)
   cat(paste(st, collapse = "\n"), "\n")
 
   # Concordance (recovery-on-testable + direction + rank enrichment).
@@ -191,12 +199,12 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
   co_args <- c(concord_py, "--bearing-bed", bearing_bed, "--edger-csv", edger_csv,
                "--fdr", format(fdr_cut), "--rank-pct", format(rank_pct),
                "--out", concord_tsv)
-  co <- system2(python_bin, co_args, stdout = TRUE, stderr = TRUE)
+  co <- system2(python_bin, shQuote(co_args), stdout = TRUE, stderr = TRUE)
   cat(paste(co, collapse = "\n"), "\n")
 
   list(strand = strand_label, track = bearing_track, edger_csv = edger_csv,
        bearing_bed = bearing_bed, concordance_tsv = concord_tsv,
-       n_tested = nrow(res))
+       n_tested = n_tested)
 }
 
 ## ===========================================================================
