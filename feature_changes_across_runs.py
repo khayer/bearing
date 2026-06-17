@@ -175,23 +175,51 @@ def main():
         # strong re-segmentation reversals rank above barely-over-floor noise.
         # Empty (NA) when the cell is not a flip.
         weak = min(max(pos), abs(min(neg))) if flip else None
+        # flip_source: which regime dissents, among present above-eps regimes.
+        #   <label>_only  : exactly one regime has the minority sign and the
+        #                   majority (>=2) agrees -- e.g. adaptive_only is a
+        #                   re-segmentation reversal; default_only often means a
+        #                   stale base, not biology.
+        #   mixed         : no single dissenter (even split / >1 in minority).
+        #   incomplete    : a regime is missing or sub-eps, so not all regimes
+        #                   contribute a sign -- attribution is undefined.
+        fsource = ""
+        if flip:
+            signed = [(lab, 1 if v > 0 else -1)
+                      for lab, v in zip(labels, vals)
+                      if v is not None and abs(v) > eps]
+            if len(signed) < len(runs):
+                fsource = "incomplete"
+            else:
+                pos_l = [l for l, s in signed if s > 0]
+                neg_l = [l for l, s in signed if s < 0]
+                minority = pos_l if len(pos_l) <= len(neg_l) else neg_l
+                majority = len(signed) - len(minority)
+                fsource = ("%s_only" % minority[0]
+                           if len(minority) == 1 and majority >= 2 else "mixed")
         if flip:
             n_flip += 1
-            flips.append((feat, comp, track, vals, weak))
+            flips.append((feat, comp, track, vals, weak, fsource))
         rng = (max(present) - min(present)) if present else 0.0
-        rows_out.append((feat, comp, track, vals, flip, rng, weak))
+        rows_out.append((feat, comp, track, vals, flip, rng, weak, fsource))
 
     print("  %d (feature x comparison x track) cells | %d flip sign across regimes"
           " (eps=%.3g)" % (len(keys), n_flip, eps))
     if flips:
         flips.sort(key=lambda x: x[4], reverse=True)   # strongest reversals first
+        src_tally = {}
+        for _f, _c, _t, _v, _w, fs in flips:
+            src_tally[fs] = src_tally.get(fs, 0) + 1
         print("  sign-flipping cells, strongest first "
-              "(regime values %s | weak_side):" % ",".join(labels))
-        for feat, comp, track, vals, weak in flips[:25]:
+              "(regime values %s | weak_side | source):" % ",".join(labels))
+        for feat, comp, track, vals, weak, fsource in flips[:25]:
             sv = ", ".join("%.3f" % v if v is not None else "NA" for v in vals)
-            print("    %-22s %-14s %-8s [%s]  weak=%.3f" % (feat, comp, track, sv, weak))
+            print("    %-22s %-14s %-8s [%s]  weak=%.3f  %s"
+                  % (feat, comp, track, sv, weak, fsource))
         if len(flips) > 25:
             print("    ... and %d more" % (len(flips) - 25))
+        print("  flip_source tally: "
+              + ", ".join("%s=%d" % (k, src_tally[k]) for k in sorted(src_tally)))
     else:
         print("  No sign flips: every track change keeps a consistent direction "
               "across all\n  scoring regimes -- the changes are robust to scoring "
@@ -202,12 +230,12 @@ def main():
         with open(args.out, "w", newline="") as fh:
             w = csv.writer(fh, delimiter="\t")
             w.writerow(["feature", "comparison", "track"] + labels
-                       + ["sign_flip", "range", "weak_side"])
-            for feat, comp, track, vals, flip, rng, weak in rows_out:
+                       + ["sign_flip", "range", "weak_side", "flip_source"])
+            for feat, comp, track, vals, flip, rng, weak, fsource in rows_out:
                 w.writerow([feat, comp, track]
                            + ["%.4f" % v if v is not None else "" for v in vals]
                            + ["1" if flip else "0", "%.4f" % rng,
-                              "%.4f" % weak if weak is not None else ""])
+                              "%.4f" % weak if weak is not None else "", fsource])
         print("wrote %s" % args.out)
 
 
