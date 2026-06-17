@@ -109,6 +109,9 @@ def main():
                     help="override the default CBE/AgR bed for on-the-fly build")
     ap.add_argument("--categories", default=None)
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--eps", type=float, default=EPS,
+                    help="|value| below this counts as ~0 (neither + nor -) in the "
+                         "sign-flip test (default %.2g)" % EPS)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -159,27 +162,34 @@ def main():
     n_flip = 0
     flips = []
     rows_out = []
+    eps = args.eps
     for (feat, comp, track) in keys:
         vals = []
         for _lab, d in runs:
             vals.append(d.get((feat, comp, track)))
         present = [v for v in vals if v is not None]
-        has_pos = any(v > EPS for v in present)
-        has_neg = any(v < -EPS for v in present)
-        flip = has_pos and has_neg
+        pos = [v for v in present if v > eps]
+        neg = [v for v in present if v < -eps]
+        flip = bool(pos) and bool(neg)
+        # weak_side: magnitude of the smaller of the two opposing extremes, so
+        # strong re-segmentation reversals rank above barely-over-floor noise.
+        # Empty (NA) when the cell is not a flip.
+        weak = min(max(pos), abs(min(neg))) if flip else None
         if flip:
             n_flip += 1
-            flips.append((feat, comp, track, vals))
+            flips.append((feat, comp, track, vals, weak))
         rng = (max(present) - min(present)) if present else 0.0
-        rows_out.append((feat, comp, track, vals, flip, rng))
+        rows_out.append((feat, comp, track, vals, flip, rng, weak))
 
     print("  %d (feature x comparison x track) cells | %d flip sign across regimes"
-          % (len(keys), n_flip))
+          " (eps=%.3g)" % (len(keys), n_flip, eps))
     if flips:
-        print("  sign-flipping cells (regime values %s):" % ",".join(labels))
-        for feat, comp, track, vals in flips[:25]:
+        flips.sort(key=lambda x: x[4], reverse=True)   # strongest reversals first
+        print("  sign-flipping cells, strongest first "
+              "(regime values %s | weak_side):" % ",".join(labels))
+        for feat, comp, track, vals, weak in flips[:25]:
             sv = ", ".join("%.3f" % v if v is not None else "NA" for v in vals)
-            print("    %-22s %-14s %-8s [%s]" % (feat, comp, track, sv))
+            print("    %-22s %-14s %-8s [%s]  weak=%.3f" % (feat, comp, track, sv, weak))
         if len(flips) > 25:
             print("    ... and %d more" % (len(flips) - 25))
     else:
@@ -192,11 +202,12 @@ def main():
         with open(args.out, "w", newline="") as fh:
             w = csv.writer(fh, delimiter="\t")
             w.writerow(["feature", "comparison", "track"] + labels
-                       + ["sign_flip", "range"])
-            for feat, comp, track, vals, flip, rng in rows_out:
+                       + ["sign_flip", "range", "weak_side"])
+            for feat, comp, track, vals, flip, rng, weak in rows_out:
                 w.writerow([feat, comp, track]
                            + ["%.4f" % v if v is not None else "" for v in vals]
-                           + ["1" if flip else "0", "%.4f" % rng])
+                           + ["1" if flip else "0", "%.4f" % rng,
+                              "%.4f" % weak if weak is not None else ""])
         print("wrote %s" % args.out)
 
 
