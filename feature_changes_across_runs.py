@@ -228,7 +228,7 @@ def main():
 
     if args.out:
         with open(args.out, "w", newline="") as fh:
-            w = csv.writer(fh, delimiter="\t")
+            w = csv.writer(fh, delimiter="\t", lineterminator="\n")
             w.writerow(["feature", "comparison", "track"] + labels
                        + ["sign_flip", "range", "weak_side", "flip_source"])
             for feat, comp, track, vals, flip, rng, weak, fsource in rows_out:
