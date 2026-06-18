@@ -36,7 +36,31 @@ def _norm_chrom(c):
     return c[3:] if c.startswith("chr") else c
 
 
-def load_stats(path):
+def parse_region(s):
+    """Parse a region string into (chrom, start, end). Accepts 'chr6:40000000-
+    42000000' (windowed) or 'chr6' (whole chromosome -> start/end None). Returns
+    None for None/empty input (genome-wide)."""
+    if not s:
+        return None
+    if ":" in s:
+        chrom, rng = s.split(":", 1)
+        a, b = rng.replace(",", "").split("-")
+        return (_norm_chrom(chrom), int(a), int(b))
+    return (_norm_chrom(s), None, None)
+
+
+def _in_region(chrom, start, region):
+    """True if a bin (chrom, start) falls in region (chrom, lo, hi)."""
+    if region is None:
+        return True
+    if chrom != region[0]:
+        return False
+    if region[1] is not None and not (region[1] <= start <= region[2]):
+        return False
+    return True
+
+
+def load_stats(path, region=None):
     """Return dict with per-bin arrays keyed by (chrom,start). Keeps score,
     pval_adj, significance, and direction sign if present."""
     keys, score, padj, sig, sign = [], [], [], [], []
@@ -59,6 +83,8 @@ def load_stats(path):
                 key = (_norm_chrom(f[ci]), int(f[si]))
                 sv = float(f[sc_i])
             except (ValueError, IndexError):
+                continue
+            if not _in_region(key[0], key[1], region):
                 continue
             keys.append(key)
             score.append(sv)
@@ -113,7 +139,7 @@ def jaccard(a, b):
     return (len(a & b) / u) if u else 0.0
 
 
-def diff_concordance(default_dir, qnorm_dir):
+def diff_concordance(default_dir, qnorm_dir, region=None):
     print("=" * 78)
     print("1. DIFF CONCORDANCE (per comparison): default vs cohort-qnorm")
     print("-" * 78)
@@ -129,7 +155,7 @@ def diff_concordance(default_dir, qnorm_dir):
         if not os.path.exists(pq):
             print("%-16s   (no qnorm file yet)" % cmp)
             continue
-        dd, dq = load_stats(pd), load_stats(pq)
+        dd, dq = load_stats(pd, region=region), load_stats(pq, region=region)
         if dd is None or dq is None:
             print("%-16s   (unreadable)" % cmp)
             continue
@@ -213,14 +239,23 @@ def main():
     ap.add_argument("--samples", nargs="+",
                     default=["ProB_rep1", "S3T3_rep1", "S3T3_rep2", "ProB_rep2", "DN_rep1"],
                     help="Per-sample tracks to check for null-calibration change.")
+    ap.add_argument("--region", default=None,
+                    help="Restrict the diff concordance to a region: 'chr6:40000000-"
+                         "42000000' or a whole chromosome 'chr6'. Omit for genome-wide. "
+                         "Per-sample calibration stays genome-wide.")
     args = ap.parse_args()
+
+    region = parse_region(args.region)
+    if region is not None:
+        rtxt = region[0] if region[1] is None else "%s:%d-%d" % region
+        print("[scope] diff concordance restricted to %s\n" % rtxt)
 
     if not os.path.isdir(args.qnorm_dir):
         print("[ERROR] qnorm dir not found: %s (has the qnorm run finished?)"
               % args.qnorm_dir, file=sys.stderr)
         sys.exit(1)
 
-    rows = diff_concordance(args.default_dir, args.qnorm_dir)
+    rows = diff_concordance(args.default_dir, args.qnorm_dir, region=region)
     if rows:
         count_concordance(rows)
     persample_calibration(args.default_dir, args.qnorm_dir, args.samples,

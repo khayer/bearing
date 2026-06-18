@@ -493,7 +493,7 @@ def load_floors_from_tsv(tsv_path, sample_name, all_categories):
     sample_lc = str(sample_name).strip()
     try:
         with open(tsv_path) as f:
-            reader = csv.DictReader(f, delimiter="\t")
+            reader = csv.DictReader(f, delimiter="\t", lineterminator="\n")
             if reader.fieldnames is None:
                 sys.exit(f"ERROR: --floors-tsv '{tsv_path}' has no header row.")
             # Resolve column names case-insensitively
@@ -546,7 +546,7 @@ def write_floors_tsv_file(floors_dict, sample_name, out_path, percentile=None):
     import csv
     pct_str = f"{percentile:g}" if percentile is not None else ""
     with open(out_path, "w", newline="") as f:
-        writer = csv.writer(f, delimiter="\t")
+        writer = csv.writer(f, delimiter="\t", lineterminator="\n")
         writer.writerow(["sample", "track", "floor", "percentile", "source"])
         for track, floor in sorted(floors_dict.items()):
             src = f"p{pct_str}_of_nonzero" if pct_str else "manual"

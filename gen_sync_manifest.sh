@@ -7,6 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 files=$( {
   ls *.py 2>/dev/null || true
+  ls *.R 2>/dev/null || true
+  ls *.sh 2>/dev/null || true
   ls workflow/Snakefile 2>/dev/null || true
   ls workflow/*.sh 2>/dev/null || true
   ls workflow/*.py 2>/dev/null || true

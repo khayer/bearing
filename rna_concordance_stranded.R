@@ -81,6 +81,12 @@ bearing_min_abs    <- 0.0
 
 fdr_cut  <- 0.05     # edgeR FDR for "independently significant"
 rank_pct <- 10.0     # top-% of edgeR universe for rank enrichment
+# Restrict the CONCORDANCE assessment to a region (edgeR/featureCounts stay
+# genome-wide; only recovery/direction/rank are scoped). Empty = genome-wide.
+# A name (e.g. "igh", "rc") is looked up in workflow/config/regions.tsv; a
+# window "chr12:112934363-116108354" is used directly. Region-scoped outputs are
+# tagged so they do not overwrite the genome-wide ones.
+concord_region <- ""
 # edgeR expression-filter floor (passed to filterByExpr min.count). Default 10
 # matches edgeR's recommendation. Lower (e.g. 3-5) to admit lower-count bins as
 # a SENSITIVITY analysis -- not as the primary result: edgeR's dispersion/QL
@@ -213,13 +219,23 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
   # Concordance (recovery-on-testable + direction + rank enrichment), plus a
   # dump of testable-but-missed BEARING bins (with edgeR logFC/FDR + direction)
   # so power-ceiling vs genuine-divergence can be checked per strand.
+  region_tag <- ""
+  region_args <- character(0)
+  if (nzchar(concord_region)) {
+    region_tag <- paste0("_", gsub("[^A-Za-z0-9]", "", concord_region))
+    if (grepl(":", concord_region)) {
+      region_args <- c("--region", concord_region)
+    } else {
+      region_args <- c("--region-name", concord_region)
+    }
+  }
   concord_tsv <- file.path(outdir,
-                           sprintf("%s_%s%s_concordance.tsv", prefix, strand_label, mc_tag))
+                           sprintf("%s_%s%s%s_concordance.tsv", prefix, strand_label, mc_tag, region_tag))
   missed_tsv <- file.path(outdir,
-                          sprintf("%s_%s%s_missed.tsv", prefix, strand_label, mc_tag))
+                          sprintf("%s_%s%s%s_missed.tsv", prefix, strand_label, mc_tag, region_tag))
   co_args <- c(concord_py, "--bearing-bed", bearing_bed, "--edger-csv", edger_csv,
                "--fdr", format(fdr_cut), "--rank-pct", format(rank_pct),
-               "--out", concord_tsv, "--dump-missed", missed_tsv)
+               "--out", concord_tsv, "--dump-missed", missed_tsv, region_args)
   co <- system2(python_bin, shQuote(co_args), stdout = TRUE, stderr = TRUE)
   cat(paste(co, collapse = "\n"), "\n")
 
@@ -263,7 +279,11 @@ combined <- do.call(rbind, Filter(Negate(is.null), list(
   if (!is.null(sum_neg)) cbind(strand = "neg", track = "RNAseq-", sum_neg))))
 
 mc_tag <- if (min_count == 10) "" else sprintf("_mc%d", min_count)
-summary_tsv <- file.path(outdir, sprintf("%s%s_summary.tsv", prefix, mc_tag))
+region_tag <- ""
+if (nzchar(concord_region)) {
+  region_tag <- paste0("_", gsub("[^A-Za-z0-9]", "", concord_region))
+}
+summary_tsv <- file.path(outdir, sprintf("%s%s%s_summary.tsv", prefix, mc_tag, region_tag))
 if (!is.null(combined)) {
   write.table(combined, summary_tsv, sep = "\t", quote = FALSE, row.names = FALSE)
   message("\n[summary] wrote ", summary_tsv)

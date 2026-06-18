@@ -60,7 +60,7 @@ def load_query(path):
     """Return {(cbe_name, comparison): (is_sig, bin_status)} from a query TSV."""
     out = {}
     with open(path) as fh:
-        rd = csv.DictReader(fh, delimiter="\t")
+        rd = csv.DictReader(fh, delimiter="\t", lineterminator="\n")
         for r in rd:
             name = r.get("cbe_name", "")
             comp = r.get("comparison", "")
@@ -155,7 +155,7 @@ def main():
 
     if args.out:
         with open(args.out, "w", newline="") as fh:
-            w = csv.writer(fh, delimiter="\t")
+            w = csv.writer(fh, delimiter="\t", lineterminator="\n")
             cols = ["cbe_name"]
             for label, _q in runs:
                 for comp in comps:

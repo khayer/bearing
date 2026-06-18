@@ -36,6 +36,7 @@ ASCII only.
 import argparse
 import csv
 import math
+import os
 import sys
 
 
@@ -120,6 +121,44 @@ def _hyperge_sf(k, N, K, n):
     return min(1.0, s)
 
 
+def _parse_region_str(s):
+    """'chr6:41525453-41567200' -> (chrom, lo, hi); 'chr6' -> (chrom, None, None)."""
+    if not s:
+        return None
+    if ":" in s:
+        chrom, rng = s.split(":", 1)
+        a, b = rng.replace(",", "").split("-")
+        return (chrom, int(a), int(b))
+    return (s, None, None)
+
+
+def _region_from_name(name, tsv):
+    """Look up a named region in a regions.tsv (columns: name, region, ...)."""
+    if not os.path.exists(tsv):
+        sys.exit("[ERROR] regions tsv not found: %s" % tsv)
+    with open(tsv) as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+        idx = {h: i for i, h in enumerate(header)}
+        ni, ri = idx.get("name"), idx.get("region")
+        if ni is None or ri is None:
+            sys.exit("[ERROR] %s missing 'name'/'region' columns" % tsv)
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            if len(f) > max(ni, ri) and f[ni] == name:
+                return _parse_region_str(f[ri])
+    sys.exit("[ERROR] region name '%s' not found in %s" % (name, tsv))
+
+
+def _in_region(chrom, pos, region):
+    if region is None:
+        return True
+    if chrom != region[0]:
+        return False
+    if region[1] is not None and not (region[1] <= pos <= region[2]):
+        return False
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -135,6 +174,14 @@ def main():
                          "(default 10)")
     ap.add_argument("--chrom", default=None,
                     help="restrict to one chromosome (default: all shared)")
+    ap.add_argument("--region", default=None,
+                    help="restrict to a window 'chr6:41525453-41567200' (or a whole "
+                         "chromosome 'chr6'). Overrides --chrom.")
+    ap.add_argument("--region-name", default=None,
+                    help="named region looked up in --regions-tsv (e.g. 'igh', 'rc'). "
+                         "Overrides --region/--chrom.")
+    ap.add_argument("--regions-tsv", default="workflow/config/regions.tsv",
+                    help="regions table for --region-name (cols: name, region).")
     ap.add_argument("--out", default=None, help="optional TSV summary path")
     ap.add_argument("--dump-missed", default=None,
                     help="optional TSV: BEARING-testable bins edgeR did NOT call "
@@ -143,11 +190,20 @@ def main():
                          "the FDR line (power ceiling) vs scatter to FDR~1 (no signal).")
     args = ap.parse_args()
 
+    # Resolve a single region from --region-name > --region > --chrom.
+    if args.region_name:
+        region = _region_from_name(args.region_name, args.regions_tsv)
+    elif args.region:
+        region = _parse_region_str(args.region)
+    elif args.chrom:
+        region = (args.chrom, None, None)
+    else:
+        region = None
+
     edger = load_edger(args.edger_csv)
-    if args.chrom:
-        edger = [r for r in edger if r[0] == args.chrom]
+    edger = [r for r in edger if _in_region(r[0], r[1], region)]
     if not edger:
-        sys.exit("[ERROR] no edgeR rows parsed (after optional --chrom filter).")
+        sys.exit("[ERROR] no edgeR rows parsed (after optional region filter).")
 
     # match key: (chrom, end) -- robust to 0-based BED vs 1-based GRanges start
     tested = {}      # (chrom,end) -> (logFC, pvalue, fdr)
@@ -162,7 +218,8 @@ def main():
     top_keys = set(k for k, _ in sorted(
         tested.items(), key=lambda kv: kv[1][1])[:n_top])
 
-    bear = load_bearing(args.bearing_bed, chrom=args.chrom)
+    bear = load_bearing(args.bearing_bed, chrom=(region[0] if region else None))
+    bear = [b for b in bear if _in_region(b[0], b[1], region)]
     in_u = [b for b in bear if (b[0], b[2]) in tested]
     hit = [b for b in in_u if (b[0], b[2]) in sig]
     top_hit = [b for b in in_u if (b[0], b[2]) in top_keys]
@@ -196,7 +253,14 @@ def main():
     p_top = _hyperge_sf(len(top_hit), N, n_top, n)
 
     common_w = max(widths, key=widths.get) if widths else 0
-    scope = args.chrom if args.chrom else "all shared chroms"
+    if region is None:
+        scope = "all shared chroms"
+    elif region[1] is None:
+        scope = region[0]
+    else:
+        scope = "%s:%d-%d" % region
+    if args.region_name:
+        scope = "%s (%s)" % (args.region_name, scope)
 
     print("=" * 76)
     print("BEARING vs edgeR differential concordance  (%s)" % scope)

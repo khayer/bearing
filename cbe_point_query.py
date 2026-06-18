@@ -74,7 +74,7 @@ def query_diff_for_cbes(path, mids_by_chrom):
     not O(#bins) -- the genome-wide table is never held in memory."""
     import bisect
     fh = _open(path)
-    reader = csv.reader(fh, delimiter="\t")
+    reader = csv.reader(fh, delimiter="\t", lineterminator="\n")
     header = next(reader)
     col = {name: i for i, name in enumerate(header)}
     fdr_col = next((c for c in header if c.startswith("significant_fdr")), None)
@@ -219,7 +219,7 @@ def main():
 
     if args.summary_out:
         with open(args.summary_out, "w", newline="") as fh:
-            w = csv.writer(fh, delimiter="\t")
+            w = csv.writer(fh, delimiter="\t", lineterminator="\n")
             w.writerow(["comparison", "n_cbe", "n_fdr_sig", "n_no_bin",
                         "significant_cbes"])
             for c in sorted(by_comp):

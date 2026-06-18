@@ -152,7 +152,7 @@ def main():
     lookup = build_anchor_lookup(read_loops(args.loops))
 
     fh = _open(args.diff)
-    reader = csv.DictReader(fh, delimiter="\t")
+    reader = csv.DictReader(fh, delimiter="\t", lineterminator="\n")
     fields = reader.fieldnames or []
     fdr_col = next((c for c in fields if c.startswith("significant_fdr")), None)
     kl_cols = [c for c in fields if c.startswith("kl_")]
@@ -206,7 +206,7 @@ def main():
     a_dom = namer(max(anchor["kl"], key=anchor["kl"].get)) if (kl_cols and anchor["n"]) else ""
 
     with open(args.out, "w", newline="") as out:
-        w = csv.writer(out, delimiter="\t")
+        w = csv.writer(out, delimiter="\t", lineterminator="\n")
         w.writerow(["comparison", "n_anchor_bins", "n_nonanchor_bins",
                     "mean_abs_bes_anchor", "mean_abs_bes_nonanchor",
                     "frac_fdr_sig_anchor", "frac_fdr_sig_nonanchor",
@@ -223,7 +223,7 @@ def main():
 
     if args.bins_out is not None:
         with open(args.bins_out, "w", newline="") as bf:
-            bw = csv.writer(bf, delimiter="\t")
+            bw = csv.writer(bf, delimiter="\t", lineterminator="\n")
             bw.writerow(["chrom", "start", "end", "stratum", "bearing_score",
                          "fdr_significant"])
             bw.writerows(bins_rows)

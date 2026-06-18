@@ -62,7 +62,7 @@ def main():
 
     # Read the diff stats once.
     fh = _open(args.diff)
-    reader = csv.DictReader(fh, delimiter="\t")
+    reader = csv.DictReader(fh, delimiter="\t", lineterminator="\n")
     fields = reader.fieldnames or []
     fdr_col = next((c for c in fields if c.startswith("significant_fdr")), None)
     if fdr_col is None:
@@ -83,7 +83,7 @@ def main():
         parsed.append((c, s, e, bes, sig, r))
 
     with open(args.out, "w", newline="") as out:
-        w = csv.writer(out, delimiter="\t")
+        w = csv.writer(out, delimiter="\t", lineterminator="\n")
         w.writerow(["locus", "chrom", "start", "end", "n_bins",
                     "n_above_bes_thresh", "n_fdr_significant",
                     "frac_fdr_significant", "dominant_track_in_sig_bins"])

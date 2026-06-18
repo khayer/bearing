@@ -121,7 +121,7 @@ def _parse_locus(s):
 
 def load_diff(path, locus=None, fdr_only=False):
     fh = _open(path)
-    reader = csv.DictReader(fh, delimiter="\t")
+    reader = csv.DictReader(fh, delimiter="\t", lineterminator="\n")
     fields = reader.fieldnames or []
     fdr_col = next((c for c in fields if c.startswith("significant_fdr")), None)
     kl_cols = [c for c in fields if c.startswith("kl_")]
@@ -252,7 +252,7 @@ def main():
         sys.stderr.write("WARN: scipy unavailable; Fisher p reported as NA\n")
 
     with open(args.out, "w", newline="") as out:
-        w = csv.writer(out, delimiter="\t")
+        w = csv.writer(out, delimiter="\t", lineterminator="\n")
         w.writerow(["comparison", "loop_class", "n_loops", "n_anchor_bins",
                     "mean_abs_bes", "n_fdr_sig", "dominant_track",
                     "fisher_p_gained_vs_shared_fdr"])
