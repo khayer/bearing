@@ -136,6 +136,11 @@ def main():
     ap.add_argument("--chrom", default=None,
                     help="restrict to one chromosome (default: all shared)")
     ap.add_argument("--out", default=None, help="optional TSV summary path")
+    ap.add_argument("--dump-missed", default=None,
+                    help="optional TSV: BEARING-testable bins edgeR did NOT call "
+                         "significant, with their edgeR logFC/pvalue/FDR and BEARING "
+                         "direction. Use to check whether misses cluster just above "
+                         "the FDR line (power ceiling) vs scatter to FDR~1 (no signal).")
     args = ap.parse_args()
 
     edger = load_edger(args.edger_csv)
@@ -161,6 +166,18 @@ def main():
     in_u = [b for b in bear if (b[0], b[2]) in tested]
     hit = [b for b in in_u if (b[0], b[2]) in sig]
     top_hit = [b for b in in_u if (b[0], b[2]) in top_keys]
+
+    if args.dump_missed:
+        missed = [b for b in in_u if (b[0], b[2]) not in sig]
+        with open(args.dump_missed, "w") as fh:
+            fh.write("chrom\tstart\tend\tbearing_dir\tedger_logFC\t"
+                     "edger_pvalue\tedger_fdr\n")
+            for c, s, e, up in sorted(missed, key=lambda b: tested[(b[0], b[2])][2]):
+                lfc, pv, fdr = tested[(c, e)]
+                bdir = "up" if up is True else ("dn" if up is False else "NA")
+                fh.write("%s\t%d\t%d\t%s\t%.4f\t%.4g\t%.4g\n"
+                         % (c, s, e, bdir, lfc, pv, fdr))
+        print("wrote %d missed bins -> %s" % (len(missed), args.dump_missed))
 
     # direction agreement among recovered bins
     dir_tot = dir_agree = 0
