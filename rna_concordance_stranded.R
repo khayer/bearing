@@ -24,7 +24,10 @@
 #   <prefix>_pos_edgeR_allbins.csv / <prefix>_neg_edgeR_allbins.csv
 #   <prefix>_pos_bearing.bed       / <prefix>_neg_bearing.bed   (directional)
 #   <prefix>_pos_concordance.tsv   / <prefix>_neg_concordance.tsv
+#   <prefix>_pos_missed.tsv        / <prefix>_neg_missed.tsv  (testable-but-missed
+#                                    BEARING bins with edgeR logFC/FDR + direction)
 #   <prefix>_summary.tsv           (both strands, one row each)
+# Non-default min_count tags every per-strand output with _mc<N>.
 #
 # ASCII only.
 
@@ -207,18 +210,39 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
   st <- system2(python_bin, shQuote(ex_args), stdout = TRUE, stderr = TRUE)
   cat(paste(st, collapse = "\n"), "\n")
 
-  # Concordance (recovery-on-testable + direction + rank enrichment).
+  # Concordance (recovery-on-testable + direction + rank enrichment), plus a
+  # dump of testable-but-missed BEARING bins (with edgeR logFC/FDR + direction)
+  # so power-ceiling vs genuine-divergence can be checked per strand.
   concord_tsv <- file.path(outdir,
                            sprintf("%s_%s%s_concordance.tsv", prefix, strand_label, mc_tag))
+  missed_tsv <- file.path(outdir,
+                          sprintf("%s_%s%s_missed.tsv", prefix, strand_label, mc_tag))
   co_args <- c(concord_py, "--bearing-bed", bearing_bed, "--edger-csv", edger_csv,
                "--fdr", format(fdr_cut), "--rank-pct", format(rank_pct),
-               "--out", concord_tsv)
+               "--out", concord_tsv, "--dump-missed", missed_tsv)
   co <- system2(python_bin, shQuote(co_args), stdout = TRUE, stderr = TRUE)
   cat(paste(co, collapse = "\n"), "\n")
 
+  # Classify the misses: power-ceiling (large edgeR effect, just not significant)
+  # vs near-zero divergence. Printed per strand for a quick read.
+  if (file.exists(missed_tsv)) {
+    m <- tryCatch(read.delim(missed_tsv, stringsAsFactors = FALSE),
+                  error = function(e) NULL)
+    if (!is.null(m) && nrow(m) > 0) {
+      near_line <- sum(m$edger_fdr >= 0.05 & m$edger_fdr < 0.2)
+      far <- sum(m$edger_fdr >= 0.2)
+      far_bigfc <- sum(m$edger_fdr >= 0.2 & abs(m$edger_logFC) >= 0.5)
+      message(sprintf("  [missed] %s: %d total | %d near line (FDR 0.05-0.2) | "
+                      , strand_label, nrow(m), near_line),
+              sprintf("%d far (FDR>=0.2), of which %d carry |logFC|>=0.5 "
+                      , far, far_bigfc),
+              "(large effect = power-limited, not divergence)")
+    }
+  }
+
   list(strand = strand_label, track = bearing_track, edger_csv = edger_csv,
        bearing_bed = bearing_bed, concordance_tsv = concord_tsv,
-       n_tested = n_tested)
+       missed_tsv = missed_tsv, n_tested = n_tested)
 }
 
 ## ===========================================================================
