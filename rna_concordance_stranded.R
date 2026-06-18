@@ -78,6 +78,12 @@ bearing_min_abs    <- 0.0
 
 fdr_cut  <- 0.05     # edgeR FDR for "independently significant"
 rank_pct <- 10.0     # top-% of edgeR universe for rank enrichment
+# edgeR expression-filter floor (passed to filterByExpr min.count). Default 10
+# matches edgeR's recommendation. Lower (e.g. 3-5) to admit lower-count bins as
+# a SENSITIVITY analysis -- not as the primary result: edgeR's dispersion/QL
+# test degrades at very low counts, so tests on newly-admitted bins are softer.
+# Do not go below ~3. Keep 10 for the headline concordance number.
+min_count <- 10
 force_recount <- FALSE  # TRUE to rerun featureCounts even if the edgeR CSV exists
 outdir   <- "."
 prefix   <- sprintf("rna_concordance_%s", comp)
@@ -117,10 +123,13 @@ concord_py <- file.path(bearing_dir, "bearing_diff_concordance.py")
 for (f in c(extract_py, concord_py)) if (!file.exists(f)) stop("missing helper: ", f)
 python_bin <- Sys.getenv("PYTHON", unset = "python")
 
-message(sprintf("[setup] %s : condA=%s (positive) vs condB=%s | library=%s -> strandSpecific=%d",
-                comp, condA, condB, library_strand, strand_specific))
+message(sprintf("[setup] %s : condA=%s (positive) vs condB=%s | library=%s -> strandSpecific=%d | min_count=%d",
+                comp, condA, condB, library_strand, strand_specific, min_count))
 message("[setup] coef 2 sign: positive logFC = enriched in ", condA,
         " (matches BEARING A-B). Verify on a known stranded gene if unsure.")
+if (min_count != 10)
+  message("[setup] min_count=", min_count, " (non-default): sensitivity run; ",
+          "outputs tagged _mc", min_count, ". Keep min_count=10 for the headline number.")
 
 bins <- import(bins_bed)
 saf_base <- data.frame(
@@ -140,7 +149,11 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
   saf <- saf_base
   saf$Strand <- strand_sym   # count this transcription strand
 
-  edger_csv <- file.path(outdir, sprintf("%s_%s_edgeR_allbins.csv", prefix, strand_label))
+  # Non-default min_count gets a filename tag so a sensitivity run does not
+  # collide with (or get short-circuited by) the default min_count=10 outputs.
+  mc_tag <- if (min_count == 10) "" else sprintf("_mc%d", min_count)
+  edger_csv <- file.path(outdir,
+                         sprintf("%s_%s%s_edgeR_allbins.csv", prefix, strand_label, mc_tag))
   if (file.exists(edger_csv) && file.info(edger_csv)$size > 0 && !force_recount) {
     n_tested <- max(0L, length(readLines(edger_csv)) - 1L)
     message("  [resume] ", edger_csv, " exists (", n_tested,
@@ -159,7 +172,7 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
     colnames(counts) <- sub("\\.bam$", "", basename(bam_files))
 
     y <- DGEList(counts = counts, group = condition)
-    keep <- filterByExpr(y, group = condition)
+    keep <- filterByExpr(y, group = condition, min.count = min_count)
     y <- y[keep, , keep.lib.sizes = FALSE]
     y <- calcNormFactors(y, method = "TMM")
     design <- model.matrix(~condition)
@@ -195,7 +208,8 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
   cat(paste(st, collapse = "\n"), "\n")
 
   # Concordance (recovery-on-testable + direction + rank enrichment).
-  concord_tsv <- file.path(outdir, sprintf("%s_%s_concordance.tsv", prefix, strand_label))
+  concord_tsv <- file.path(outdir,
+                           sprintf("%s_%s%s_concordance.tsv", prefix, strand_label, mc_tag))
   co_args <- c(concord_py, "--bearing-bed", bearing_bed, "--edger-csv", edger_csv,
                "--fdr", format(fdr_cut), "--rank-pct", format(rank_pct),
                "--out", concord_tsv)
@@ -224,7 +238,8 @@ combined <- do.call(rbind, Filter(Negate(is.null), list(
   if (!is.null(sum_pos)) cbind(strand = "pos", track = "RNAseq+", sum_pos),
   if (!is.null(sum_neg)) cbind(strand = "neg", track = "RNAseq-", sum_neg))))
 
-summary_tsv <- file.path(outdir, sprintf("%s_summary.tsv", prefix))
+mc_tag <- if (min_count == 10) "" else sprintf("_mc%d", min_count)
+summary_tsv <- file.path(outdir, sprintf("%s%s_summary.tsv", prefix, mc_tag))
 if (!is.null(combined)) {
   write.table(combined, summary_tsv, sep = "\t", quote = FALSE, row.names = FALSE)
   message("\n[summary] wrote ", summary_tsv)
