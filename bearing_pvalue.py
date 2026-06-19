@@ -249,6 +249,54 @@ def empirical_pvals(observed_scores, null_scores_sorted):
     return np.clip(pvals, 1.0 / (n_null + 1), 1.0)
 
 
+def check_null_overlap(observed_scores, null_scores_sorted, pvals):
+    """
+    Guard against a degenerate/mismatched permutation null.
+
+    If the null score distribution sits ABOVE the observed distribution (e.g.
+    the null was built with a different normalization, min-signal floor, or
+    track-set than the observed qcat), every observed score falls below the
+    null mass and empirical_pvals collapses to a single ceiling p-value across
+    the whole genome -- silently producing zero significant bins for a sample
+    whose observed scores are perfectly normal. This was seen on DN_rep2 and
+    ProB_rep1 (6.9M bins pinned at one p-value). Abort loudly instead.
+
+    Two independent tripwires, both targeting the non-overlap pathology while
+    leaving genuinely low-signal-but-calibrated samples alone:
+      (a) the null median sits above the observed 90th percentile, or
+      (b) > 50% of observed bins receive the (near-)ceiling p-value.
+    """
+    obs = np.asarray(observed_scores, dtype=np.float64)
+    obs_p50 = float(np.percentile(obs, 50))
+    obs_p90 = float(np.percentile(obs, 90))
+    null_p10 = float(np.percentile(null_scores_sorted, 10))
+    null_p50 = float(np.percentile(null_scores_sorted, 50))
+    null_min = float(null_scores_sorted[0])
+    null_max = float(null_scores_sorted[-1])
+    frac_below_null_min = float(np.mean(obs < null_min))
+    ceiling = float(np.max(pvals))
+    frac_at_ceiling = float(np.mean(pvals >= ceiling - 1e-12))
+
+    pathology = (null_p50 > obs_p90) or (frac_at_ceiling > 0.5 and ceiling > 0.99)
+    if not pathology:
+        return
+    sys.exit(
+        "ERROR: permutation null does not overlap the observed scores -- "
+        "p-values are degenerate.\n"
+        "  observed  median=%.4f  p90=%.4f\n"
+        "  null      min=%.4f  p10=%.4f  median=%.4f  max=%.4f\n"
+        "  %.1f%% of observed bins fall below the entire null; "
+        "%.1f%% receive the ceiling p-value (%.6f).\n"
+        "  The null is on a different scale than the observed scores. Check that "
+        "the --null-qcat files were built with the SAME --normalize / "
+        "--score-method / --min-signal / track-set as --qcat, and that they are "
+        "this sample's own permuted tracks (not a stale or wrong sample's). "
+        "Refusing to write all-p=1 output."
+        % (obs_p50, obs_p90, null_min, null_p10, null_p50, null_max,
+           100.0 * frac_below_null_min, 100.0 * frac_at_ceiling, ceiling)
+    )
+
+
 def empirical_pvals_per_track(observed_per_track_matrix, null_per_track_dict):
     """
     Compute empirical p-values per track independently.
@@ -719,6 +767,9 @@ def main():
             per_track_pvals=args.per_track_pvals,
         )
         pvals = empirical_pvals(scores_arr, null_scores_sorted)
+        # Guard: abort if the null does not overlap the observed scores (the
+        # degenerate-null pathology that pinned DN_rep2/ProB_rep1 at one p-value).
+        check_null_overlap(scores_arr, null_scores_sorted, pvals)
 
         # Diagnostics
         print("  Score distribution (empirical p-values):", file=sys.stderr)
