@@ -459,7 +459,8 @@ rule pvalue_sample:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "python {BIN}/bearing_pvalue.py --qcat {input.qcat} "
         "--null-qcat {params.nulls} --out-prefix {params.prefix} --fdr 0.05 "
-        "--score-method %s %s" % (SCORE_METHOD, _PV_MINSIG_FLAG)
+        "--expect-n-perms %d "
+        "--score-method %s %s" % (len(PERM_INDICES), SCORE_METHOD, _PV_MINSIG_FLAG)
 
 rule pvalue_samples:
     input: [out("pvalue", "%s.neglog10p.bw" % s) for s in SAMPLES]

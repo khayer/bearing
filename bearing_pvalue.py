@@ -194,6 +194,7 @@ def collect_null_scores(null_paths, min_signal=0.0, diff_mode=False,
     """
     null_scores = []
     null_per_track = defaultdict(list) if per_track_pvals else None
+    per_file_counts = []
     for path in null_paths:
         file_scores = []
         print(f"  Loading null: {path}", file=sys.stderr)
@@ -206,12 +207,36 @@ def collect_null_scores(null_paths, min_signal=0.0, diff_mode=False,
                     for t_idx, t_score in per_track.items():
                         null_per_track[int(t_idx)].append(float(abs(t_score) if diff_mode else t_score))
         print(f"    {len(file_scores):,} null bins loaded", file=sys.stderr)
+        per_file_counts.append((path, len(file_scores)))
         if max_per_file and len(file_scores) > max_per_file:
             rng = np.random.default_rng(42)
             file_scores = rng.choice(file_scores, size=max_per_file,
                                      replace=False).tolist()
             print(f"    Subsampled to {max_per_file:,}", file=sys.stderr)
         null_scores.extend(file_scores)
+
+    # Completeness gate: an empty/truncated permutation file must not silently
+    # dilute the null. Abort on any zero-bin file; warn loudly on gross low
+    # outliers (a half-written perm), which can skew the pooled null.
+    empty_files = [p for p, c in per_file_counts if c == 0]
+    if empty_files:
+        sys.exit(
+            "ERROR: %d of %d null qcat file(s) contributed ZERO bins above the "
+            "min-signal floor -- they are empty or truncated. The permutation "
+            "set is incomplete; refusing to compute p-values against a partial "
+            "null.\n  offending files:\n    %s"
+            % (len(empty_files), len(per_file_counts), "\n    ".join(empty_files))
+        )
+    counts = [c for _, c in per_file_counts]
+    if len(counts) > 1:
+        med = float(np.median(counts))
+        low = [(p, c) for p, c in per_file_counts if med > 0 and c < 0.5 * med]
+        if low:
+            print("  WARNING: %d null file(s) have <50%% of the median per-file "
+                  "bin count (median=%d) -- possible truncated perms:"
+                  % (len(low), int(med)), file=sys.stderr)
+            for p, c in low:
+                print("    %s : %d bins" % (p, c), file=sys.stderr)
 
     if not null_scores:
         sys.exit("ERROR: no null scores collected from --null-qcat files.")
@@ -619,6 +644,11 @@ def main():
                     metavar="N",
                     help="Subsample at most N bins per null qcat file "
                          "to manage memory (default: use all bins).")
+    ap.add_argument("--expect-n-perms", type=int, default=None, metavar="N",
+                    help="Assert that exactly N --null-qcat files are provided. "
+                         "Guards against a partial/incomplete permutation set "
+                         "silently producing p-values (the failure that wrote "
+                         "stale, degenerate stats). Set to the run's n_perms.")
     ap.add_argument("--per-track-pvals", action="store_true",
                     help=(
                         "In addition to the overall p-value, compute a separate p-value for "
@@ -661,6 +691,16 @@ def main():
     # ── 0. Determine null method ───────────────────────────────────────────
     if args.null_qcat:
         null_method = "empirical"
+        # Completeness gate: the count of null files must match the run's
+        # n_perms. A partial set (missing perms) must not silently produce
+        # p-values against a thinned null.
+        if args.expect_n_perms is not None and len(args.null_qcat) != args.expect_n_perms:
+            sys.exit(
+                "ERROR: expected %d null qcats (--expect-n-perms) but got %d. "
+                "The permutation set is incomplete; refusing to compute p-values "
+                "against a partial null. Rebuild the missing perms."
+                % (args.expect_n_perms, len(args.null_qcat))
+            )
     elif args.fit_quantile is not None:
         null_method = "gamma_quantile"
     else:

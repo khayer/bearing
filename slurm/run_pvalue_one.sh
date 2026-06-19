@@ -53,19 +53,47 @@ if [[ "${FORCE_PVALUE:-0}" != "1" && -s "${out_prefix}.stats.tsv" ]]; then
   exit 0
 fi
 
-# Collect available null qcats across permutations.
+# Collect the null qcats across permutations. A PARTIAL perm set must NOT
+# silently produce p-values (that is how stale/degenerate stats were written
+# before): require all N_PERMS to be present and non-empty unless the caller
+# explicitly sets ALLOW_PARTIAL_NULL=1.
 nulls=()
+missing=()
+empty=()
 for ((p=1; p<=N_PERMS; p++)); do
   null_qcat="${PERM_PREFIX}${p}/diff_comparison/diff_${COMP}.qcat.bgz"
   if [[ ! -f "$null_qcat" ]]; then
-    echo "WARNING: null qcat not found for perm$p: $null_qcat" >&2
+    missing+=("perm$p")
+    continue
+  fi
+  if [[ ! -s "$null_qcat" ]]; then
+    empty+=("perm$p")
     continue
   fi
   nulls+=("$null_qcat")
 done
+if [[ ${#missing[@]} -gt 0 || ${#empty[@]} -gt 0 ]]; then
+  echo "ERROR: incomplete permutation null for $COMP:" >&2
+  echo "  expected $N_PERMS perms; have ${#nulls[@]};" \
+       "missing ${#missing[@]} (${missing[*]:-none});" \
+       "empty ${#empty[@]} (${empty[*]:-none})." >&2
+  if [[ "${ALLOW_PARTIAL_NULL:-0}" != "1" ]]; then
+    echo "  Refusing to compute p-values against a partial null." \
+         "Rebuild the missing perms, or set ALLOW_PARTIAL_NULL=1 to override." >&2
+    exit 1
+  fi
+  echo "  ALLOW_PARTIAL_NULL=1 set -- proceeding with ${#nulls[@]} perms (NOT for production)." >&2
+fi
 if [[ ${#nulls[@]} -eq 0 ]]; then
   echo "ERROR: no null qcats found for comparison: $COMP" >&2
   exit 1
+fi
+
+# Pass the expected perm count to bearing_pvalue.py as a second, independent
+# gate (count must match unless partial was explicitly allowed).
+EXPECT_FLAG=""
+if [[ "${ALLOW_PARTIAL_NULL:-0}" != "1" ]]; then
+  EXPECT_FLAG="--expect-n-perms $N_PERMS"
 fi
 
 echo "[$(date)] Computing p-values for: $COMP (using ${#nulls[@]} null qcats)"
@@ -74,5 +102,5 @@ python "$BEARING_PVALUE" \
   --null-qcat "${nulls[@]}" \
   --diff \
   --out-prefix "$out_prefix" \
-  --fdr 0.05 --score-plot $PV_FLAGS
+  --fdr 0.05 --score-plot $EXPECT_FLAG $PV_FLAGS
 echo "[$(date)] Completed: $COMP"
