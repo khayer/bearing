@@ -3,21 +3,22 @@
 
 Run this BEFORE launching the p-value rebuild. It confirms every expected
 permutation qcat exists -- per-sample (perm{N}/{sample}/{sample}_perm{N}.qcat.bgz)
-and differential (perm{N}/diff_comparison/diff_{comp}.qcat.bgz) -- and that none
-is a size OUTLIER relative to its peers.
+and differential (perm{N}/diff_comparison/diff_{comp}.qcat.bgz) -- and that each
+actually contains bins above the min-signal floor.
 
-DESIGN: a truncated/failed perm write produces a small file. Rather than a fixed
-size floor (which a 1 MB-but-broken file can sneak past while its 150 MB siblings
-pass), this compares each file to the MEDIAN size of its class (per-sample vs
-diff) and flags anything below --min-frac of that median. This is stat-only --
-no decompression -- so the whole 100-perm set checks in milliseconds, and it
-adapts automatically to KL vs JSD vs whatever the healthy size happens to be.
+WHY CONTENT, NOT SIZE (learned the hard way): a broken perm qcat can be FULL
+SIZE on disk yet have ZERO bins above the floor. Observed on real data:
+perm34/DP_rep1 was 84 MB (about half the ~171 MB median) but contributed 0
+usable bins. A size-outlier rule cannot separate these from legitimately small
+healthy perms (perm qcat sizes vary with how much signal each random shift lands
+in mappable regions), so it both misses real failures and false-positives on
+fine files. The only reliable signal is the bin count, so the content check is
+the default. It early-exits at --min-bins, so healthy files (millions of bins)
+confirm in a fraction of a second each.
 
-The truncation failure mode (small files) is what actually occurs from crashed/
-interrupted jobs, and the outlier check catches it cheaply. For the rarer
-"full-sized but semantically empty" case (all bins below the score floor),
-add --content-check to additionally parse each file and count above-floor bins
-(slower: decompresses, but early-exits at --min-bins for healthy files).
+Use --size-prescreen for a fast stat-only first pass (flags gross truncation,
+e.g. a few-KB file) before the content check -- useful as a quick sanity glance,
+but it is NOT sufficient on its own and does not replace the content check.
 
 It tells you which perm{N}/{target} to rebuild AND prints the cleanup commands,
 including the perm{N}.obs.done / perm{N}.diff.done sentinels (which must be
@@ -29,8 +30,8 @@ Usage:
       --samples DN_rep1 DN_rep2 DP_rep1 DP_rep2 EbKO_rep1 EbKO_rep2 \
                 ProB_rep1 ProB_rep2 S3T3_rep1 S3T3_rep2 \
       --comparisons DN_vs_DP DN_vs_EbKO DN_vs_ProB DN_vs_S3T3 DP_vs_EbKO \
-                    DP_vs_ProB DP_vs_S3T3 EbKO_vs_ProB EbKO_vs_S3T3 ProB_vs_S3T3
-      [--content-check --min-signal 0.5]   # optional deep pass
+                    DP_vs_ProB DP_vs_S3T3 EbKO_vs_ProB EbKO_vs_S3T3 ProB_vs_S3T3 \
+      --min-signal 0.5    # 0.5 for KL, 0.05 for JSD
 
 Exit 0 if complete and intact; 1 otherwise (gate a launch:
 `python check_perm_set.py ... && snakemake ...`). ASCII only.
@@ -40,7 +41,6 @@ import gzip
 import json
 import os
 import sys
-from statistics import median
 
 
 def count_above_floor(path, min_signal, min_bins, diff_mode):
@@ -83,23 +83,18 @@ def main():
                     help="per-sample perm qcats to check (omit to skip).")
     ap.add_argument("--comparisons", nargs="*", default=[],
                     help="differential perm qcats to check (omit to skip).")
-    ap.add_argument("--min-frac", type=float, default=0.5,
-                    help="flag a file smaller than this fraction of its class's "
-                         "median size (default 0.5 = half the median).")
-    ap.add_argument("--abs-min-bytes", type=int, default=1024,
-                    help="also flag any file below this absolute size, to catch "
-                         "the case where MANY files are bad and skew the median "
-                         "(default 1024).")
-    ap.add_argument("--content-check", action="store_true",
-                    help="additionally parse each file and require --min-bins "
-                         "above-floor bins (catches full-size-but-empty files).")
     ap.add_argument("--min-signal", type=float, default=0.5,
-                    help="score floor for --content-check (0.5 KL, 0.05 JSD).")
+                    help="score floor for the content check (0.5 KL, 0.05 JSD).")
     ap.add_argument("--min-bins", type=int, default=1000,
-                    help="min above-floor bins for --content-check (default 1000).")
+                    help="minimum above-floor bins each file must contain "
+                         "(default 1000; healthy files have millions).")
+    ap.add_argument("--size-prescreen", action="store_true",
+                    help="fast stat-only first pass (flags a few-KB truncation) "
+                         "before the content check. A glance, not a substitute.")
+    ap.add_argument("--prescreen-min-bytes", type=int, default=1000000,
+                    help="prescreen floor in bytes (default 1e6).")
     args = ap.parse_args()
 
-    # Gather (path, diff_mode) for every expected file; record existence + size.
     expected = []  # (path, diff_mode)
     for p in range(1, args.n_perms + 1):
         for s in args.samples:
@@ -109,62 +104,44 @@ def main():
             expected.append((os.path.join(args.perm_dir, "perm%d" % p,
                              "diff_comparison", "diff_%s.qcat.bgz" % c), True))
 
-    missing = [p for p, _ in expected if not os.path.exists(p)]
-    present = [(p, d) for p, d in expected if os.path.exists(p)]
+    missing, prescreen_fail, lowcontent = [], [], []
+    ok = 0
+    for path, diff_mode in expected:
+        if not os.path.exists(path):
+            missing.append(path); continue
+        if args.size_prescreen and os.path.getsize(path) < args.prescreen_min_bytes:
+            prescreen_fail.append((path, os.path.getsize(path))); continue
+        try:
+            c = count_above_floor(path, args.min_signal, args.min_bins, diff_mode)
+        except Exception as e:
+            lowcontent.append((path, "unreadable: %s" % e)); continue
+        if c < args.min_bins:
+            lowcontent.append((path, "%d bins above floor" % c)); continue
+        ok += 1
 
-    # Class medians (per-sample vs diff differ in size), so compare like with like.
-    sizes_sample = [os.path.getsize(p) for p, d in present if not d]
-    sizes_diff = [os.path.getsize(p) for p, d in present if d]
-    med_sample = median(sizes_sample) if sizes_sample else 0
-    med_diff = median(sizes_diff) if sizes_diff else 0
-
-    outliers = []   # (path, size, why)
-    for p, d in present:
-        sz = os.path.getsize(p)
-        med = med_diff if d else med_sample
-        thresh = max(args.abs_min_bytes, args.min_frac * med)
-        if sz < thresh:
-            cls = "diff" if d else "sample"
-            outliers.append((p, sz, "%d B < %.0f (%.0f%% of %s-median %d)"
-                             % (sz, thresh, 100 * args.min_frac, cls, med)))
-
-    lowcontent = []
-    if args.content_check:
-        bad_set = set(missing) | {p for p, _, _ in outliers}
-        for p, d in present:
-            if p in bad_set:
-                continue
-            try:
-                c = count_above_floor(p, args.min_signal, args.min_bins, d)
-            except Exception as e:
-                lowcontent.append((p, "unreadable: %s" % e)); continue
-            if c < args.min_bins:
-                lowcontent.append((p, "%d bins above floor" % c))
-
-    n_ok = len(present) - len(outliers) - len(lowcontent)
-    mode = "size-outlier (<%.0f%% of class median)" % (100 * args.min_frac)
-    if args.content_check:
-        mode += " + content (floor=%g)" % args.min_signal
-    print("Checked %d expected perm qcats across %d perms [%s]." %
-          (len(expected), args.n_perms, mode))
-    print("  median size: per-sample=%d B, diff=%d B" % (med_sample, med_diff))
-    print("  %d OK, %d missing, %d size-outliers, %d low-content."
-          % (n_ok, len(missing), len(outliers), len(lowcontent)))
+    mode = "content (floor=%g, min_bins=%d)" % (args.min_signal, args.min_bins)
+    if args.size_prescreen:
+        mode = "size-prescreen + " + mode
+    print("Checked %d expected perm qcats across %d perms [%s]: "
+          "%d OK, %d missing, %d prescreen-fail, %d low-content."
+          % (len(expected), args.n_perms, mode, ok, len(missing),
+             len(prescreen_fail), len(lowcontent)))
 
     if missing:
         print("\nMISSING (%d):" % len(missing))
         for p in sorted(missing):
             print("  " + p)
-    if outliers:
-        print("\nSIZE OUTLIERS / TRUNCATED (%d):" % len(outliers))
-        for p, sz, why in sorted(outliers):
-            print("  %s  -- %s" % (p, why))
+    if prescreen_fail:
+        print("\nTRUNCATED (prescreen, %d):" % len(prescreen_fail))
+        for p, sz in sorted(prescreen_fail):
+            print("  %s  -- %d bytes" % (p, sz))
     if lowcontent:
-        print("\nFULL-SIZE BUT EMPTY (%d):" % len(lowcontent))
+        print("\nEMPTY / LOW-CONTENT -- size OK but no usable bins (%d):"
+              % len(lowcontent))
         for p, why in sorted(lowcontent):
             print("  %s  -- %s" % (p, why))
 
-    bad_paths = list(missing) + [x[0] for x in outliers] + [x[0] for x in lowcontent]
+    bad_paths = list(missing) + [x[0] for x in prescreen_fail] + [x[0] for x in lowcontent]
     if bad_paths:
         bad_perms = set()
         for p in bad_paths:
