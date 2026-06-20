@@ -387,7 +387,9 @@ rule perm_sample_one:
         "--blacklist {input.blacklist} --min-signal {params.minsig} "
         "--min-shift {params.shift} --seed {params.seed} "
         "{params.norm} --score-method %s %s "
-        "--shift-workers {threads} --jobs {threads}" % (SCORE_METHOD, _BINS_BED_FLAG)
+        "--shift-workers {threads} --jobs {threads} && "
+        "python {BIN}/assert_qcat_nonempty.py {output} "
+        "--min-signal {params.minsig} --min-bins 1000" % (SCORE_METHOD, _BINS_BED_FLAG)
 
 # Per-index aggregator: all samples' observed nulls for this permutation exist.
 rule perm_null_one:
@@ -446,7 +448,15 @@ rule pvalue_diff:
 rule pvalue_sample:
     input:
         qcat=out("{sample}.qcat.bgz"),
-        perm=out("perm.done")
+        perm=out("perm.done"),
+        # The per-sample permutation nulls are real INPUTS, not just params, so
+        # Snakemake regenerates any missing/deleted/failed-assertion perm qcat
+        # automatically instead of running into the scorer's pre-load gate. (They
+        # were previously params-only, which is why deleting a bad perm did NOT
+        # trigger a rebuild.)
+        nulls=lambda wc: [
+            out("perm", "perm%d" % i, wc.sample, "%s_perm%d.qcat.bgz" % (wc.sample, i))
+            for i in PERM_INDICES]
     output: out("pvalue", "{sample}.neglog10p.bw")
     params:
         prefix=lambda wc: out("pvalue", wc.sample),
