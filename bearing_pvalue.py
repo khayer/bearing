@@ -118,6 +118,7 @@ DEPENDENCIES
 
 import argparse
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -649,6 +650,10 @@ def main():
                          "Guards against a partial/incomplete permutation set "
                          "silently producing p-values (the failure that wrote "
                          "stale, degenerate stats). Set to the run's n_perms.")
+    ap.add_argument("--null-min-bytes", type=int, default=1_000_000, metavar="B",
+                    help="Minimum plausible size (bytes) for each --null-qcat "
+                         "file; smaller is treated as truncated/empty and aborts "
+                         "BEFORE loading. Default 1e6 (healthy qcats are >100 MB).")
     ap.add_argument("--per-track-pvals", action="store_true",
                     help=(
                         "In addition to the overall p-value, compute a separate p-value for "
@@ -700,6 +705,23 @@ def main():
                 "The permutation set is incomplete; refusing to compute p-values "
                 "against a partial null. Rebuild the missing perms."
                 % (args.expect_n_perms, len(args.null_qcat))
+            )
+        # FAST pre-load gate: stat every null file up front and abort in seconds
+        # if any is missing or truncated, BEFORE loading 99 good files only to
+        # die on the 100th. A healthy qcat is >100 MB; <1 MB is empty/truncated.
+        bad = []
+        for p in args.null_qcat:
+            if not os.path.exists(p):
+                bad.append((p, "missing"))
+            elif os.path.getsize(p) < args.null_min_bytes:
+                bad.append((p, "%d bytes (truncated/empty)" % os.path.getsize(p)))
+        if bad:
+            sys.exit(
+                "ERROR: %d of %d null qcat file(s) are missing or truncated "
+                "(pre-load check). Refusing to compute p-values against a partial "
+                "null. Rebuild these perms:\n  %s"
+                % (len(bad), len(args.null_qcat),
+                   "\n  ".join("%s -- %s" % (p, why) for p, why in bad))
             )
     elif args.fit_quantile is not None:
         null_method = "gamma_quantile"
