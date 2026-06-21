@@ -20,6 +20,19 @@ import os
 import sys
 
 
+def gzip_intact(path, chunk=1 << 20):
+    """Verify the gzip stream is complete by draining to the end (the CRC trailer
+    is at the END, so a truncation after a healthy start is only visible on a full
+    read). No parsing, just byte decompression. Returns (ok, err)."""
+    try:
+        with gzip.open(path, "rb") as fh:
+            while fh.read(chunk):
+                pass
+        return True, None
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, e)
+
+
 def count_above_floor(path, min_signal, min_bins, diff_mode):
     n = 0
     with gzip.open(path, "rt") as fh:
@@ -62,6 +75,15 @@ def main():
 
     if not os.path.exists(args.qcat):
         sys.exit("ASSERT FAIL: qcat does not exist: %s" % args.qcat)
+    # Integrity first: a truncated gzip (incomplete stream) would otherwise pass
+    # an early-exit content check that stops before reaching the cut point.
+    good, err = gzip_intact(args.qcat)
+    if not good:
+        sys.exit(
+            "ASSERT FAIL: %s is a truncated/corrupt gzip stream (%s). The write "
+            "did not complete. Failing so this output is not recorded as complete."
+            % (args.qcat, err)
+        )
     try:
         n = count_above_floor(args.qcat, args.min_signal, args.min_bins, args.diff)
     except Exception as e:
@@ -73,7 +95,8 @@ def main():
             "(full-size-but-empty). Failing so this output is not recorded as "
             "complete." % (args.qcat, n, args.min_signal, args.min_bins)
         )
-    print("OK: %s has >= %d bins above floor %g" % (args.qcat, args.min_bins, args.min_signal))
+    print("OK: %s intact, >= %d bins above floor %g"
+          % (args.qcat, args.min_bins, args.min_signal))
 
 
 if __name__ == "__main__":

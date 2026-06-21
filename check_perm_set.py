@@ -43,6 +43,21 @@ import os
 import sys
 
 
+def gzip_intact(path, chunk=1 << 20):
+    """Verify a gzip stream is complete by draining it to the end (the CRC/length
+    trailer is at the END, so this MUST read the whole file -- an early-exiting
+    content check cannot see a truncation that occurs after its first chunk, e.g.
+    perm85 loaded 13.6M bins fine then truncated). No JSON parsing, just byte
+    decompression, so it is faster than the content count. Returns (ok, err)."""
+    try:
+        with gzip.open(path, "rb") as fh:
+            while fh.read(chunk):
+                pass
+        return True, None
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, e)
+
+
 def count_above_floor(path, min_signal, min_bins, diff_mode):
     """Count qcat bins with (|score| in diff mode) >= min_signal, early-exiting
     at min_bins. Mirrors bearing_pvalue.parse_qcat extraction."""
@@ -93,6 +108,19 @@ def main():
                          "before the content check. A glance, not a substitute.")
     ap.add_argument("--prescreen-min-bytes", type=int, default=1000000,
                     help="prescreen floor in bytes (default 1e6).")
+    ap.add_argument("--integrity", action="store_true",
+                    help="ALSO verify each file's gzip stream is complete (full "
+                         "decompress, no parse). Catches truncation anywhere in "
+                         "the file -- including after a healthy start, which the "
+                         "early-exit content check misses. Slower (reads every "
+                         "byte); RECOMMENDED before a long run.")
+    ap.add_argument("--calibration-dir", default=None,
+                    help="also check the calibration tree (e.g. "
+                         "workflow/results/calibration). Requires --conditions.")
+    ap.add_argument("--conditions", nargs="*", default=[],
+                    help="conditions for --calibration-dir (e.g. DN DP EbKO "
+                         "ProB S3T3). Calibration diff qcats truncate (the "
+                         "perm85 EOFError), so pair this with --integrity.")
     args = ap.parse_args()
 
     expected = []  # (path, diff_mode)
@@ -104,28 +132,50 @@ def main():
             expected.append((os.path.join(args.perm_dir, "perm%d" % p,
                              "diff_comparison", "diff_%s.qcat.bgz" % c), True))
 
-    missing, prescreen_fail, lowcontent = [], [], []
+    # Calibration tree: per condition, an observed self-vs-self replicate diff
+    # qcat plus one per permutation, at
+    #   {cal}/{cond}/{cond}/observed/diff_{cond}_rep1_vs_{cond}_rep2.qcat.bgz
+    #   {cal}/{cond}/{cond}/perm/perm{N}/diff_{cond}_rep1_vs_{cond}_rep2.qcat.bgz
+    # These are differential qcats (diff_mode=True) and their failure mode is
+    # truncation, so --integrity matters most here.
+    if args.calibration_dir:
+        for cond in args.conditions:
+            base = os.path.join(args.calibration_dir, cond, cond)
+            fn = "diff_%s_rep1_vs_%s_rep2.qcat.bgz" % (cond, cond)
+            expected.append((os.path.join(base, "observed", fn), True))
+            for p in range(1, args.n_perms + 1):
+                expected.append((os.path.join(base, "perm", "perm%d" % p, fn), True))
+
+    missing, prescreen_fail, lowcontent, corrupt = [], [], [], []
     ok = 0
     for path, diff_mode in expected:
         if not os.path.exists(path):
             missing.append(path); continue
         if args.size_prescreen and os.path.getsize(path) < args.prescreen_min_bytes:
             prescreen_fail.append((path, os.path.getsize(path))); continue
+        if args.integrity:
+            good, err = gzip_intact(path)
+            if not good:
+                corrupt.append((path, err)); continue
         try:
             c = count_above_floor(path, args.min_signal, args.min_bins, diff_mode)
         except Exception as e:
-            lowcontent.append((path, "unreadable: %s" % e)); continue
+            corrupt.append((path, "unreadable: %s" % e)); continue
         if c < args.min_bins:
             lowcontent.append((path, "%d bins above floor" % c)); continue
         ok += 1
 
     mode = "content (floor=%g, min_bins=%d)" % (args.min_signal, args.min_bins)
+    if args.integrity:
+        mode = "integrity + " + mode
     if args.size_prescreen:
         mode = "size-prescreen + " + mode
-    print("Checked %d expected perm qcats across %d perms [%s]: "
-          "%d OK, %d missing, %d prescreen-fail, %d low-content."
+    if args.calibration_dir:
+        mode += " [+calibration]"
+    print("Checked %d expected qcats across %d perms [%s]: "
+          "%d OK, %d missing, %d prescreen-fail, %d corrupt, %d low-content."
           % (len(expected), args.n_perms, mode, ok, len(missing),
-             len(prescreen_fail), len(lowcontent)))
+             len(prescreen_fail), len(corrupt), len(lowcontent)))
 
     if missing:
         print("\nMISSING (%d):" % len(missing))
@@ -135,32 +185,54 @@ def main():
         print("\nTRUNCATED (prescreen, %d):" % len(prescreen_fail))
         for p, sz in sorted(prescreen_fail):
             print("  %s  -- %d bytes" % (p, sz))
+    if corrupt:
+        print("\nCORRUPT / TRUNCATED GZIP -- incomplete stream (%d):" % len(corrupt))
+        for p, why in sorted(corrupt):
+            print("  %s  -- %s" % (p, why))
     if lowcontent:
         print("\nEMPTY / LOW-CONTENT -- size OK but no usable bins (%d):"
               % len(lowcontent))
         for p, why in sorted(lowcontent):
             print("  %s  -- %s" % (p, why))
 
-    bad_paths = list(missing) + [x[0] for x in prescreen_fail] + [x[0] for x in lowcontent]
+    bad_paths = (list(missing) + [x[0] for x in prescreen_fail]
+                 + [x[0] for x in corrupt] + [x[0] for x in lowcontent])
     if bad_paths:
-        bad_perms = set()
-        for p in bad_paths:
-            for part in p.split(os.sep):
-                if part.startswith("perm") and part[4:].isdigit():
-                    bad_perms.add(int(part[4:])); break
-        print("\nPerm indices to rebuild: %s"
-              % ", ".join(str(i) for i in sorted(bad_perms)))
-        print("\nCleanup commands (remove the bad outputs AND the .done sentinels,")
-        print("else Snakemake treats the broken perm as complete and skips it):")
-        for i in sorted(bad_perms):
-            print("  rm -f  %s/perm%d.obs.done %s/perm%d.diff.done"
-                  % (args.perm_dir, i, args.perm_dir, i))
-        for p in sorted(bad_paths):
-            print("  rm -f  %s" % p)
+        # Split perm-tree files (need .done sentinel cleanup so Snakemake rebuilds)
+        # from calibration-tree files (rebuilt by the calibration rule; no perm
+        # sentinels apply). Both live under .../perm{N}/..., so distinguish by
+        # whether the path is under --calibration-dir.
+        cal_dir = os.path.normpath(args.calibration_dir) if args.calibration_dir else None
+        perm_bad = [p for p in bad_paths
+                    if not (cal_dir and os.path.normpath(p).startswith(cal_dir))]
+        cal_bad = [p for p in bad_paths if p not in perm_bad]
+
+        if perm_bad:
+            bad_perms = set()
+            for p in perm_bad:
+                for part in p.split(os.sep):
+                    if part.startswith("perm") and part[4:].isdigit():
+                        bad_perms.add(int(part[4:])); break
+            print("\nPerm indices to rebuild: %s"
+                  % ", ".join(str(i) for i in sorted(bad_perms)))
+            print("\nCleanup commands (remove the bad outputs AND the .done sentinels,")
+            print("else Snakemake treats the broken perm as complete and skips it):")
+            for i in sorted(bad_perms):
+                print("  rm -f  %s/perm%d.obs.done %s/perm%d.diff.done"
+                      % (args.perm_dir, i, args.perm_dir, i))
+            for p in sorted(perm_bad):
+                print("  rm -f  %s" % p)
+
+        if cal_bad:
+            print("\nCalibration files to rebuild (delete, then re-run the")
+            print("calibration rule for the affected condition(s)):")
+            for p in sorted(cal_bad):
+                print("  rm -f  %s" % p)
+
         print("\nRefusing to proceed -- rebuild the above before computing p-values.")
         sys.exit(1)
 
-    print("\nPerm set is complete and intact. Safe to compute p-values.")
+    print("\nAll checked qcats are complete and intact. Safe to proceed.")
     sys.exit(0)
 
 
