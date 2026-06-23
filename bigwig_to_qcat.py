@@ -2472,7 +2472,14 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     bin_id += 1
     else:
         # Parallel per-chromosome processing using temporary cache files
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        # ignore_cleanup_errors: on cluster scratch filesystems the automatic
+        # rmtree/rmdir at block exit can race and raise OSError 39 "Directory
+        # not empty" (stale entries after async unlink, or NFS silly-rename),
+        # which would fail the whole scoring job AFTER the work is done. The
+        # per-chrom caches are fully written before we read them (the Pool is
+        # joined on context exit), so a leaked temp dir is harmless and gets
+        # reclaimed by scratch policy. Requires Python 3.10+.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
             tasks = []
             for chrom in chroms:
                 chrom_len = chrom_sizes[chrom]
