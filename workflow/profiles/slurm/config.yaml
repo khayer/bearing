@@ -34,6 +34,15 @@ default-resources:
   # cpus_per_task is set per-rule in the Snakefile (matches each rule's
   # threads). Single-core rules fall back to 1 here.
   cpus_per_task: 1
+  # Node-local /tmp on dbhiq nodes is only 8GB. Heavy multi-worker scoring
+  # and perm jobs (multiprocessing.Pool with per-chrom savez intermediates)
+  # spill that quickly and crash with OSError 28 "No space left on device"
+  # (observed on the qnorm rerun, 2026-06-23). Point TMPDIR at the 27TB
+  # Isilon scratch mount instead; Python's tempfile honors $TMPDIR which
+  # Snakemake sets from this value, so no code changes are required. The
+  # scratch directory must exist and be writable before launch; create with
+  # `mkdir -p /mnt/isilon/scratch/$USER/snakemake`.
+  tmpdir: "/mnt/isilon/scratch/hayerk/snakemake"
   # If your cluster requires an account, uncomment and set it (otherwise
   # Snakemake tries to guess and you may see a harmless sacct warning):
   # slurm_account: "bassing_lab"

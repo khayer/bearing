@@ -77,6 +77,15 @@ from pathlib import Path
 
 import numpy as np
 
+# Shared scoring-provenance signature (stdlib-only, co-located). Robust import so
+# a missing entry on sys.path cannot break module import for tests/consumers.
+try:
+    from score_provenance import score_provenance_signature
+except Exception:  # pragma: no cover - defensive path-insert fallback
+    import os as _sp_os
+    sys.path.insert(0, _sp_os.path.dirname(_sp_os.path.abspath(__file__)))
+    from score_provenance import score_provenance_signature
+
 _json = json
 
 # ---------------------------------------------------------------------------
@@ -3798,6 +3807,26 @@ def main():
                               summary_chrom=summary_chrom,
                               blacklist=combined_blacklist,
                               bins_bed=bins_bed)
+
+    # Stamp the scoring-provenance signature next to the qcat. Records the
+    # settings ACTUALLY used to score this sample so a later run cannot silently
+    # reuse it under different normalize / score-method / binning settings (see
+    # score_provenance.py and assert_score_provenance.py). Best-effort: a write
+    # failure here must not abort a successful scoring run.
+    try:
+        _sig_digest, _sig_payload = score_provenance_signature(
+            args.normalize_tracks, args.normalize_method, args.score_method,
+            args.min_signal, args.categories, args.bins_bed,
+            args.cohort_reference)
+        _sig_path = str(out_path) + ".sig"
+        with open(_sig_path, "w") as _sf:
+            _sf.write(_sig_digest + "\n")
+            for _ln in _sig_payload.splitlines():
+                _sf.write("# " + _ln + "\n")
+        print("  Scoring-provenance signature -> " + _sig_path)
+    except Exception as _sig_err:
+        print("  WARNING: could not write scoring-provenance signature: "
+              + str(_sig_err))
 
     if not args.no_extras:
         base = str(out_path).replace(".qcat.bgz", "").replace(".bgz", "")

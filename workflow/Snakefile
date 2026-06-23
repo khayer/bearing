@@ -298,6 +298,13 @@ def _score_norm_flag(wc):
                 "--cohort-reference %s" % COHORT_REF)
     return P["normalize"]
 
+# Resolved scoring settings for the provenance gate (assert_score_provenance.py).
+# These MUST mirror exactly what score_sample passes to bigwig_to_qcat.py, so the
+# expected signature matches the .sig each scorer stamps. _score_norm_flag takes a
+# wildcards arg it does not use, so a dummy None is fine here.
+NORM_FLAGS_RESOLVED = _score_norm_flag(None)
+PROV_BINS_BED       = (ADAPTIVE_SEG if ADAPTIVE else "")
+
 rule score_sample:
     input:
         blacklist=BL,
@@ -320,6 +327,42 @@ rule score_sample:
 rule score:
     input: qcats=[out("%s.qcat.bgz" % s) for s in SAMPLES]
     output: done=touch(out("score.done"))
+
+
+# Scoring-provenance gate. Each qcat carries a sidecar <qcat>.sig stamped by
+# bigwig_to_qcat.py recording the settings it ACTUALLY scored with. This rule
+# recomputes the expected signature from the settings THIS config resolves to and
+# fails (exit 1) on any mismatch, so the p-value layer never runs on qcats that a
+# regime silently reused under different normalize/score-method/binning settings
+# (the stale-qcat-reuse trap that rerun-triggers=mtime cannot see, because those
+# settings are params, not file inputs). The .sig files are read from disk rather
+# than declared as inputs, so this gate does not by itself force a re-score.
+rule score_provenance:
+    input: score=out("score.done")
+    output: done=touch(out("score_provenance.done"))
+    params:
+        norm=NORM_FLAGS_RESOLVED, smeth=SCORE_METHOD, minsig=P["min_signal"],
+        cats=CATS, binsbed=PROV_BINS_BED, samples=" ".join(SAMPLES)
+    shell:
+        "python {BIN}/assert_score_provenance.py --outdir {OUT} "
+        "--samples {params.samples} --norm-flags '{params.norm}' "
+        "--score-method {params.smeth} --min-signal {params.minsig} "
+        "--categories {params.cats} --bins-bed '{params.binsbed}'"
+
+# One-time TRUSTED backfill for trees scored before this guard existed. Writes the
+# expected signature to each .sig WITHOUT re-scoring. Run manually, and ONLY on a
+# tree you have independently verified is correctly scored, e.g.:
+#   snakemake -s workflow/Snakefile --configfile <cfg> stamp_provenance
+rule stamp_provenance:
+    input: score=out("score.done")
+    params:
+        norm=NORM_FLAGS_RESOLVED, smeth=SCORE_METHOD, minsig=P["min_signal"],
+        cats=CATS, binsbed=PROV_BINS_BED, samples=" ".join(SAMPLES)
+    shell:
+        "python {BIN}/assert_score_provenance.py --stamp --outdir {OUT} "
+        "--samples {params.samples} --norm-flags '{params.norm}' "
+        "--score-method {params.smeth} --min-signal {params.minsig} "
+        "--categories {params.cats} --bins-bed '{params.binsbed}'"
 
 
 # ---- Phase 2: compare (all conditions, region set) ------------------------
@@ -424,7 +467,8 @@ rule perm_nulls_diff:
 # via the resume guard in run_pvalue_one.sh. The aggregator just gates on all
 # per-comparison outputs.
 rule pvalue_diff_one:
-    input: compare=out("compare.done"), perm_diff=out("perm_diff.done")
+    input: compare=out("compare.done"), perm_diff=out("perm_diff.done"),
+           prov=out("score_provenance.done")
     output: stats=out("pvalue", "diff_{comp}.stats.tsv")
     wildcard_constraints: comp=ALL_PAIRWISE_RE
     params: n=P["n_perms"]
@@ -449,6 +493,7 @@ rule pvalue_sample:
     input:
         qcat=out("{sample}.qcat.bgz"),
         perm=out("perm.done"),
+        prov=out("score_provenance.done"),
         # The per-sample permutation nulls are real INPUTS, not just params, so
         # Snakemake regenerates any missing/deleted/failed-assertion perm qcat
         # automatically instead of running into the scorer's pre-load gate. (They

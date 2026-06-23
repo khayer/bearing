@@ -113,6 +113,7 @@ fi
 echo
 echo "== Submitting to SLURM (one sbatch job per rule, via the slurm profile) =="
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" \
+  --rerun-triggers mtime params \
   --profile "$PROFILE" "${SM_TARGETS[@]}"
 
 echo

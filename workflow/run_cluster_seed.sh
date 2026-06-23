@@ -96,6 +96,7 @@ if [ "$DRY" = "1" ]; then echo; echo "Dry run only."; exit 0; fi
 
 echo; echo "== Submitting to SLURM =="
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" \
+  --rerun-triggers mtime params \
   --profile "$PROFILE" "${SM_TARGETS[@]}"
 
 echo; echo "Done -> workflow/$OUT/. Compare against the default run:"
