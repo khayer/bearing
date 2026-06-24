@@ -226,6 +226,19 @@ def mb(x, _):
     return "%.2f" % (x / 1e6)
 
 
+def nan_smooth(a, sigma):
+    """nan-aware Gaussian smooth: smooths valid data and its support mask, so
+    isolated masked pixels get filled but large masked regions stay masked."""
+    from scipy.ndimage import gaussian_filter
+    valid = np.isfinite(a)
+    num = gaussian_filter(np.where(valid, a, 0.0), sigma=sigma, mode="nearest")
+    den = gaussian_filter(valid.astype(float), sigma=sigma, mode="nearest")
+    out = np.full(a.shape, np.nan, dtype=float)
+    ok = den > 0.15
+    out[ok] = num[ok] / den[ok]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -239,6 +252,13 @@ def main():
                          "(use a *_diff_*.qcat.bgz to match a ratio plot)")
     ap.add_argument("--vmax", type=float, default=2.0,
                     help="ratio color limit, log2 units (default 2 = 4x)")
+    ap.add_argument("--min-count", type=int, default=0,
+                    help="mask any pixel below this raw count in either "
+                         "condition before ratio/density (try 5 to drop "
+                         "1-vs-1 / 2-vs-1 sampling noise)")
+    ap.add_argument("--smooth", type=float, default=0.0,
+                    help="nan-aware Gaussian smoothing sigma in bins (e.g. 1.0) "
+                         "to read domain-level change over salt-and-pepper; 0=off")
     ap.add_argument("--cmap", default=None)
     ap.add_argument("--title", default=None)
     ap.add_argument("--out", required=True)
@@ -252,7 +272,7 @@ def main():
     if mode == "single":
         edges, mat, w, starts, ends = fetch_region(args.cool, args.region)
         dens = mat / np.outer(w, w)
-        dens[mat == 0] = np.nan
+        dens[mat < max(args.min_count, 1)] = np.nan
         cmap = plt.get_cmap(args.cmap or "YlOrRd").copy()
         cmap.set_bad("#f4f4f4")
         finite = dens[np.isfinite(dens)]
@@ -267,7 +287,8 @@ def main():
             sys.exit("[ERROR] A and B matrices differ in shape; not the same grid")
         densA = matA / np.outer(w, w)
         densB = matB / np.outer(w, w)
-        mask = (matA == 0) | (matB == 0)
+        thr = max(args.min_count, 1)
+        mask = (matA < thr) | (matB < thr)
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = np.log2(densA / densB)
         ratio[mask] = np.nan
@@ -314,6 +335,8 @@ def main():
 
     hm = axes["hm"]
     grid = dens if mode == "single" else mat
+    if args.smooth > 0:
+        grid = nan_smooth(grid, args.smooth)
     pcm = hm.pcolormesh(edges, edges, grid, norm=norm, cmap=cmap, shading="flat")
     hm.set_xlim(a, b); hm.set_ylim(a, b)
     hm.invert_yaxis()
