@@ -326,6 +326,28 @@ def circular_shift_null(x, y, n_perm, min_shift_bins, seed=42):
     return float(obs), null, p_emp
 
 
+def permutation_null(x, y, n_perm, seed=42):
+    """Permutation null for a NON-CONTIGUOUS subset (e.g. a per-track stratum),
+    where the circular shift would be degenerate (too few valid shifts) and
+    there is no contiguity to preserve. Shuffles y, recomputes Spearman.
+    Slightly less conservative than the shift null if residual autocorrelation
+    remains, but properly sampled at small n."""
+    rng = np.random.default_rng(seed)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    m = np.isfinite(x) & np.isfinite(y)
+    xx, yy = x[m], y[m]
+    n = len(xx)
+    if n < 20:
+        return None, None, None
+    obs, _ = stats.spearmanr(xx, yy)
+    null = np.empty(n_perm)
+    for k in range(n_perm):
+        null[k], _ = stats.spearmanr(xx, rng.permutation(yy))
+    p_emp = max(float((np.abs(null) >= abs(obs)).mean()), 1.0 / n_perm)
+    return float(obs), null, p_emp
+
+
 def top_decile_enrichment(x, y, q=0.9):
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -595,8 +617,16 @@ def main():
             sub = merged.loc[dom]
             row = {"n_bins_dominated": int(dom.sum())}
             for yc in y_cols:
-                row[yc] = corr_pair(sub["p95_bes"].values,
-                                    sub[yc].values)
+                cp = corr_pair(sub["p95_bes"].values, sub[yc].values)
+                # permutation null per stratum: a track stratum is a
+                # non-contiguous subset of bins, so the circular shift would be
+                # degenerate (too few valid shifts at small n) and there is no
+                # contiguity to preserve. Reported as p_emp.
+                _obs, _null, p_emp = permutation_null(
+                    sub["p95_bes"].values, sub[yc].values,
+                    args.n_perm, args.seed)
+                cp["empirical_p"] = p_emp
+                row[yc] = cp
             track_results[tc] = row
 
     # Outputs
@@ -653,8 +683,9 @@ def main():
                     continue
                 if cp.get("spearman_rho") is None:
                     continue
-                print("    {} vs p95_bes  rho={:.3f}  p={:.3g}".format(
-                    yc, cp["spearman_rho"], cp["spearman_p"]))
+                print("    {} vs p95_bes  rho={:.3f}  p_param={:.3g}  p_emp={:.3g}".format(
+                    yc, cp["spearman_rho"], cp["spearman_p"],
+                    cp.get("empirical_p") if cp.get("empirical_p") is not None else float("nan")))
 
 
 if __name__ == "__main__":

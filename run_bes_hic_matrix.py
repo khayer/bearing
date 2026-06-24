@@ -162,6 +162,7 @@ def main():
                 "%s_vs_%s" % (a, b), locus, tc,
                 row.get("n_bins_dominated"),
                 fmt(dc.get("spearman_rho")), fmt(dc.get("spearman_p")),
+                fmt(dc.get("empirical_p")),
             ])
 
     def write(path, header, rows):
@@ -177,7 +178,7 @@ def main():
            "topdecile_OR", "fisher_p"], main_rows)
     write(os.path.join(args.out_dir, "bes_hic_pertrack_summary.tsv"),
           ["comparison", "locus", "track", "n_bins_dominated",
-           "rho_contact", "p_param_contact"], track_rows)
+           "rho_contact", "p_param_contact", "p_emp_contact"], track_rows)
     write(os.path.join(args.out_dir, "bes_hic_insulation.tsv"),
           ["comparison", "locus", "rho_insul", "p_emp_insul",
            "p_param_insul", "topdecile_OR", "fisher_p"], insul_rows)
