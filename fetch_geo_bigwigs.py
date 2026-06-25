@@ -72,38 +72,66 @@ def parse_samples(text):
         yield cur
 
 
-# classification rules (title is messy and lab-specific; tweak as needed)
+# classification rules (title AND filename are messy and lab-specific).
 ASSAY_PATTERNS = [
     ("CTCF", r"ctcf"),
     ("RAD21", r"rad21|cohesin"),
     ("NIPBL", r"nipbl"),
     ("H3K27ac", r"h3k27ac|k27ac"),
     ("H3K4me3", r"h3k4me3|k4me3"),
-    ("Pol2Ser2", r"pol\s*2.*ser2|polii.*ser2|ser2|rnapol"),
-    ("GRO", r"gro[-_ ]?seq|gro\b"),
-    ("RNA", r"rna[-_ ]?seq|rnaseq|\brna\b|total\s*rna"),
+    ("Pol2Ser2", r"pol\s*2.*ser2|polii.*ser2|ser2p|rnapol"),
+    ("GRO", r"gro[-_ ]?seq|groseq"),
+    ("RNA", r"rna[-_ ]?seq|rnaseq|totalrna"),
 ]
+# strand read from the FILENAME (fwd/rev), with word-ish boundaries so the
+# hyphen in "GRO-Seq" never counts as minus.
 STRAND_PATTERNS = [
-    ("plus", r"\bplus\b|\bsense\b|\bfwd\b|forward|\+|pos\b"),
-    ("minus", r"\bminus\b|antisense|\brev\b|reverse|\-|neg\b"),
+    ("plus", r"(?:^|[_.])(?:fwd|forward|plus|sense|pos)(?:[_.]|$)"),
+    ("minus", r"(?:^|[_.])(?:rev|reverse|minus|antisense|neg)(?:[_.]|$)"),
 ]
 
 
-def classify(title, conditions):
-    t = title.lower()
-    assay = next((a for a, pat in ASSAY_PATTERNS if re.search(pat, t)), "NA")
+def build_cond_specs(conditions, alias_arg):
+    """Return [(canonical, [tokens])] sorted so longer tokens match first.
+    alias_arg: 'CANON:tok1|tok2, CANON2:tok3' merges aliases into a canonical."""
+    specs = {c: {c} for c in conditions}
+    for grp in (alias_arg or "").split(","):
+        grp = grp.strip()
+        if not grp or ":" not in grp:
+            continue
+        canon, toks = grp.split(":", 1)
+        canon = canon.strip()
+        specs.setdefault(canon, {canon})
+        for t in toks.split("|"):
+            if t.strip():
+                specs[canon].add(t.strip())
+    out = [(c, sorted(toks, key=len, reverse=True)) for c, toks in specs.items()]
+    return sorted(out, key=lambda x: -max(len(t) for t in x[1]))
+
+
+def _compact(s):
+    return re.sub(r"[\s/]+", "", s.lower())
+
+
+def classify(title, url, cond_specs):
+    base = url.rsplit("/", 1)[-1]
+    hay = _compact(title + " " + base)
+    base_l = base.lower()
+    assay = next((a for a, pat in ASSAY_PATTERNS if re.search(pat, hay)), "NA")
     strand = "NA"
     if assay in ("RNA", "GRO"):
-        strand = next((s for s, pat in STRAND_PATTERNS if re.search(pat, t)), "NA")
+        strand = next((s for s, pat in STRAND_PATTERNS if re.search(pat, base_l)), "NA")
     cond = "NA"
-    for c in conditions:
-        if re.search(re.escape(c.lower()), t):
-            cond = c
+    for canon, toks in cond_specs:
+        if any(_compact(t) in hay for t in toks):
+            cond = canon
             break
     rep = "NA"
-    m = re.search(r"rep[\s_]?(\d+)|[_\s]r(\d)\b", t)
+    m = (re.search(r"rep[\s_]?(\d+)", title.lower())
+         or re.search(r"_dn_(\d)(?:_|\.|$)", base_l)
+         or re.search(r"\s(\d)\s*$", title))
     if m:
-        rep = m.group(1) or m.group(2)
+        rep = m.group(1)
     return cond, assay, strand, rep
 
 
@@ -113,7 +141,9 @@ def main():
     ap.add_argument("--gse", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--conditions", default="",
-                    help="comma list of condition tokens to match in titles")
+                    help="comma list of condition tokens to match in titles/filenames")
+    ap.add_argument("--condition-aliases", default="",
+                    help="merge aliases into a canonical, e.g. 'R1KO:WT|Rag1, RCTKO:513TKO'")
     ap.add_argument("--assays", default="",
                     help="comma list of assay names to KEEP (default: keep all classified)")
     ap.add_argument("--soft-file", default=None,
@@ -124,6 +154,7 @@ def main():
 
     os.makedirs(os.path.join(args.out, "bw"), exist_ok=True)
     conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
+    cond_specs = build_cond_specs(conditions, args.condition_aliases)
     keep_assays = set(a.strip() for a in args.assays.split(",") if a.strip())
 
     if args.soft_file:
@@ -136,10 +167,10 @@ def main():
     for s in parse_samples(text):
         if not s["urls"]:
             continue
-        cond, assay, strand, rep = classify(s["title"], conditions)
-        if keep_assays and assay not in keep_assays:
-            continue
         for u in s["urls"]:
+            cond, assay, strand, rep = classify(s["title"], u, cond_specs)
+            if keep_assays and assay not in keep_assays:
+                continue
             rows.append([s["gsm"], s["title"], cond, assay, strand, rep,
                          s["strategy"], u])
 
