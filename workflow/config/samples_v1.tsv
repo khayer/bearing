@@ -1,0 +1,15 @@
+# BEARING sample sheet (TSV) -- V1-region use case (separate run from the core).
+# Panel is 5-track; bw order is FIXED and must match categories/v1_5track_panel.yaml:
+#   RNAseq+,RNAseq-,CTCF,Cohesin,NIPBL
+# RNA is local coverage (../bigwigs/RNA-seq/); CTCF/Cohesin/NIPBL are the GEO
+# CUT&RUN/ChIP marks under ../bigwigs/<ASSAY>/ (GSM prefix and _no_bl stripped).
+# CTCF is mixed-platform on purpose: CUT&RUN for DN/RCTKO, ChIP for V1P.
+# V1TxS is excluded (no CTCF in either GEO series). Hi-C columns are blank here;
+# the 3D side for these conditions is capture, filled in after capture binning.
+sample	condition	replicate	out	bw	cool	insul	pca1	loops	resolutions
+DN_rep1	DN	1	DN_rep1.qcat.bgz	../bigwigs/RNA-seq/R1_3_fwd_no_bl_CPM.bw,../bigwigs/RNA-seq/R1_3_rev_no_bl_CPM.bw,../bigwigs/CTCF/R1KO_CTCF0821CR_DN_1.bw,../bigwigs/Rad21/R1KO_Rad210712CR_DN_1.bw,../bigwigs/NIPBL/R1KO_Nipbl0816CR_DN_1.bw					
+DN_rep2	DN	2	DN_rep2.qcat.bgz	../bigwigs/RNA-seq/R1_4_fwd_no_bl_CPM.bw,../bigwigs/RNA-seq/R1_4_rev_no_bl_CPM.bw,../bigwigs/CTCF/R1KO_CTCF0905CR_DN_2.bw,../bigwigs/Rad21/R1KO_Rad210712CR_DN_2.bw,../bigwigs/NIPBL/R1KO_Nipbl0816CR_DN_2.bw					
+V1P_rep1	V1P	1	V1P_rep1.qcat.bgz	../bigwigs/RNA-seq/V1P_1_fwd_no_bl_CPM.bw,../bigwigs/RNA-seq/V1P_1_rev_no_bl_CPM.bw,../bigwigs/CTCF/dV1P_CTCF_ChIP_rep1.bw,../bigwigs/Rad21/V1PKO_Rad21712CR_DN_1.bw,../bigwigs/NIPBL/V1PKO_Nipbl0816CR_DN_1.bw					
+V1P_rep2	V1P	2	V1P_rep2.qcat.bgz	../bigwigs/RNA-seq/V1P_2_fwd_no_bl_CPM.bw,../bigwigs/RNA-seq/V1P_2_rev_no_bl_CPM.bw,../bigwigs/CTCF/dV1P_CTCF_ChIP_rep2.bw,../bigwigs/Rad21/V1PKO_Rad21712CR_DN_2.bw,../bigwigs/NIPBL/V1PKO_Nipbl0816CR_DN_2.bw					
+RCTKO_rep1	RCTKO	1	RCTKO_rep1.qcat.bgz	../bigwigs/RNA-seq/S513TKO_1_fwd_no_bl_CPM.bw,../bigwigs/RNA-seq/S513TKO_1_rev_no_bl_CPM.bw,../bigwigs/CTCF/HTS_SO85_01_RCTKO_CTCF1030CR_DN_1_S1.bw,../bigwigs/Rad21/HTS_SO85_02_RCTKO_Rad211030CR_DN_1_S2.bw,../bigwigs/NIPBL/HTS_SO85_03_RCTKO_Nipbl1030CR_DN_1_S3.bw					
+RCTKO_rep2	RCTKO	2	RCTKO_rep2.qcat.bgz	../bigwigs/RNA-seq/S513TKO_2_fwd_no_bl_CPM.bw,../bigwigs/RNA-seq/S513TKO_2_rev_no_bl_CPM.bw,../bigwigs/CTCF/HTS_SO85_09_RCTKO_CTCF1206CR_DN_2_S9.bw,../bigwigs/Rad21/HTS_SO85_06_RCTKO_Rad211206CR_DN_2_S6.bw,../bigwigs/NIPBL/HTS_SO85_07_RCTKO_Nipbl1206CR_DN_2_S7.bw					
