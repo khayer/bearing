@@ -2471,8 +2471,14 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     rows_written += 1
                     bin_id += 1
     else:
-        # Parallel per-chromosome processing using temporary cache files
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        # Parallel per-chromosome processing using temporary cache files.
+        # ignore_cleanup_errors is REQUIRED, do not remove: on the cluster the
+        # tmpdir lives on /scr1 (NFS), where worker .npz handles trigger
+        # silly-rename (.nfsXXXX) files that make rmtree fail with ENOTEMPTY
+        # (OSError 39) at teardown -- AFTER the qcat is fully written. Swallowing
+        # the cleanup error lets the job succeed; the orphan dir is purged by the
+        # scratch policy. (Python 3.10+.)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
             tasks = []
             for chrom in chroms:
                 chrom_len = chrom_sizes[chrom]
