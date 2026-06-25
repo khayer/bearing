@@ -113,6 +113,12 @@ def _compact(s):
     return re.sub(r"[\s/]+", "", s.lower())
 
 
+def is_control(title, url):
+    """ChIP input / IgG / control tracks are background, not signal."""
+    s = (title + " " + url.rsplit("/", 1)[-1]).lower()
+    return bool(re.search(r"\binput\b|_input|\bigg\b|\bcontrol\b|wce|mock", s))
+
+
 def classify(title, url, cond_specs):
     base = url.rsplit("/", 1)[-1]
     hay = _compact(title + " " + base)
@@ -146,6 +152,8 @@ def main():
                     help="merge aliases into a canonical, e.g. 'R1KO:WT|Rag1, RCTKO:513TKO'")
     ap.add_argument("--assays", default="",
                     help="comma list of assay names to KEEP (default: keep all classified)")
+    ap.add_argument("--keep-inputs", action="store_true",
+                    help="keep ChIP input/IgG/control tracks (dropped by default)")
     ap.add_argument("--soft-file", default=None,
                     help="use a local family.soft(.gz) instead of downloading")
     ap.add_argument("--download", action="store_true",
@@ -164,15 +172,22 @@ def main():
         text = fetch_soft(args.gse)
 
     rows = []
+    n_ctrl = 0
     for s in parse_samples(text):
         if not s["urls"]:
             continue
         for u in s["urls"]:
+            if (not args.keep_inputs) and is_control(s["title"], u):
+                n_ctrl += 1
+                continue
             cond, assay, strand, rep = classify(s["title"], u, cond_specs)
             if keep_assays and assay not in keep_assays:
                 continue
             rows.append([s["gsm"], s["title"], cond, assay, strand, rep,
                          s["strategy"], u])
+    if n_ctrl:
+        sys.stderr.write("[drop] %d input/control tracks excluded "
+                         "(use --keep-inputs to retain)\n" % n_ctrl)
 
     man = os.path.join(args.out, "geo_bigwig_manifest.tsv")
     with open(man, "w") as fh:
