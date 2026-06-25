@@ -1,0 +1,3 @@
+locus	region	condA	condB	bes
+Tcrb	chr6:39771104-42660754	DN	RCTKO	workflow/results_v1/pvalue/diff_DN_vs_RCTKO.stats.tsv
+Tcrb	chr6:39771104-42660754	DN	V1P	workflow/results_v1/pvalue/diff_DN_vs_V1P.stats.tsv

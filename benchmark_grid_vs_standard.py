@@ -277,6 +277,9 @@ def main():
     ap.add_argument("--min-shift", type=int, default=100000)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--dump-bins", default=None,
+                    help="prefix; write per-bin BES vs delta_contact (adaptive grid, "
+                         "sorted by BES) to <prefix>_<A>_vs_<B>.tsv for eyeballing")
     args = ap.parse_args()
 
     pooled, libs, floor = pooled_floor(args.counts)
@@ -332,6 +335,18 @@ def main():
                 besb, delta, args.n_perm,
                 max(1, args.min_shift // max(int(w.mean()), 1)), args.seed)
             conc = feat_concentration(delta, gs, ge, feats)
+            if args.dump_bins and gname == "adaptive":
+                fa = np.array([any(s < fe and e > fs for fs, fe in feats)
+                               for s, e in zip(gs, ge)])
+                order = np.argsort(-besb)
+                dp = "%s_%s_vs_%s.tsv" % (args.dump_bins, A, B)
+                with open(dp, "w") as dh:
+                    dh.write("chrom\tstart\tend\tbes\tdelta_contact\ton_feature\n")
+                    for i in order:
+                        dh.write("%s\t%d\t%d\t%.4g\t%.4g\t%d\n"
+                                 % (chrom, gs[i], ge[i], besb[i], delta[i], int(fa[i])))
+                sys.stderr.write("[dump] %s (%d bins, sorted by BES desc)\n"
+                                 % (dp, len(gs)))
             marg = MA.sum(axis=1) + MB.sum(axis=1)
             rows_out.append([
                 "%s_vs_%s" % (A, B), locus, gname, n, int(w.mean()),
