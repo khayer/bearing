@@ -61,16 +61,24 @@ def load_region(path, chrom, a, b):
     idx = {h: i for i, h in enumerate(rows[0])}
     has_marg = "marginal" in idx
     out = []
+    n_drop = 0
     for r in rows[1:]:
         if r[idx["chrom"]] != chrom:
             continue
         s, e = int(r[idx["start"]]), int(r[idx["end"]])
         if e <= a or s >= b:
             continue
+        bes = float(r[idx["bes"]])
+        delta = float(r[idx["delta_contact"]])
         m = float(r[idx["marginal"]]) if has_marg else float("nan")
-        out.append(((s + e) / 2.0, float(r[idx["bes"]]),
-                    float(r[idx["delta_contact"]]), m))
+        # drop non-finite bins (match partial_corr: bes, delta, marginal finite)
+        if not (np.isfinite(bes) and np.isfinite(delta) and np.isfinite(m)):
+            n_drop += 1
+            continue
+        out.append(((s + e) / 2.0, bes, delta, m))
     out.sort()
+    if n_drop:
+        sys.stderr.write("[load] dropped %d non-finite bins\n" % n_drop)
     c = np.array([o[0] for o in out])
     return (c, np.array([o[1] for o in out]), np.array([o[2] for o in out]),
             np.array([o[3] for o in out]))
