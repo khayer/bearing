@@ -1,0 +1,9 @@
+{
+  "categories": {
+    "1": ["RNAseq +", "#6495ed"],
+    "2": ["RNAseq -", "#1a3a8f"],
+    "3": ["CTCF",     "#ff2200"],
+    "4": ["Cohesin",  "#8b0000"],
+    "5": ["NIPBL",    "#00bcd4"]
+  }
+}

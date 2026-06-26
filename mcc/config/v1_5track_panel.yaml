@@ -1,0 +1,29 @@
+# Bearing category configuration -- V1-region MCC five-track panel
+#
+# Applies BEARING to the Allyn 2025 V1-region Tcrb mutants on capture-Hi-C
+# (MCC). Differs from the canonical six-track panel: NIPBL replaces ATAC and
+# H3K27ac, matching the assays available across DN / V1P / RCTKO (CTCF is
+# CUT&RUN for DN/RCTKO, ChIP for V1P; RNA is local coverage).
+#
+# Fields: name, color, negative_strand (true => bigwig encodes - strand as
+# negative numbers; abs() before normalization).
+
+name: "V1 5-track panel"
+genome: mm10
+
+categories:
+  - name: "RNAseq +"
+    color: "#6495ed"
+
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+
+  - name: CTCF
+    color: "#ff2200"
+
+  - name: Cohesin
+    color: "#8b0000"
+
+  - name: NIPBL
+    color: "#00bcd4"

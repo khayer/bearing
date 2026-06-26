@@ -47,22 +47,35 @@ from bigwig_to_qcat import (
 )
 
 
-def read_sheet(path):
-    """Return list of (sample_name, [bw_paths]) from a BEARING sample sheet TSV."""
-    sheet_dir = os.path.dirname(os.path.abspath(path))
+def read_sheet(path, base_dir=None):
+    """Return list of (sample_name, [bw_paths]) from a BEARING sample sheet TSV.
+
+    Comment (#) and blank lines are skipped, INCLUDING before the header row.
+    Relative bw paths resolve against base_dir (default: the current working
+    directory, matching the BEARING convention of running from the dir the
+    sheet's relative paths resolve against), not the sheet's own directory."""
+    base = os.path.abspath(base_dir) if base_dir else os.getcwd()
     out = []
     with open(path) as fh:
-        header = fh.readline().rstrip("\n").split("\t")
+        header = None
+        for line in fh:                       # first non-comment, non-blank = header
+            s = line.rstrip("\n")
+            if not s.strip() or s.startswith("#"):
+                continue
+            header = s.split("\t")
+            break
+        if header is None:
+            return out
         idx = {h: i for i, h in enumerate(header)}
-        si, bi = idx.get("sample", 0), idx.get("bw", 1)
+        si, bi = idx.get("sample", 0), idx.get("bw", 4)
         for line in fh:
             line = line.rstrip("\n")
-            if not line or line.startswith("#"):
+            if not line.strip() or line.startswith("#"):
                 continue
             f = line.split("\t")
             if len(f) <= bi:
                 continue
-            paths = [p if os.path.isabs(p) else os.path.join(sheet_dir, p)
+            paths = [p if os.path.isabs(p) else os.path.normpath(os.path.join(base, p))
                      for p in (q.strip() for q in f[bi].split(",")) if p]
             out.append((f[si], paths))
     return out
@@ -161,6 +174,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sheet", required=True)
+    ap.add_argument("--data-dir", default=None,
+                    help="resolve relative bw paths against this dir "
+                         "(default: current working directory)")
     ap.add_argument("--categories", required=False,
                     help="kept for interface parity; neg-strand from NEGATIVE_STRAND_STATES")
     ap.add_argument("--chrom-sizes", required=True)
@@ -182,7 +198,7 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    sheet = read_sheet(args.sheet)
+    sheet = read_sheet(args.sheet, args.data_dir)
     if not sheet:
         sys.exit("[ERROR] no samples in sheet")
     blacklist = load_blacklist(args.blacklist) if args.blacklist else None
