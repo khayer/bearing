@@ -1,0 +1,59 @@
+# =====================================================================
+# MCC FOUR-TRACK (CTCF dropped) -- drop-CTCF robustness + V1TxS control
+# PATHS ARE RELATIVE TO THE REPO ROOT (run snakemake from there):
+#   snakemake -s mcc/Snakefile --configfile mcc/config.yaml ...
+# =====================================================================
+scriptdir: mcc/scripts
+
+# ---- capture valid-pairs BAMs ----
+bam_dir: /mnt/isilon/bassing_lab/projects/capture_hic/Brittney_V1/03aln
+bam_pattern: "raw_ArimaHTS_S065_{cond}_rep{rep}_bs_250_master_valid_pairs.bam"
+chrom_sizes: /mnt/isilon/bassing_lab/integration_paper/bearing/workflow/resources/mm10.chrom.sizes
+
+conditions:
+  R1KO: DN
+  V1PKO: V1P
+  RCTKO: RCTKO
+  # V1TxS: V1TxS        # uncomment for the specificity control
+reps: [1, 2]
+
+# ---- 1D BEARING differential (repo-root relative) ----
+bes_dir: workflow/results_v1_4track/pvalue
+
+# ---- module config files (repo-root relative) ----
+sheet: mcc/config/samples_v1_4track.tsv
+cats: mcc/config/v1_4track_panel.yaml
+comparisons_file: mcc/config/comparisons_v1_4track.tsv
+
+# ---- segmentation + annotation (your real filenames, repo-root relative) ----
+chrom: chr6
+target_bins: 110000
+segmentation: seg_v1_chr6_real.bed
+anchors: anchors_v1.bed                      # AgRgenes_mm10_s.bed + cbe_mm10.bed
+cbe: annotations/cbe_mm10.bed
+genes: annotations/AgRgenes_mm10_s.bed
+cbe_pad: 2000
+
+# ---- cools (must match build_capture_cools.sh OUTDIR/cool) ----
+cool_dir: /mnt/isilon/bassing_lab/integration_paper/capture_cools/cool
+
+# ---- benchmark params ----
+std_binsize: 3000
+min_distance: 10000
+max_distance: 1000000
+min_shift: 50000
+res: 2000
+
+comparisons:
+  - [DN, V1P]
+  - [DN, RCTKO]
+  # - [DN, V1TxS]       # uncomment for the specificity control
+
+windows:
+  full:   chr6:39771104-42660754
+  core:   chr6:40800000-41650000
+  flank5: chr6:39771104-40800000
+  flank3: chr6:41650000-42660754
+
+fig_region: chr6:40800000-41650000
+v1_promoter: chr6:40872100:40908238

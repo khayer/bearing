@@ -1,0 +1,24 @@
+# Bearing category configuration -- V1-region MCC FOUR-track panel
+#
+# Drops CTCF from the five-track panel. Rationale: V1 CTCF is mixed-platform
+# (CUT&RUN for DN/RCTKO, ChIP for V1P), which confounds any cross-condition
+# CTCF comparison. This panel (RNA +/-, Cohesin, NIPBL) is platform-consistent
+# across DN / V1P / RCTKO / V1TxS and supports (a) the drop-CTCF robustness
+# check on the anti-localization, and (b) the V1TxS specificity control.
+
+name: "V1 4-track panel"
+genome: mm10
+
+categories:
+  - name: "RNAseq +"
+    color: "#6495ed"
+
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+
+  - name: Cohesin
+    color: "#8b0000"
+
+  - name: NIPBL
+    color: "#00bcd4"
