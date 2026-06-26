@@ -57,3 +57,8 @@ windows:
 
 fig_region: chr6:40800000-41650000
 v1_promoter: chr6:40872100:40908238
+
+# ---- output root: ONE folder, separate from the 5-track run ----
+outroot: mcc_results_v1_4track
+# shared 3D pair_counts (DN/V1P/RCTKO). Regenerate WITH V1TxS before DN-vs-V1TxS.
+pair_counts: capture_cools/pair_counts_v1.tsv

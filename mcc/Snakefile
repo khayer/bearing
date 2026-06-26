@@ -1,16 +1,12 @@
 # =====================================================================
 # Snakefile -- depth-matched MCC adaptive-vs-uniform binning analysis
-#
-# RUN FROM THE REPO ROOT (all paths resolve from there):
-#   snakemake -n -s mcc/Snakefile --configfile mcc/config.yaml
-#   snakemake    -s mcc/Snakefile --configfile mcc/config.yaml --cores 8
-#
-# Prereqs (built once, on the cluster, before launching):
-#   - workflow/results_v1/pvalue/diff_*.neglog10p.bw   (../workflow + config_v1)
-#   - seg_v1_chr6_real.bed                              (build_adaptive_segmentation)
-#   - mcc_grid_benchmark/pair_counts_v1.tsv             (run_mcc_grid_benchmark)
-#   - anchors_v1.bed = cat AgRgenes_mm10_s.bed cbe_mm10.bed
-# ASCII only.
+# RUN FROM THE REPO ROOT:
+#   snakemake -n -s mcc/Snakefile --configfile mcc/config.yaml          # 5-track
+#   snakemake -n -s mcc/Snakefile --configfile mcc/config_4track.yaml   # 4-track
+# Output locations are config-driven (bench_dir/fig_dir/sign_map) so the two
+# panels write to SEPARATE dirs and never reuse each other's dumps.
+# Prereqs (built once): results_v1[_4track]/pvalue/diff_*, seg_v1_chr6_real.bed,
+#   <pair_counts>, anchors_v1.bed. ASCII only.
 # =====================================================================
 import os
 
@@ -29,7 +25,10 @@ CATS       = config["cats"]
 COMP       = config["comparisons_file"]
 COOLDIR    = config["cool_dir"]
 BAM        = config["bam_dir"]
-PAIRCOUNTS = "mcc_grid_benchmark/pair_counts_v1.tsv"
+BENCH      = config.get("outroot", "mcc_results_v1")
+FIGS       = BENCH + "/figures"
+SIGNMAP    = BENCH + "/SIGN_MAP.tsv"
+PAIRCOUNTS = config.get("pair_counts", BENCH + "/pair_counts_v1.tsv")
 PAIRS_OK   = "capture_cools.downsample_done"
 RES        = config["res"]
 WINDOWS    = config["windows"]
@@ -47,15 +46,14 @@ def bes_bw(pair):
 
 rule all:
     input:
-        "mcc_grid_benchmark/grid_benchmark_native.tsv",
-        "mcc_grid_benchmark/grid_benchmark_floored.tsv",
-        "mcc_grid_benchmark/grid_benchmark_native_cbemask.tsv",
-        expand("mcc_grid_benchmark/partial_{pair}_{win}.txt",
-               pair=PAIRS, win=list(WINDOWS)),
-        expand("figures/fig_1d_vs_3d_{pair}.pdf", pair=PAIRS),
-        expand("figures/mcc_bearing_{pair}.pdf", pair=PAIRS),
-        "mcc_grid_benchmark/feature_geometry.txt",
-        "SIGN_MAP.tsv",
+        BENCH + "/grid_benchmark_native.tsv",
+        BENCH + "/grid_benchmark_floored.tsv",
+        BENCH + "/grid_benchmark_native_cbemask.tsv",
+        expand(BENCH + "/partial_{pair}_{win}.txt", pair=PAIRS, win=list(WINDOWS)),
+        expand(FIGS + "/fig_1d_vs_3d_{pair}.pdf", pair=PAIRS),
+        expand(FIGS + "/mcc_bearing_{pair}.pdf", pair=PAIRS),
+        BENCH + "/feature_geometry.txt",
+        SIGNMAP,
 
 
 rule downsampled_cools:
@@ -82,50 +80,57 @@ rule benchmark_native:
     input:
         seg = SEG, counts = PAIRCOUNTS, anchors = ANCHORS, comp = COMP
     output:
-        tsv = "mcc_grid_benchmark/grid_benchmark_native.tsv",
-        dumps = expand("mcc_grid_benchmark/binwise_{pair}.tsv", pair=PAIRS)
+        tsv = BENCH + "/grid_benchmark_native.tsv",
+        dumps = expand(BENCH + "/binwise_{pair}.tsv", pair=PAIRS)
+    params:
+        dump = BENCH + "/binwise"
     shell:
         "python {S}/benchmark_grid_vs_standard.py --superbins {input.seg} "
         "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
         "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
         "--max-distance {MAXD} --min-shift {SHIFT} "
-        "--out {output.tsv} --dump-bins mcc_grid_benchmark/binwise"
+        "--out {output.tsv} --dump-bins {params.dump}"
 
 
 rule benchmark_floored:
     input:
         seg = SEG, counts = PAIRCOUNTS, anchors = ANCHORS, comp = COMP
     output:
-        "mcc_grid_benchmark/grid_benchmark_floored.tsv"
+        BENCH + "/grid_benchmark_floored.tsv"
+    params:
+        dump = BENCH + "/binwise_floored",
+        grid = BENCH + "/superbins_v1r_1000.bed"
     shell:
         "python {S}/build_superbin_grid.py --seg {input.seg} "
-        "--min-width 1000 --out-bed superbins_v1r_1000.bed && "
-        "python {S}/benchmark_grid_vs_standard.py --superbins superbins_v1r_1000.bed "
+        "--min-width 1000 --out-bed {params.grid} && "
+        "python {S}/benchmark_grid_vs_standard.py --superbins {params.grid} "
         "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
         "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
         "--max-distance {MAXD} --min-shift {SHIFT} "
-        "--out {output} --dump-bins mcc_grid_benchmark/binwise_floored"
+        "--out {output} --dump-bins {params.dump}"
 
 
 rule benchmark_cbemask:
     input:
         seg = SEG_MASK, counts = PAIRCOUNTS, anchors = ANCHORS, comp = COMP
     output:
-        tsv = "mcc_grid_benchmark/grid_benchmark_native_cbemask.tsv",
-        dumps = expand("mcc_grid_benchmark/binwise_cbemask_{pair}.tsv", pair=PAIRS)
+        tsv = BENCH + "/grid_benchmark_native_cbemask.tsv",
+        dumps = expand(BENCH + "/binwise_cbemask_{pair}.tsv", pair=PAIRS)
+    params:
+        dump = BENCH + "/binwise_cbemask"
     shell:
         "python {S}/benchmark_grid_vs_standard.py --superbins {input.seg} "
         "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
         "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
         "--max-distance {MAXD} --min-shift {SHIFT} "
-        "--out {output.tsv} --dump-bins mcc_grid_benchmark/binwise_cbemask"
+        "--out {output.tsv} --dump-bins {params.dump}"
 
 
 rule partial:
     input:
-        "mcc_grid_benchmark/binwise_{pair}.tsv"
+        BENCH + "/binwise_{pair}.tsv"
     output:
-        "mcc_grid_benchmark/partial_{pair}_{win}.txt"
+        BENCH + "/partial_{pair}_{win}.txt"
     params:
         region = lambda wc: WINDOWS[wc.win]
     shell:
@@ -134,10 +139,9 @@ rule partial:
 
 rule sign_map:
     input:
-        expand("mcc_grid_benchmark/partial_{pair}_{win}.txt",
-               pair=PAIRS, win=list(WINDOWS))
+        expand(BENCH + "/partial_{pair}_{win}.txt", pair=PAIRS, win=list(WINDOWS))
     output:
-        "SIGN_MAP.tsv"
+        SIGNMAP
     run:
         with open(output[0], "w") as o:
             o.write("comparison\twindow\trho_raw\trho_depth\trho_depth_width\tpremise\n")
@@ -161,9 +165,9 @@ rule sign_map:
 
 rule fig_1d_vs_3d:
     input:
-        dump = "mcc_grid_benchmark/binwise_{pair}.tsv", cbe = CBE
+        dump = BENCH + "/binwise_{pair}.tsv", cbe = CBE
     output:
-        "figures/fig_1d_vs_3d_{pair}.pdf"
+        FIGS + "/fig_1d_vs_3d_{pair}.pdf"
     params:
         region = config["fig_region"], hl = config["v1_promoter"]
     shell:
@@ -177,7 +181,7 @@ rule mcc_ini:
         ok = PAIRS_OK, bes = lambda wc: bes_bw(wc.pair),
         genes = GENES, cbe = CBE, sheet = SHEET, cats = CATS
     output:
-        "figures/tracks_{pair}.ini"
+        FIGS + "/tracks_{pair}.ini"
     params:
         a = lambda wc: wc.pair.split("_vs_")[0],
         b = lambda wc: wc.pair.split("_vs_")[1],
@@ -194,9 +198,9 @@ rule mcc_ini:
 
 rule pygenometracks:
     input:
-        "figures/tracks_{pair}.ini"
+        FIGS + "/tracks_{pair}.ini"
     output:
-        "figures/mcc_bearing_{pair}.pdf"
+        FIGS + "/mcc_bearing_{pair}.pdf"
     params:
         region = config["fig_region"]
     shell:
@@ -207,7 +211,7 @@ rule geometry:
     input:
         seg = SEG, anchors = ANCHORS
     output:
-        "mcc_grid_benchmark/feature_geometry.txt"
+        BENCH + "/feature_geometry.txt"
     params:
         region = WINDOWS["full"]
     shell:

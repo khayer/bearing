@@ -108,7 +108,7 @@ ALL_CATEGORIES = [
     ("Weak Repressed PolyComb",    "#c0c0c0"),
     ("Quiescent/Low",              "#ffffff"),
 ]
-MIN_STATES = 3
+MIN_STATES = 4
 MAX_STATES = len(ALL_CATEGORIES)
 
 # Placeholder built-in feature sets for mm10 around the TCRb locus.
@@ -2471,8 +2471,10 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     rows_written += 1
                     bin_id += 1
     else:
-        # Parallel per-chromosome processing using temporary cache files
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        # Parallel per-chromosome processing using temporary cache files.
+        # ignore_cleanup_errors=True: do NOT remove. /scr1 is NFS; silly-rename
+        # (.nfsXXXX) can leave the dir non-empty at teardown -> OSError 39.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
             tasks = []
             for chrom in chroms:
                 chrom_len = chrom_sizes[chrom]

@@ -55,3 +55,8 @@ windows:
 
 fig_region: chr6:40800000-41650000
 v1_promoter: chr6:40872100:40908238
+
+# ---- output root: ONE folder per panel; all mcc outputs go inside ----
+outroot: mcc_results_v1
+# pair_counts is the shared 3D side (DN/V1P/RCTKO), pre-built once
+pair_counts: capture_cools/pair_counts_v1.tsv

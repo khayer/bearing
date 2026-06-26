@@ -160,3 +160,52 @@ Edit `config.yaml` for cluster paths (BAM dir, chrom.sizes, annotation BEDs).
 - `make_mcc_bearing_ini.py` -- pyGenomeTracks ini (matrices + BES + 5-track panel)
 - `superbin_feature_overlap.py` -- feature-anchoring geometry test
 - `run_mcc_grid_benchmark.sh` -- standalone native+floored benchmark driver
+
+---
+
+## 8. Four-track panel: drop-CTCF robustness + V1TxS control
+
+The five-track panel includes CTCF, which is mixed-platform across conditions
+(CUT&RUN for DN/RCTKO, ChIP for V1P) and therefore not safe for cross-condition
+claims. The four-track panel (RNA +/-, Cohesin, NIPBL) is platform-consistent
+and serves two purposes.
+
+**(a) Drop-CTCF robustness check** -- does the core anti-localization survive
+removing the mixed-platform track? Rebuild the 1D differential without CTCF, then
+re-run the benchmark + partial:
+
+```
+# 1. derive the 4-track 1D config from YOUR config_v1.yaml (preserves tuned params)
+sed -e 's#samples_sheet:.*#samples_sheet: "config/samples_v1_4track.tsv"#' \
+    -e 's#categories:.*#categories: "../categories/v1_4track_panel.yaml"#' \
+    -e 's#outdir:.*#outdir: "results_v1_4track"#' \
+    workflow/config/config_v1.yaml > workflow/config/config_v1_4track.yaml
+
+# 2. run the 1D BEARING pipeline on the 4-track panel (DN/V1P/RCTKO)
+snakemake -s workflow/Snakefile --configfile workflow/config/config_v1_4track.yaml ...
+
+# 3. benchmark + partial on the 4-track BES (3D contact side is unchanged)
+snakemake -s mcc/Snakefile --configfile mcc/config_4track.yaml --profile ... \
+  mcc_results_v1_4track/SIGN_MAP.tsv
+```
+
+Compare the core partial to the five-track core (V1P -0.26/-0.33). If it holds,
+the anti-localization is clean of the CTCF platform artifact. If it weakens
+materially, CTCF was carrying it -- report that.
+
+**(b) V1TxS specificity control** -- V1TxS (transcription stop) changes 1D
+(transcription) while leaving 3D architecture flat (Allyn 2025), so a correct
+integration must return ~0 co-localization: the "true negative" that converts
+"anti-localization exists" to "anti-localization is specific". To add it:
+
+1. Fill the V1TxS bigwig paths in `samples_v1_4track.tsv` (replace the FIXME
+   placeholders with the real RNA/Rad21/NIPBL paths from your bigwigs dir / GEO
+   manifest) and uncomment the two V1TxS rows.
+2. Uncomment `V1TxS: V1TxS` (conditions) and `- [DN, V1TxS]` (comparisons) in
+   `mcc/config_4track.yaml`, and the DN-vs-V1TxS line in
+   `comparisons_v1_4track.tsv`.
+3. The V1TxS capture BAM (`raw_ArimaHTS_S065_V1TxS_rep{1,2}`) is already handled
+   by `build_capture_cools.sh` (LABEL map) -- regenerate pair_counts to include it.
+
+Prediction: DN-vs-V1TxS core partial near zero (1D moves, 3D flat), in contrast
+to V1P/RCTKO. That is the specificity result.
