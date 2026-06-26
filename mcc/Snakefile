@@ -1,24 +1,20 @@
 # =====================================================================
 # Snakefile -- depth-matched MCC adaptive-vs-uniform binning analysis
 #
-# Ties the whole capture-Hi-C arc into one reproducible DAG, run entirely
-# on DOWNSAMPLED (depth-matched) data so the cool files and the benchmark
-# are directly comparable across conditions:
-#
-#   downsampled cools  ->  benchmark (native / floored / cbe-masked, +dumps)
-#                      ->  partial_corr per comparison x window (sign map)
-#                      ->  1D-vs-3D figures
-#                      ->  pyGenomeTracks supplement (depth-matched matrices)
-#                      ->  geometry (feature-anchoring stat)
-#
-# Assumes the 1D BEARING differential already exists in config['bes_dir']
-# (run ../workflow/Snakefile with config_v1 first). Dry-run before launching:
+# RUN FROM THE REPO ROOT (all paths resolve from there):
 #   snakemake -n -s mcc/Snakefile --configfile mcc/config.yaml
+#   snakemake    -s mcc/Snakefile --configfile mcc/config.yaml --cores 8
+#
+# Prereqs (built once, on the cluster, before launching):
+#   - workflow/results_v1/pvalue/diff_*.neglog10p.bw   (../workflow + config_v1)
+#   - seg_v1_chr6_real.bed                              (build_adaptive_segmentation)
+#   - mcc_grid_benchmark/pair_counts_v1.tsv             (run_mcc_grid_benchmark)
+#   - anchors_v1.bed = cat AgRgenes_mm10_s.bed cbe_mm10.bed
 # ASCII only.
 # =====================================================================
 import os
 
-configfile: "config.yaml"
+configfile: "mcc/config.yaml"
 
 S          = config["scriptdir"]
 CHROM      = config["chrom"]
@@ -28,10 +24,19 @@ GENES      = config["genes"]
 BES_DIR    = config["bes_dir"]
 SEG        = config["segmentation"]
 SEG_MASK   = SEG.replace(".bed", ".cbemask.bed")
+SHEET      = config["sheet"]
+CATS       = config["cats"]
+COMP       = config["comparisons_file"]
+COOLDIR    = config["cool_dir"]
+BAM        = config["bam_dir"]
 PAIRCOUNTS = "mcc_grid_benchmark/pair_counts_v1.tsv"
-PAIRS_OK   = "capture_cools/.downsample_done"
+PAIRS_OK   = "capture_cools.downsample_done"
 RES        = config["res"]
 WINDOWS    = config["windows"]
+STD        = config["std_binsize"]
+MIND       = config["min_distance"]
+MAXD       = config["max_distance"]
+SHIFT      = config["min_shift"]
 
 PAIRS = ["%s_vs_%s" % (a, b) for a, b in config["comparisons"]]
 
@@ -53,17 +58,13 @@ rule all:
         "SIGN_MAP.tsv",
 
 
-# ---- 0. depth-matched (downsampled) cools for the figures -------------
 rule downsampled_cools:
     output:
         touch(PAIRS_OK)
-    params:
-        res = RES
     shell:
-        "bash {S}/build_capture_cools.sh --downsample --res {params.res}"
+        "bash {S}/build_capture_cools.sh --downsample --res {RES}"
 
 
-# ---- 1. CBE-masked segmentation (whole bins within pad of any CBE) -----
 rule cbe_mask_grid:
     input:
         seg = SEG, cbe = CBE
@@ -77,66 +78,49 @@ rule cbe_mask_grid:
         "bedtools intersect -v -a {input.seg} -b .cbe_pad.bed > {output}"
 
 
-# ---- 2. benchmark on each grid, with per-bin dumps --------------------
 rule benchmark_native:
     input:
-        seg = SEG, counts = PAIRCOUNTS, anchors = ANCHORS
+        seg = SEG, counts = PAIRCOUNTS, anchors = ANCHORS, comp = COMP
     output:
         tsv = "mcc_grid_benchmark/grid_benchmark_native.tsv",
         dumps = expand("mcc_grid_benchmark/binwise_{pair}.tsv", pair=PAIRS)
-    params:
-        bam = config["bam_dir"],
-        std = config["std_binsize"], mind = config["min_distance"],
-        maxd = config["max_distance"], shift = config["min_shift"]
     shell:
         "python {S}/benchmark_grid_vs_standard.py --superbins {input.seg} "
-        "--counts {input.counts} --bam-dir {params.bam} "
-        "--comparisons config/comparisons_v1.tsv --annot {input.anchors} "
-        "--std-binsize {params.std} --min-distance {params.mind} "
-        "--max-distance {params.maxd} --min-shift {params.shift} "
+        "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
+        "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
+        "--max-distance {MAXD} --min-shift {SHIFT} "
         "--out {output.tsv} --dump-bins mcc_grid_benchmark/binwise"
 
 
 rule benchmark_floored:
     input:
-        seg = SEG, counts = PAIRCOUNTS, anchors = ANCHORS
+        seg = SEG, counts = PAIRCOUNTS, anchors = ANCHORS, comp = COMP
     output:
         "mcc_grid_benchmark/grid_benchmark_floored.tsv"
-    params:
-        bam = config["bam_dir"],
-        std = config["std_binsize"], mind = config["min_distance"],
-        maxd = config["max_distance"], shift = config["min_shift"]
     shell:
         "python {S}/build_superbin_grid.py --segmentation {input.seg} "
         "--floor 1000 --out superbins_v1r_1000.bed && "
         "python {S}/benchmark_grid_vs_standard.py --superbins superbins_v1r_1000.bed "
-        "--counts {input.counts} --bam-dir {params.bam} "
-        "--comparisons config/comparisons_v1.tsv --annot {input.anchors} "
-        "--std-binsize {params.std} --min-distance {params.mind} "
-        "--max-distance {params.maxd} --min-shift {params.shift} "
+        "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
+        "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
+        "--max-distance {MAXD} --min-shift {SHIFT} "
         "--out {output} --dump-bins mcc_grid_benchmark/binwise_floored"
 
 
 rule benchmark_cbemask:
     input:
-        seg = SEG_MASK, counts = PAIRCOUNTS, anchors = ANCHORS
+        seg = SEG_MASK, counts = PAIRCOUNTS, anchors = ANCHORS, comp = COMP
     output:
         tsv = "mcc_grid_benchmark/grid_benchmark_native_cbemask.tsv",
         dumps = expand("mcc_grid_benchmark/binwise_cbemask_{pair}.tsv", pair=PAIRS)
-    params:
-        bam = config["bam_dir"],
-        std = config["std_binsize"], mind = config["min_distance"],
-        maxd = config["max_distance"], shift = config["min_shift"]
     shell:
         "python {S}/benchmark_grid_vs_standard.py --superbins {input.seg} "
-        "--counts {input.counts} --bam-dir {params.bam} "
-        "--comparisons config/comparisons_v1.tsv --annot {input.anchors} "
-        "--std-binsize {params.std} --min-distance {params.mind} "
-        "--max-distance {params.maxd} --min-shift {params.shift} "
+        "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
+        "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
+        "--max-distance {MAXD} --min-shift {SHIFT} "
         "--out {output.tsv} --dump-bins mcc_grid_benchmark/binwise_cbemask"
 
 
-# ---- 3. partial correlation per comparison x window (the sign map) -----
 rule partial:
     input:
         "mcc_grid_benchmark/binwise_{pair}.tsv"
@@ -160,22 +144,21 @@ rule sign_map:
             for f in input:
                 base = os.path.basename(f)[len("partial_"):-len(".txt")]
                 pair, win = base.rsplit("_", 1)
-                vals = {}
+                v = {}
                 for line in open(f):
                     if line.startswith("rho_raw"):
-                        vals["raw"] = line.split(":")[1].split()[0]
+                        v["raw"] = line.split(":")[1].split()[0]
                     elif line.startswith("rho | depth "):
-                        vals["d"] = line.split(":")[1].split()[0]
+                        v["d"] = line.split(":")[1].split()[0]
                     elif line.startswith("rho | depth,width"):
-                        vals["dw"] = line.split(":")[1].split()[0]
+                        v["dw"] = line.split(":")[1].split()[0]
                     elif line.startswith("[premise]"):
-                        vals["prem"] = line.split("=")[1].split()[0]
-                o.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                    pair, win, vals.get("raw", "NA"), vals.get("d", "NA"),
-                    vals.get("dw", "NA"), vals.get("prem", "NA")))
+                        v["prem"] = line.split("=")[1].split()[0]
+                o.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (pair, win,
+                        v.get("raw", "NA"), v.get("d", "NA"),
+                        v.get("dw", "NA"), v.get("prem", "NA")))
 
 
-# ---- 4. 1D-vs-3D displacement figure (in-window partial self-computed) -
 rule fig_1d_vs_3d:
     input:
         dump = "mcc_grid_benchmark/binwise_{pair}.tsv", cbe = CBE
@@ -189,22 +172,21 @@ rule fig_1d_vs_3d:
         "--title 'DN vs {wildcards.pair} -- Tcrb MCC' --out {output}"
 
 
-# ---- 5. pyGenomeTracks supplement on the DEPTH-MATCHED cools -----------
 rule mcc_ini:
     input:
         ok = PAIRS_OK, bes = lambda wc: bes_bw(wc.pair),
-        genes = GENES, cbe = CBE
+        genes = GENES, cbe = CBE, sheet = SHEET, cats = CATS
     output:
         "figures/tracks_{pair}.ini"
     params:
         a = lambda wc: wc.pair.split("_vs_")[0],
         b = lambda wc: wc.pair.split("_vs_")[1],
-        region = config["fig_region"], res = RES
+        region = config["fig_region"], res = RES, cooldir = COOLDIR
     shell:
-        "python {S}/make_mcc_bearing_ini.py --sheet config/samples_v1.tsv "
-        "--cats config/v1_5track_panel.yaml --bes {input.bes} "
-        "--cools {params.a}:capture_cools/cool/merged_capture_{params.a}_bs_{params.res}.cool,"
-        "{params.b}:capture_cools/cool/merged_capture_{params.b}_bs_{params.res}.cool "
+        "python {S}/make_mcc_bearing_ini.py --sheet {input.sheet} "
+        "--cats {input.cats} --bes {input.bes} "
+        "--cools {params.a}:{params.cooldir}/merged_capture_{params.a}_bs_{params.res}.cool,"
+        "{params.b}:{params.cooldir}/merged_capture_{params.b}_bs_{params.res}.cool "
         "--panel-condition {params.b} --overlay-condition {params.a} "
         "--genes {input.genes} --features {input.cbe} "
         "--region {params.region} --out-ini {output}"
@@ -221,7 +203,6 @@ rule pygenometracks:
         "pyGenomeTracks --tracks {input} --region {params.region} -o {output}"
 
 
-# ---- 6. geometry: is the native grid feature-anchored? ----------------
 rule geometry:
     input:
         seg = SEG, anchors = ANCHORS

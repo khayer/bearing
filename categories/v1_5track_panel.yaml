@@ -1,19 +1,14 @@
-# Bearing category configuration -- mm10 5-track panel (V1-region use case)
+# Bearing category configuration -- V1-region MCC five-track panel
 #
-# Reference-free attribution panel for the Allyn 2025 V1-region Tcrb mutants
-# (DN/R1KO, V1P, RCTKO). No ATAC and no H3K27ac: RCTKO has no H3K27ac on GEO,
-# so the three-way intersection drops it; ATAC was not assayed. NIPBL is added
-# as the cohesin-loader track, making this an RNA + architectural panel.
+# Applies BEARING to the Allyn 2025 V1-region Tcrb mutants on capture-Hi-C
+# (MCC). Differs from the canonical six-track panel: NIPBL replaces ATAC and
+# H3K27ac, matching the assays available across DN / V1P / RCTKO (CTCF is
+# CUT&RUN for DN/RCTKO, ChIP for V1P; RNA is local coverage).
 #
-# Order here MUST match the bw column order in config/samples_v1.tsv.
-# CTCF is mixed-platform by design (CUT&RUN for DN/RCTKO, ChIP for V1P).
-#
-# Fields per entry:
-#   name             : human-readable assay label
-#   color            : hex color for pyGenomeTracks plots and bristle panels
-#   negative_strand  : true if BigWig encodes negative-strand signal
+# Fields: name, color, negative_strand (true => bigwig encodes - strand as
+# negative numbers; abs() before normalization).
 
-name: "mm10 5-track panel (V1)"
+name: "V1 5-track panel"
 genome: mm10
 
 categories:

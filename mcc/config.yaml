@@ -1,57 +1,57 @@
 # =====================================================================
-# MCC (capture-Hi-C) adaptive-vs-uniform binning analysis -- DEPTH-MATCHED
-# All 3D inputs are downsampled to the shallowest condition so the cool
-# files and the benchmark see directly comparable depth.
+# MCC adaptive-vs-uniform binning -- DEPTH-MATCHED
+# PATHS ARE RELATIVE TO THE REPO ROOT (run snakemake from there):
+#   snakemake -s mcc/Snakefile --configfile mcc/config.yaml ...
 # =====================================================================
-scriptdir: scripts
+scriptdir: mcc/scripts
 
-# ---- capture valid-pairs BAMs (HiC-Pro name-sorted) ----
+# ---- capture valid-pairs BAMs ----
 bam_dir: /mnt/isilon/bassing_lab/projects/capture_hic/Brittney_V1/03aln
 bam_pattern: "raw_ArimaHTS_S065_{cond}_rep{rep}_bs_250_master_valid_pairs.bam"
 chrom_sizes: /mnt/isilon/bassing_lab/integration_paper/bearing/workflow/resources/mm10.chrom.sizes
 
-# genotype token -> analysis label  (DN is the depth floor / reference)
 conditions:
   R1KO: DN
   V1PKO: V1P
   RCTKO: RCTKO
 reps: [1, 2]
 
-# ---- 1D BEARING differential (produced by ../workflow with config_v1) ----
-# expects diff_{A}_vs_{B}.neglog10p.bw + diff_{A}_vs_{B}.stats.tsv
-bes_dir: ../workflow/results_v1/pvalue
+# ---- 1D BEARING differential (repo-root relative) ----
+bes_dir: workflow/results_v1/pvalue
 
-# ---- segmentation (native, feature-anchored; chr6 proportional budget) ----
+# ---- module config files (repo-root relative) ----
+sheet: mcc/config/samples_v1.tsv
+cats: mcc/config/v1_5track_panel.yaml
+comparisons_file: mcc/config/comparisons_v1.tsv
+
+# ---- segmentation + annotation (your real filenames, repo-root relative) ----
 chrom: chr6
-target_bins: 110000            # ~5.5% genome share; do NOT use genome budget on one chrom
+target_bins: 110000
 segmentation: seg_v1_chr6_real.bed
-
-# ---- annotation ----
-anchors: annotations/anchors_v1.bed      # AgR gene segments + CBEs (feat_conc / on_feature)
+anchors: anchors_v1.bed                      # AgRgenes_mm10_s.bed + cbe_mm10.bed
 cbe: annotations/cbe_mm10.bed
-genes: annotations/tcrb_genes.bed
-cbe_pad: 2000                            # whole-bin drop radius around each deleted CBE
+genes: annotations/AgRgenes_mm10_s.bed
+cbe_pad: 2000
 
-# ---- benchmark params (band-limited, circular-shift null) ----
+# ---- cools (must match build_capture_cools.sh OUTDIR/cool) ----
+cool_dir: /mnt/isilon/bassing_lab/integration_paper/capture_cools/cool
+
+# ---- benchmark params ----
 std_binsize: 3000
 min_distance: 10000
 max_distance: 1000000
 min_shift: 50000
-res: 2000                                # cool resolution for the figures
+res: 2000
 
-# ---- comparisons (label_A vs label_B; A is reference) ----
 comparisons:
   - [DN, V1P]
   - [DN, RCTKO]
 
-# ---- windows for sign-localization (where does the 1D-3D sign live?) ----
-# core = Vb + RC active blocks; flanks + intervening Prss are inactive
 windows:
   full:   chr6:39771104-42660754
   core:   chr6:40800000-41650000
   flank5: chr6:39771104-40800000
   flank3: chr6:41650000-42660754
 
-# ---- figure region + highlight (V1 promoter) ----
 fig_region: chr6:40800000-41650000
 v1_promoter: chr6:40872100:40908238
