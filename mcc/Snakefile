@@ -98,8 +98,8 @@ rule benchmark_floored:
     output:
         "mcc_grid_benchmark/grid_benchmark_floored.tsv"
     shell:
-        "python {S}/build_superbin_grid.py --segmentation {input.seg} "
-        "--floor 1000 --out superbins_v1r_1000.bed && "
+        "python {S}/build_superbin_grid.py --seg {input.seg} "
+        "--min-width 1000 --out-bed superbins_v1r_1000.bed && "
         "python {S}/benchmark_grid_vs_standard.py --superbins superbins_v1r_1000.bed "
         "--counts {input.counts} --bam-dir {BAM} --comparisons {input.comp} "
         "--annot {input.anchors} --std-binsize {STD} --min-distance {MIND} "
@@ -208,6 +208,8 @@ rule geometry:
         seg = SEG, anchors = ANCHORS
     output:
         "mcc_grid_benchmark/feature_geometry.txt"
+    params:
+        region = WINDOWS["full"]
     shell:
-        "python {S}/superbin_feature_overlap.py --grid {input.seg} "
-        "--features {input.anchors} > {output}"
+        "python {S}/superbin_feature_overlap.py --superbins {input.seg} "
+        "--features {input.anchors} --region {params.region} > {output}"
