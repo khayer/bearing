@@ -108,7 +108,7 @@ ALL_CATEGORIES = [
     ("Weak Repressed PolyComb",    "#c0c0c0"),
     ("Quiescent/Low",              "#ffffff"),
 ]
-MIN_STATES = 5
+MIN_STATES = 3
 MAX_STATES = len(ALL_CATEGORIES)
 
 # Placeholder built-in feature sets for mm10 around the TCRb locus.
