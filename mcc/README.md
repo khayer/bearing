@@ -133,10 +133,11 @@ claim.** See `../docs/` and the Snakefile `sign_map` rule.
 ## 6. Reproduce
 
 ```
-# 1D first (separate): run ../workflow with config_v1 -> diff_*.neglog10p.bw
+# RUN FROM THE REPO ROOT (all paths resolve from there).
+# 1D first (separate): run workflow/ with config_v1 -> diff_*.neglog10p.bw
 # then, depth-matched 3D + benchmark + controls + figures:
-snakemake -n -s Snakefile --configfile config.yaml     # dry-run
-snakemake    -s Snakefile --configfile config.yaml --cores 8
+snakemake -n -s mcc/Snakefile --configfile mcc/config.yaml     # dry-run
+snakemake    -s mcc/Snakefile --configfile mcc/config.yaml --cores 8
 ```
 
 Outputs: `grid_benchmark_{native,floored,native_cbemask}.tsv`, per-window
