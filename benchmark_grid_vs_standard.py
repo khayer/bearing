@@ -338,13 +338,16 @@ def main():
             if args.dump_bins and gname == "adaptive":
                 fa = np.array([any(s < fe and e > fs for fs, fe in feats)
                                for s, e in zip(gs, ge)])
+                marg_d = MA.sum(axis=1) + MB.sum(axis=1)
                 order = np.argsort(-besb)
                 dp = "%s_%s_vs_%s.tsv" % (args.dump_bins, A, B)
                 with open(dp, "w") as dh:
-                    dh.write("chrom\tstart\tend\tbes\tdelta_contact\ton_feature\n")
+                    dh.write("chrom\tstart\tend\tbes\tdelta_contact\t"
+                             "on_feature\twidth\tmarginal\n")
                     for i in order:
-                        dh.write("%s\t%d\t%d\t%.4g\t%.4g\t%d\n"
-                                 % (chrom, gs[i], ge[i], besb[i], delta[i], int(fa[i])))
+                        dh.write("%s\t%d\t%d\t%.4g\t%.4g\t%d\t%d\t%.6g\n"
+                                 % (chrom, gs[i], ge[i], besb[i], delta[i],
+                                    int(fa[i]), int(ge[i] - gs[i]), marg_d[i]))
                 sys.stderr.write("[dump] %s (%d bins, sorted by BES desc)\n"
                                  % (dp, len(gs)))
             marg = MA.sum(axis=1) + MB.sum(axis=1)
