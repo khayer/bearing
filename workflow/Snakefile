@@ -147,12 +147,17 @@ def all_targets():
         out("calibration.done"),
         out("decomposition.done"),
         out("benchmark", "recovery.done"),
-        out("paper_figures", "graphical_abstract_panel3.png"),
-        out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
-        out("paper_figures", "suppS1_jsd_decomposition.pdf"),
-        out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
-        out("paper_figures", "collect.done"),
     ]
+    # Manuscript paper figures assume the manuscript conditions (ProB, EbKO, Igh).
+    # Skip them for application configs (e.g. the V1 panel) via paper_figures: false.
+    if config.get("paper_figures", True):
+        t += [
+            out("paper_figures", "graphical_abstract_panel3.png"),
+            out("paper_figures", "fig6_panelB_igh_decomp.pdf"),
+            out("paper_figures", "suppS1_jsd_decomposition.pdf"),
+            out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
+            out("paper_figures", "collect.done"),
+        ]
     if HAS_HIC:
         t += [out("figures.done"),
               out("figures_combined.done"),

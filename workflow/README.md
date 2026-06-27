@@ -20,6 +20,61 @@ The profile (`profiles/slurm/config.yaml`) sets the executor, partitions
 (dbhiq,defq), and default resources; each rule declares its own threads / mem /
 runtime, so per-step sizing matches the old hand-written sbatch calls.
 
+## Juicer .hic support (hic-straw)
+
+`.cool` input needs nothing extra. For Juicer `.hic` input, `environment.yml`
+installs `hic-straw` (note the hyphen; the bare name `hicstraw` does not exist
+on PyPI -- that was the original install failure). It has no prebuilt wheel and
+compiles a C++ extension against libcurl, so the env also pulls `cxx-compiler`,
+`libcurl`, and `curl` from conda-forge to satisfy the build.
+
+Verify after creating the env:
+```bash
+conda env create -f environment.yml
+conda activate bearing
+python -c "import hicstraw; print('hic-straw OK', hicstraw.__file__)"
+```
+(The import name is `hicstraw`; the install name is `hic-straw`.)
+
+If the compile still fails on your system, install the prebuilt binary instead:
+```bash
+conda install -c bioconda hic-straw    # verify the exact package name for your platform
+```
+
+## Run on SLURM (Snakemake submits each rule as its own sbatch job)
+
+Preflight + launch in one step (run from the directory your sheet's relative
+paths resolve against, with the `bearing` conda env active):
+
+```bash
+bash workflow/run_cluster.sh             # full pipeline
+bash workflow/run_cluster.sh --core-only # BEARING only, skip Hi-C
+bash workflow/run_cluster.sh --dry       # preflight + dry run, no submission
+```
+
+This (1) runs `preflight.py` to confirm every BigWig / Hi-C / reference file in
+the sheet exists -- failing in seconds if one is missing rather than hours into
+the run -- then (2) submits via the slurm profile, where Snakemake issues one
+`sbatch` per rule instance (partitions dbhiq,defq; per-rule mem/cpu/runtime).
+
+Equivalent manual command:
+```bash
+python3 workflow/preflight.py --configfile workflow/config/config.yaml
+snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml \
+          --profile workflow/profiles/slurm
+```
+
+To run jobs inside the Apptainer image instead of the active conda env, add
+`--use-apptainer` (pull the image first with `workflow/get_container.sh`).
+
+Preflight standalone (any time, before committing to a run):
+```bash
+python3 workflow/preflight.py --configfile workflow/config/config.yaml
+python3 workflow/preflight.py --configfile workflow/config/config.yaml --core-only
+# resolve relative paths against a specific data dir:
+python3 workflow/preflight.py --configfile workflow/config/config.yaml --base-dir /path/to/run
+```
+
 ## Staging inputs from S3 (no aws / mount-s3 on the cluster)
 
 If the cluster cannot mount S3 or run `aws s3 sync`, host the inputs behind

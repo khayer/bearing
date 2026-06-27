@@ -180,6 +180,7 @@ sed -e 's#samples_sheet:.*#samples_sheet: "config/samples_v1_4track.tsv"#' \
     -e 's#categories:.*#categories: "../categories/v1_4track_panel.yaml"#' \
     -e 's#outdir:.*#outdir: "results_v1_4track"#' \
     workflow/config/config_v1.yaml > workflow/config/config_v1_4track.yaml
+echo 'paper_figures: false' >> workflow/config/config_v1_4track.yaml   # skip manuscript-only figures
 
 # 2. run the 1D BEARING pipeline on the 4-track panel (DN/V1P/RCTKO)
 snakemake -s workflow/Snakefile --configfile workflow/config/config_v1_4track.yaml ...
