@@ -210,3 +210,37 @@ integration must return ~0 co-localization: the "true negative" that converts
 
 Prediction: DN-vs-V1TxS core partial near zero (1D moves, 3D flat), in contrast
 to V1P/RCTKO. That is the specificity result.
+
+---
+
+## 9. V1TxS specificity control -- ISOLATED run (do not merge into the 4-track)
+
+The downsample floor is GLOBAL: `floor = min(pooled pairs over all conditions
+in the counts file)`. Adding V1TxS to the shared `pair_counts_v1.tsv` would, if
+V1TxS is shallower than DN (current floor 8,345,577), lower the floor and
+re-downsample DN/V1P/RCTKO -- silently moving the locked V1P (-0.254) and
+RCTKO (-0.196) core partials. So V1TxS runs on its OWN counts/floor/outroot.
+
+```
+# 1. confirm the V1TxS 1D BES exists (from the 4-track 1D run)
+ls workflow/results_v1_4track/pvalue/diff_DN_vs_V1TxS.stats.tsv
+
+# 2. build a DN+V1TxS counts file (V1TxS counted the SAME way: first-in-pair primaries)
+BAMDIR=/mnt/isilon/bassing_lab/projects/capture_hic/Brittney_V1/03aln
+grep -P '^DN\t' capture_cools/pair_counts_v1.tsv > capture_cools/pair_counts_v1txs.tsv
+for REP in 1 2; do
+  BAM="$BAMDIR/raw_ArimaHTS_S065_V1TxS_rep${REP}_bs_250_master_valid_pairs.bam"
+  N=$(samtools view -c -f 0x40 -F 0x900 "$BAM")
+  printf "V1TxS\t%s\t%d\n" "$(basename "$BAM")" "$N" >> capture_cools/pair_counts_v1txs.tsv
+done
+cat capture_cools/pair_counts_v1txs.tsv
+
+# 3. run the isolated V1TxS benchmark (own outroot, own floor)
+snakemake -s mcc/Snakefile --configfile mcc/config_v1txs.yaml --profile workflow/profiles/slurm
+head mcc_results_v1txs/SIGN_MAP.tsv
+```
+
+Prediction: DN-vs-V1TxS core partial near zero (transcription moves in 1D,
+architecture stays flat in 3D), in contrast to V1P/RCTKO -- the specificity
+result. Keep DN-vs-V1TxS COMMENTED in comparisons_v1_4track.tsv and
+config_4track.yaml so the 4-track run stays V1P/RCTKO-only.
