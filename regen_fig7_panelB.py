@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# regen_fig7_panelB.py  (v3 - matches bearing_pvalue.py exactly)
+# regen_fig7_panelB.py  (v4 - test-exact null + KS goodness-of-fit)
 # Figure 7 Panel B: pooled empirical permutation null for the DN-vs-EbKO
 # differential, N=100 production run, with the rejected Gamma fit overlaid.
 #
@@ -65,6 +65,7 @@ def main():
                     help="use every Nth line for speed (1 = all)")
     ap.add_argument("--nbins", type=int, default=60)
     ap.add_argument("--out", default="fig7_panelB.pdf")
+    ap.add_argument("--title", default=None, help="override panel title")
     a = ap.parse_args()
 
     perm_files = sorted(glob.glob(os.path.join(
@@ -109,25 +110,49 @@ def main():
     dens = counts / (counts.sum() * widths)
     centers = np.sqrt(edges[:-1] * edges[1:])
 
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
     fig, ax = plt.subplots(figsize=(5.5, 4.0))
     ax.bar(centers, dens, width=widths, align="center", color="#4c72b0",
-           alpha=0.75, label="pooled permutation null (N=%d)" % len(perm_files))
+           alpha=0.75)
+
+    handles = [Patch(facecolor="#4c72b0", alpha=0.75,
+                     label="pooled permutation null (N=%d)" % len(perm_files))]
+    ks_txt = ""
     try:
-        from scipy.stats import gamma
+        from scipy.stats import gamma, kstest
         m, var = moments.mean(), moments.var()
         shape = m * m / var; scale = var / m
         xs = np.logspace(np.log10(lo), np.log10(hi), 300)
-        ax.plot(xs, gamma.pdf(xs, shape, scale=scale), "r--", lw=1.5,
-                label="Gamma fit (rejected)")
+        ax.plot(xs, gamma.pdf(xs, shape, scale=scale), "r--", lw=1.5)
+        handles.append(Line2D([0], [0], color="r", ls="--", lw=1.5,
+                              label="Gamma fit (rejected)"))
+        # KS goodness-of-fit of the empirical null against the fitted Gamma
+        samp = moments if moments.size <= 500000 else \
+               np.random.default_rng(42).choice(moments, 500000, replace=False)
+        D, p = kstest(samp, "gamma", args=(shape, 0, scale))
+        pstr = "p < 1e-300" if p < 1e-300 else "p = %.1e" % p
+        ks_txt = "Gamma rejected: KS D = %.2f, %s\n(n = %d bins)" % (D, pstr, counts.sum())
+        print("  KS vs Gamma: D=%.3f  %s" % (D, pstr))
     except Exception as e:
-        print("  (Gamma overlay skipped: %s)" % e)
+        print("  (Gamma/KS skipped: %s)" % e)
     if obs is not None and obs.size:
-        ax.axvline(np.median(obs), color="k", ls=":", lw=1.2, label="observed median")
+        ax.axvline(np.median(obs), color="k", ls=":", lw=1.2)
+        handles.append(Line2D([0], [0], color="k", ls=":", lw=1.2,
+                              label="observed median"))
+
     ax.set_xscale("log")
     ax.set_xlabel("per-bin |differential| (abs sum of 6 tracks)")
     ax.set_ylabel("density")
-    ax.set_title("Empirical null vs Gamma: %s" % a.comp.replace("_vs_", " vs "))
-    ax.legend(fontsize=8, frameon=False)
+    ax.set_title(a.title if a.title else
+                 "Empirical null vs Gamma: %s" % a.comp.replace("_vs_", " vs "))
+    leg = ax.legend(handles=handles, fontsize=8, frameon=False,
+                    title="null: |differential| >= %.2g (min_signal)" % a.min_signal)
+    leg.get_title().set_fontsize(7)
+    if ks_txt:
+        ax.text(0.03, 0.03, ks_txt, transform=ax.transAxes, fontsize=8,
+                va="bottom", ha="left",
+                bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
     fig.tight_layout()
     fig.savefig(a.out)
     print("wrote %s" % a.out)
