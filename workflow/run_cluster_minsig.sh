@@ -14,6 +14,7 @@
 #   bash workflow/run_cluster_minsig.sh                      # 0.01, n_perms 10 (scout)
 #   bash workflow/run_cluster_minsig.sh --min-signal 0.01    # explicit
 #   bash workflow/run_cluster_minsig.sh --min-signal 0.01 --n-perms 100   # publishable
+#   bash workflow/run_cluster_minsig.sh --with-diff          # also do differential p-values (needs compare; heavy)
 #   bash workflow/run_cluster_minsig.sh --dry                # dry run only
 #
 # Scout first at n_perms=10 to see DIRECTION (does calibration stay ~0 BH-sig,
@@ -33,12 +34,14 @@ MINSIG="0.01"
 NPERMS=10
 FULL=0
 DRY=0
+WITH_DIFF=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --min-signal) MINSIG="$2"; shift 2 ;;
     --min-signal=*) MINSIG="${1#*=}"; shift ;;
     --n-perms) NPERMS="$2"; shift 2 ;;
     --n-perms=*) NPERMS="${1#*=}"; shift ;;
+    --with-diff) WITH_DIFF=1; shift ;;
     --full) FULL=1; shift ;;
     --dry)  DRY=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -86,21 +89,49 @@ echo "== Preflight =="
 python3 "$REPO/workflow/preflight.py" --configfile "$CONFIG" --core-only
 echo
 
-# p-value layers needed for BOTH the call-set comparison and the calibration
-# (the calibration is the decisive readout for this scout).
-SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
-            "$REPO/workflow/$OUT/pvalue_samples.done"
+# TARGETS -- calibration is the DECISIVE readout and does NOT depend on the
+# `compare` rule:
+#   calibration_one  <- score.done
+#   pvalue_sample    <- {sample}.qcat.bgz, perm.done, score_provenance.done
+#   pvalue_diff_one  <- compare.done   <-- ONLY the differential path needs compare
+# So by default we build ONLY the per-sample + calibration path and never touch
+# `compare`, which is the rule that OOMs at min_signal=0.01. NOTE the mechanism:
+# min_signal does NOT change the qcat ROW count (all bins are written; sub-
+# threshold bins get an all-zero score vector -- verified: 13,654,391 rows at
+# both 0.1 and 0.01). What grows is the number of NON-ZERO (active) bins, and
+# compare_qcat.py's align_bins/region-metrics/PCA stages work on active bins.
+# Denser data, same rows -> its matrices blow past even 200 GB.
+#
+# --with-diff adds the differential p-values (needs compare; see notes at EOF).
+SM_TARGETS=("$REPO/workflow/$OUT/pvalue_samples.done"
             "$REPO/workflow/$OUT/calibration/calibration_summary.tsv")
+[ "$WITH_DIFF" = "1" ] && SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done" "${SM_TARGETS[@]}")
 [ "$FULL" = "1" ] && SM_TARGETS=()
 
+# Stage 1 builds the permutation nulls + per-sample p-values. calibration_one
+# only declares score.done as an input but READS the perm qcats via a shell
+# template, so it must not be scheduled before the perms exist. Build the
+# per-sample target first, then the calibration.
 echo "== Dry run =="
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" -n "${SM_TARGETS[@]}"
 if [ "$DRY" = "1" ]; then echo; echo "Dry run only."; exit 0; fi
 
-echo; echo "== Submitting to SLURM =="
-snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" \
-  --rerun-triggers mtime params \
-  --profile "$PROFILE" "${SM_TARGETS[@]}"
+if [ "$FULL" != "1" ] && [ "$WITH_DIFF" != "1" ]; then
+  echo; echo "== Stage 1/2: perms + per-sample p-values =="
+  snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" \
+    --rerun-triggers mtime params \
+    --profile "$PROFILE" "$REPO/workflow/$OUT/pvalue_samples.done"
+
+  echo; echo "== Stage 2/2: calibration =="
+  snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" \
+    --rerun-triggers mtime params \
+    --profile "$PROFILE" "$REPO/workflow/$OUT/calibration/calibration_summary.tsv"
+else
+  echo; echo "== Submitting to SLURM =="
+  snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" \
+    --rerun-triggers mtime params \
+    --profile "$PROFILE" "${SM_TARGETS[@]}"
+fi
 
 echo; echo "Done -> workflow/$OUT/."
 echo
@@ -112,3 +143,47 @@ echo "SECONDARY -- do the significant regions survive? (q-values will shift"
 echo "because the BH denominator changes; check the SIGNIFICANT REGIONS, not exact q):"
 echo "  # regenerate/inspect the regional enrichment for workflow/$OUT and compare"
 echo "  # the significant Tcrb/Igh regions against the production set."
+
+# ---------------------------------------------------------------------------
+# NOTE on --with-diff and the `compare` OOM at min_signal=0.01
+#
+# `compare` requests mem_mb=200000 with threads=10 and still OOMs at 0.01: many
+# more bins are non-zero/active (row count is unchanged), compare_qcat.py holds
+# per-bin dicts keyed by (chrom,start,end) with a small numpy array per bin --
+# very high per-bin overhead -- and the region-metrics/PCA stage adds more on
+# top; it died right after trcb_up_pca.pdf. The workers
+# are ThreadPoolExecutor (shared memory), so cutting --workers reduces the peak
+# only modestly; it is not a 10x multiplier.
+#
+# If you DO need the differential p-values at 0.01, in rough order of cost:
+#
+#   1) Skip the PCA/region-plot stage (this is exactly where it died, right
+#      after trcb_up_pca.pdf). compare_qcat.py already has --skip-pca. Run the
+#      compare command by hand for this outdir with --skip-pca and fewer
+#      workers, then let snakemake continue:
+#
+#        srun -p dbhiq --mem=400G -c 4 --time=24:00:00 --pty \
+#          python compare_qcat.py \
+#            --sheet   workflow/RESULTS_MINSIG/samples.qcat.tsv \
+#            --out     workflow/RESULTS_MINSIG/compare \
+#            --categories categories/mm10_6track_panel.yaml \
+#            --regions-file workflow/config/regions.tsv \
+#            --genes   workflow/resources/mm10_genes.bed \
+#            --no-clip --skip-pca --workers 4
+#        touch workflow/RESULTS_MINSIG/compare.done
+#        bash workflow/run_cluster_minsig.sh --with-diff   # resumes from compare.done
+#
+#   2) Or just raise the ceiling from the CLI (no Snakefile edit), first
+#      checking the partition actually allows it:
+#        scontrol show partition dbhiq | grep -i -E "MaxMemPerNode|MaxMemPerCPU"
+#        snakemake ... --set-resources compare:mem_mb=400000 \
+#                      --set-threads compare=4 \
+#                      --set-resources compare:cpus_per_task=4
+#
+# Quantify the blow-up before deciding (bins clearing the floor, 0.1 vs 0.01):
+#   zcat workflow/results/DN_rep1.qcat.bgz          | wc -l
+#   zcat workflow/RESULTS_MINSIG/DN_rep1.qcat.bgz   | wc -l
+#
+# For the SCOUT you do not need any of this: calibration is independent of
+# `compare`, and calibration is the number that decides Methods sentence A vs B.
+# ---------------------------------------------------------------------------
