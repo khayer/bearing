@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# baseline_comparison.py  (v3 -- reads bigWigs; unpacks (scores, n_masked) from the scorer)
+# baseline_comparison.py  (v5 -- bin values match production: values()+nan_to_num, not stats())
 #
 # Reviewer question (NAR): "is BEARING simply rediscovering what a simpler
 # statistic would show?"  For the SAME 200 bp bins and the SAME min_signal mask,
@@ -121,9 +121,19 @@ def load_matrix(bw_paths, chrom_sizes, data_dir):
             if chrom not in bw.chroms():
                 cols.append(np.zeros(nb, dtype=np.float32))
                 continue
-            v = bw.stats(chrom, 0, nb * BIN_SIZE, type="mean", nBins=nb)
-            cols.append(np.array([0.0 if x is None else x for x in v],
-                                 dtype=np.float32))
+            # Match bigwig_to_qcat exactly: bulk values() read, uncovered bases
+            # treated as ZERO, then a mean over all bin_size bases.
+            # NOTE: bw.stats(type="mean") averages over COVERED bases only, which
+            # inflates sparse focal tracks (CTCF/cohesin) by an order of magnitude
+            # and scrambles the composition P. Do not use it here.
+            try:
+                v = bw.values(chrom, 0, nb * BIN_SIZE, numpy=True)
+                v = np.nan_to_num(v, nan=0.0).astype(np.float32)
+                cols.append(v.reshape(-1, BIN_SIZE).mean(axis=1))
+            except Exception:
+                s = bw.stats(chrom, 0, nb * BIN_SIZE, type="mean", nBins=nb)
+                cols.append(np.array([0.0 if y is None else y for y in s],
+                                     dtype=np.float32))
         blocks.append(np.vstack(cols).T)
         index.append((chrom, nb))
         print("    %-6s %9d bins" % (chrom, nb))
@@ -137,7 +147,7 @@ def load_matrix(bw_paths, chrom_sizes, data_dir):
     return R, index
 
 
-def statistics(R, kl_fn, prob_fn, Q=None):
+def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
     P = prob_fn(R.astype(np.float64))
     if Q is None:
         Q = P.mean(axis=0)
@@ -146,7 +156,8 @@ def statistics(R, kl_fn, prob_fn, Q=None):
     def _scores(method):
         # kl_scores_per_bin returns (scores, n_masked) -- the docstring says
         # otherwise, but line ~1755 of bigwig_to_qcat.py returns a tuple.
-        res = kl_fn(P, Q, raw_signal_matrix=R, min_signal=0.0, score_method=method)
+        res = kl_fn(P, Q, raw_signal_matrix=R, min_signal=min_signal,
+                    score_method=method)
         arr = res[0] if isinstance(res, tuple) else res
         return np.asarray(arr)
 
@@ -170,6 +181,14 @@ def statistics(R, kl_fn, prob_fn, Q=None):
     Z = (R - mu[None, :]) / sd[None, :]
     out["sum_z"] = Z.sum(axis=1)
     out["max_z"] = np.abs(Z).max(axis=1)
+
+    # Apply the SAME low-signal zeroing to every baseline. Without this, the
+    # pseudocount makes empty bins look maximally divergent from Q (see the
+    # kl_scores_per_bin docstring) and the comparison is meaningless.
+    if min_signal > 0:
+        low = R.sum(axis=1) < min_signal
+        for k in out:
+            out[k] = np.where(low, 0.0, out[k])
     return out, Q
 
 
@@ -256,15 +275,21 @@ def main():
     if keep.sum() == 0:
         sys.exit("no bins pass the mask")
 
+    if chroms:
+        print("  NOTE: Q is the mean of P over the SELECTED chromosomes only;")
+        print("        production Q is genome-wide. Omit --chroms for a Q that")
+        print("        matches production before quoting any number.")
     st1, Q1 = statistics(R1[keep], kl_fn, prob_fn)
 
     if a.check_qcat:
         print("\ncross-check vs stored qcat scores on %s" % a.check_chrom)
         stored = qcat_scores_for_chrom(a.check_qcat, a.check_chrom)
-        off, mine = 0, None
+        off, mine, rawsub = 0, None, None
         for chrom, nb in index:
             if chrom == a.check_chrom:
-                s, _ = statistics(R1[off:off + nb], kl_fn, prob_fn, Q=Q1)
+                rawsub = R1[off:off + nb]
+                s, _ = statistics(rawsub, kl_fn, prob_fn, Q=Q1,
+                                  min_signal=a.min_signal)
                 mine = s["bearing_kl"]
                 break
             off += nb
@@ -273,12 +298,20 @@ def main():
                   % a.check_chrom)
         else:
             n = min(mine.size, stored.size)
-            rho = spearman(mine[:n], stored[:n])
-            print("  n=%d  Spearman(reconstructed, stored) = %.4f" % (n, rho))
+            m, s_ = mine[:n], stored[:n]
+            # 1) does the low-signal MASK agree? (production zeroes sub-floor bins)
+            agree = float(((m == 0) == (s_ == 0)).mean())
+            print("  n=%d  zero/nonzero mask agreement = %.3f" % (n, agree))
+            # 2) rank agreement on bins nonzero in EITHER (ties otherwise swamp rho)
+            nz = (m > 0) | (s_ > 0)
+            rho = spearman(m[nz], s_[nz]) if nz.sum() > 10 else float("nan")
+            print("  Spearman on %d nonzero bins = %.4f" % (int(nz.sum()), rho))
             if rho < 0.90:
-                print("  WARNING: reconstruction differs from production (blacklist /")
-                print("  noise floors / clip not applied here). The baseline table is")
-                print("  still internally consistent, but do NOT quote it as production.")
+                print("  WARNING: reconstruction still differs from production.")
+                print("  Check, in order: (1) mask agreement above -- if high, masking")
+                print("  is fine; (2) Q is genome-wide only if you omit --chroms;")
+                print("  (3) per-track noise floors / blacklist, which are not applied here.")
+                print("  The baseline table stays internally consistent, but do NOT quote it.")
             else:
                 print("  reconstruction is faithful; baseline table is trustworthy.")
 
@@ -304,7 +337,7 @@ def main():
 
     # each sample gets its own Q, as in production
     s1, _ = statistics(R1[both], kl_fn, prob_fn)
-    s2, _ = statistics(R2[both], kl_fn, prob_fn)
+    s2, _ = statistics(R2[both], kl_fn, prob_fn)  # each sample its own Q
     diff = {k: np.abs(s1[k] - s2[k]) for k in s1 if k in s2}
     if a.stride > 1:
         diff = {k: v[::a.stride] for k, v in diff.items()}
