@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# baseline_comparison.py  (v2 -- reads bigWigs, not the raw: qcat field)
+# baseline_comparison.py  (v3 -- reads bigWigs; unpacks (scores, n_masked) from the scorer)
 #
 # Reviewer question (NAR): "is BEARING simply rediscovering what a simpler
 # statistic would show?"  For the SAME 200 bp bins and the SAME min_signal mask,
@@ -143,14 +143,17 @@ def statistics(R, kl_fn, prob_fn, Q=None):
         Q = P.mean(axis=0)
     logPQ = np.log2(P / Q[None, :])
 
+    def _scores(method):
+        # kl_scores_per_bin returns (scores, n_masked) -- the docstring says
+        # otherwise, but line ~1755 of bigwig_to_qcat.py returns a tuple.
+        res = kl_fn(P, Q, raw_signal_matrix=R, min_signal=0.0, score_method=method)
+        arr = res[0] if isinstance(res, tuple) else res
+        return np.asarray(arr)
+
     out = {}
-    out["bearing_kl"] = np.asarray(
-        kl_fn(P, Q, raw_signal_matrix=R, min_signal=0.0, score_method="kl")
-    ).sum(axis=1)
+    out["bearing_kl"] = _scores("kl").sum(axis=1)
     try:
-        out["bearing_jsd"] = np.asarray(
-            kl_fn(P, Q, raw_signal_matrix=R, min_signal=0.0, score_method="jsd")
-        ).sum(axis=1)
+        out["bearing_jsd"] = _scores("jsd").sum(axis=1)
     except Exception as e:
         print("  (bearing_jsd unavailable: %s)" % e, file=sys.stderr)
 
