@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# baseline_comparison.py  (v6 -- Q computed over ALL bins, as production does)
+# baseline_comparison.py  (v7 -- adds --regions locus recovery: do the top bins land in the right place?)
 #
 # Reviewer question (NAR): "is BEARING simply rediscovering what a simpler
 # statistic would show?"  For the SAME 200 bp bins and the SAME min_signal mask,
@@ -211,6 +211,72 @@ def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
     return out, Q
 
 
+def load_regions(path):
+    """regions.tsv: name<TAB>chrom:start-end<TAB>resolution<TAB>label"""
+    out = []
+    with open(path) as fh:
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 2 or f[0] == "name":
+                continue
+            m = re.match(r"(\w+):(\d+)-(\d+)", f[1])
+            if not m:
+                continue
+            out.append((f[0], m.group(1), int(m.group(2)), int(m.group(3)),
+                        f[3] if len(f) > 3 else f[0]))
+    return out
+
+
+def region_bin_mask(index, chrom, start, end, keep=None):
+    """Boolean mask over the concatenated bin vector for one region."""
+    total = sum(nb for _, nb in index)
+    mask = np.zeros(total, dtype=bool)
+    off = 0
+    for c, nb in index:
+        if c == chrom:
+            lo = max(0, start // BIN_SIZE)
+            hi = min(nb, end // BIN_SIZE + 1)
+            if hi > lo:
+                mask[off + lo:off + hi] = True
+            break
+        off += nb
+    return mask if keep is None else mask[keep]
+
+
+def hyper_sf(k, N, K, n):
+    """P(X >= k) for hypergeometric(N, K, n) via scipy if present."""
+    try:
+        from scipy.stats import hypergeom
+        return float(hypergeom.sf(k - 1, N, K, n))
+    except Exception:
+        return float("nan")
+
+
+def locus_recovery(stats, region_masks, frac):
+    """For each statistic: are its top-frac bins enriched inside each region?"""
+    print("\nLOCUS RECOVERY -- enrichment of each statistic's top %.0f%% bins" % (100 * frac))
+    print("(fold = observed/expected; p = hypergeometric upper tail)\n")
+    keys = list(stats)
+    N = stats[keys[0]].size
+    n = max(1, int(round(frac * N)))
+    for rname, rmask in region_masks:
+        K = int(rmask.sum())
+        if K < 20:
+            continue
+        print("  %-28s (%d bins in region, %d genome-wide)" % (rname, K, N))
+        print("    %-16s %8s %10s %12s" % ("statistic", "hits", "fold", "p"))
+        for kname in keys:
+            top = np.argpartition(-stats[kname], n - 1)[:n]
+            sel = np.zeros(N, dtype=bool)
+            sel[top] = True
+            k = int((sel & rmask).sum())
+            exp = n * K / float(N)
+            fold = k / exp if exp > 0 else float("nan")
+            p = hyper_sf(k, N, K, n) if k > 0 else 1.0
+            print("    %-16s %8d %10.2f %12.3g" % (kname, k, fold, p))
+        print("")
+
+
 def spearman(a, b):
     ra = np.argsort(np.argsort(a)).astype(np.float64)
     rb = np.argsort(np.argsort(b)).astype(np.float64)
@@ -277,6 +343,8 @@ def main():
     ap.add_argument("--check-qcat", default=None,
                     help="qcat.bgz to validate the reconstruction against")
     ap.add_argument("--check-chrom", default="chr19")
+    ap.add_argument("--regions", default=None,
+                    help="regions.tsv -> report locus recovery for each statistic")
     a = ap.parse_args()
 
     kl_fn, prob_fn = import_production_scorer(os.path.abspath(a.repo))
@@ -343,6 +411,10 @@ def main():
 
     if a.vs is None:
         report(st1, "bearing_kl", a.top_frac)
+        if a.regions:
+            rms = [(lab, region_bin_mask(index, c, s, e, keep))
+                   for _, c, s, e, lab in load_regions(a.regions)]
+            locus_recovery(st1, rms, a.top_frac)
         return
 
     print("\nloading bigWigs for %s" % a.vs)
@@ -366,6 +438,13 @@ def main():
     print("\nDIFFERENTIAL |%s - %s| (n=%d bins):"
           % (a.sample_name, a.vs, diff["bearing_kl"].size))
     report(diff, "bearing_kl", a.top_frac)
+    if a.regions:
+        if a.stride > 1:
+            print("\n(skipping locus recovery: --stride subsamples bins)")
+        else:
+            rms = [(lab, region_bin_mask(index, c, s, e, both))
+                   for _, c, s, e, lab in load_regions(a.regions)]
+            locus_recovery(diff, rms, a.top_frac)
 
 
 if __name__ == "__main__":
