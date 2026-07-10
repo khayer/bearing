@@ -217,7 +217,7 @@ def load_regions(path):
     with open(path) as fh:
         for line in fh:
             f = line.rstrip("\n").split("\t")
-            if len(f) < 2 or f[0] == "name":
+            if len(f) < 2 or f[0] == "name" or f[0].startswith("#"):
                 continue
             m = re.match(r"(\w+):(\d+)-(\d+)", f[1])
             if not m:

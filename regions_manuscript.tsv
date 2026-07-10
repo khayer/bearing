@@ -1,0 +1,37 @@
+name	region	resolution	label
+# Pre-specified regions EXACTLY as used in the manuscript's regional-enrichment
+# test (Supplementary Table S2, Panel A). Using these makes the locus-recovery
+# benchmark directly comparable to Table S2, instead of the wider windows in
+# workflow/config/regions.tsv (whose dj_cluster is 194 kb vs DJ_RC's 51.5 kb,
+# and whose vcluster is 354 kb vs the manuscript's 250 kb).
+#
+#   python baseline_comparison.py --sheet workflow/config/samples.tsv \
+#       --sample-name DN_rep2 --vs DP_rep2 \
+#       --chrom-sizes workflow/resources/mm10.chrom.sizes \
+#       --regions regions_manuscript.tsv
+#
+# --- Tcrb: the five pre-specified regions -------------------------------
+trbv1	chr6:40880000-40905000	3000	Trbv1 (5-prime Vbeta outlier)
+vbeta_cluster	chr6:41040000-41290000	3000	Vbeta cluster (Trbv2-Trbv30)
+negctl_intercluster	chr6:41313087-41486888	3000	NEGCTL inter-cluster silent
+dj_rc	chr6:41500000-41551500	3000	DJ_RC (recombination center)
+ebeta_cbe3	chr6:41552000-41562000	3000	Ebeta/Trbv31/CBE3 (EbKO deletion)
+# --- Igh: the five pre-specified regions --------------------------------
+negctl_igh	chr12:113030000-113200000	5000	NEGCTL 3-prime flanking silent
+ch_jh_iemu	chr12:113255000-113430000	5000	CH/JH/iEmu (constant region)
+dh_cluster	chr12:113430000-113530000	5000	DH cluster (diversity segments)
+vh_proximal	chr12:113570000-115000000	10000	VH proximal (~1.4 Mb)
+vh_distal	chr12:115000000-116100000	10000	VH distal (~1.1 Mb)
+# --- Negative controls (should show NO enrichment for a specific method) --
+gapdh	chr6:125152671-125178991	3000	Gapdh (housekeeping)
+actb	chr5:142895429-142914439	3000	Actb (housekeeping)
+emc7	chr2:112416251-112507459	3000	Emc7 (housekeeping)
+col1a1	chr11:94868948-95020318	5000	Col1a1 (fibroblast marker)
+wapl	chr14:34585777-34835999	5000	Wapl
+igk	chr6:67248186-70936333	50000	Igk (B-lineage locus)
+tcrb_upstream	chr6:40493981-40788054	3000	Tcrb upstream (flanking)
+# --- Expected-positive lineage markers (DN vs DP) ------------------------
+cd4	chr6:124835319-124917623	3000	Cd4 (induced at DP)
+cd8a	chr6:71301306-71451292	5000	Cd8a (induced at DP)
+# NOTE: Rag1/Rag2 is NOT a negative control -- these are Rag1-/- cells and
+# Rag2 transcription changes across the DN-to-DP transition in wild type.
