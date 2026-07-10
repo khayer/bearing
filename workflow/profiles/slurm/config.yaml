@@ -6,6 +6,7 @@
 # inside the image instead (pull it first with workflow/get_container.sh).
 
 executor: slurm
+scheduler: greedy
 jobs: 50                 # max concurrent cluster jobs
 printshellcmds: true
 rerun-incomplete: true
@@ -42,7 +43,7 @@ default-resources:
   # Snakemake sets from this value, so no code changes are required. The
   # scratch directory must exist and be writable before launch; create with
   # `mkdir -p /mnt/isilon/scratch/$USER/snakemake`.
-  tmpdir: "/mnt/isilon/scratch/hayerk/snakemake"
+  tmpdir: "/scr1/users/hayerk/snakemake"
   # If your cluster requires an account, uncomment and set it (otherwise
   # Snakemake tries to guess and you may see a harmless sacct warning):
   # slurm_account: "bassing_lab"

@@ -14,7 +14,7 @@ conditions:
   R1KO: DN
   V1PKO: V1P
   RCTKO: RCTKO
-  # V1TxS: V1TxS        # uncomment for the specificity control
+  V1TxS: V1TxS        # uncomment for the specificity control
 reps: [1, 2]
 
 # ---- 1D BEARING differential (repo-root relative) ----
@@ -47,7 +47,7 @@ res: 2000
 comparisons:
   - [DN, V1P]
   - [DN, RCTKO]
-  # - [DN, V1TxS]       # uncomment for the specificity control
+  - [DN, V1TxS]       # uncomment for the specificity control
 
 windows:
   full:   chr6:39771104-42660754

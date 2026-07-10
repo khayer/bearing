@@ -1,0 +1,28 @@
+# Cross-locus DN-vs-EbKO survey panel (mm10)
+#
+# Purpose: extend the DN-vs-EbKO BEARING comparison to additional
+# antigen-receptor and control loci, to test whether the Igh VH-proximal
+# DN-vs-EbKO signal is locus-specific (flat elsewhere -> real, localized) or
+# diffuse (non-null at unrelated/housekeeping loci -> batch / Q-comparability
+# artifact). Re-binning of existing scored DN and EbKO tracks; no new data.
+#
+# PROVENANCE OF COORDINATES
+#   [canonical] = taken verbatim from workflow/config/regions.tsv (lab-canonical)
+#   [VERIFY]    = standard mm10 locus boundaries; NOT in regions.tsv. Confirm
+#                 against resources/gencode.vM23...gtf before trusting the
+#                 spatial-enrichment p-values (gene-body span affects bin count).
+#
+# Format: chrom <TAB> start <TAB> end <TAB> name
+#
+# --- Antigen-receptor loci (T-lineage) ---
+chr14	52427000	54224000	Tcra_Tcrd	# [VERIFY] Tcra/Tcrd locus, mm10; confirm span vs GTF
+chr13	19178000	19356000	Tcrg	# [VERIFY] Tcrg (gamma) cluster, mm10; confirm vs GTF
+# --- Antigen-receptor loci (B-lineage; expected silent in T-lineage) ---
+chr6	67248186	70936333	Igk	# [canonical] regions.tsv
+chr16	19026000	19260000	Igl	# [VERIFY] Igl (lambda) locus, mm10; confirm vs GTF
+# --- Housekeeping negative controls (expected flat) ---
+chr6	125152671	125178991	Gapdh	# [canonical] regions.tsv
+chr5	142895429	142914439	Actb	# [canonical] regions.tsv
+# --- T-lineage developmental genes (expected flat DN vs EbKO at this stage) ---
+chr6	124835319	124917623	Cd4	# [canonical] regions.tsv
+chr6	71301306	71451292	Cd8a	# [canonical] regions.tsv

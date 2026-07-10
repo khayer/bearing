@@ -69,3 +69,4 @@ container: "bearing.sif"
 #   python3 workflow/stage_inputs.py --sheet workflow/config/samples.tsv \
 #       --out-sheet workflow/config/samples.local.tsv --cache-dir resources/staged
 #   snakemake ... --config samples_sheet=workflow/config/samples.local.tsv
+paper_figures: false

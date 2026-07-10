@@ -1,0 +1,70 @@
+# Tcrb regional-enrichment regions (mm10) - v5
+# Locus context: --locus chr6:40790000-41690000 (focal Tcrb zoom).
+# Also valid within wide window chr6:40000000-47400000.
+#
+# All coordinates anchored to lab-canonical BEDs:
+#   AgRgenes_mm10_s.bed (gene segments and EB enhancer)
+#   cbe_mm10.bed        (CBE coordinates)
+# Audited against ENCODE mm10 blacklist (PMID 31249361).
+#
+# 4 biology-driven regions + 1 within-locus silent negative control.
+# Non-overlapping. NEGCTL contains a single 200 bp blacklist interval
+# (chr6:41,403,200-41,403,400, 0.115% of region) that is upstream-masked
+# during scoring and does not meaningfully affect tested bin counts.
+#
+# Region 1 (Trbv1) chr6:40880000-40905000 (25 kb, ~125 bins)
+#   Contains: Trbv1 (40891296-40891885) + V1_CBE (40893721) + Trbv1 promoter.
+#   Anchor: Allyn et al. 2024 (focal CBE/promoter perturbation system).
+#
+# Region 2 (Vbeta_cluster_main) chr6:41040000-41290000 (250 kb, ~1250 bins)
+#   Contains: Trbv2 (41047556) through Trbv30 (41281990) inclusive, plus
+#   interspersed V-beta CBEs (5'Vb2 through 5'Vb30).
+#   Note: 1.4 kb of ENCODE blacklist overlap at chr6:41,244,000-41,245,400
+#   (0.56% of region) is upstream-masked.
+#   Anchor: Majumder et al. 2015a; Allyn et al. 2024 Fig 1A.
+#
+# Region 3 (NEGCTL_inter_cluster_silent) chr6:41313087-41486888 (174 kb, ~869 bins)
+#   NEGATIVE CONTROL. Silent intergenic chromatin between the main V-beta
+#   cluster (last V segment Trbv30 ends 41281990) and the recombination
+#   center (5'PC_CBE at 41505538). Contains no V(D)J gene segments and
+#   no CBEs. Anchored to the spans of transcriptionally repressed and
+#   CTCF-depleted chromatin containing silent trypsinogen pseudogenes,
+#   as described in Allyn et al. 2024.
+#   This region sits in the same Hi-C topological neighborhood as the
+#   functional test regions, making it the strongest within-locus null
+#   for the locus-containment claim. Predicted null across all
+#   DN-vs-{DP, EbKO, ProB, 3T3} comparisons.
+#   Note: contains one 200 bp ENCODE blacklist interval
+#   (chr6:41,403,200-41,403,400) that is upstream-masked.
+#   Anchor: Allyn et al. 2024 (silent CTCF-depleted chromatin, intervening
+#   trypsinogen pseudogenes).
+#
+# Region 4 (DJ_RC) chr6:41500000-41551500 (51.5 kb, ~257 bins)
+#   The classical recombination center: 5'PC through end of Trbc2.
+#   Contains: 5'PC_CBE (41505538), CBE_1 (41530176), CBE_2 (41532266),
+#   Trbd1 + Trbj1-1..7 + Trbc1 (41533201-41539665),
+#   Trbd2 + Trbj2-1..7 + Trbc2 (41542163-41548181).
+#   Stops just before the EB enhancer (41554184) so the Eb deletion target
+#   can be tested as its own non-overlapping window.
+#   Anchor: Allyn et al. 2024 (RC = 5'PC through CBE3 definition; here split
+#   into DJ_RC and the adjacent Ebeta_Trbv31_CBE3 window to separate the
+#   EbKO/KO perturbation target from the CBE-anchored DJ machinery).
+#
+# Region 5 (Ebeta_Trbv31_CBE3) chr6:41552000-41562000 (10 kb, ~50 bins)
+#   The exact EbKO/KO deletion target plus the 3'-most RC CBE and Trbv31.
+#   Contains: EB enhancer (41554184-41554750), CBE_3 (41556571),
+#   Trbv31 (41557693-41558371).
+#   Strongest a-priori positive-control region for the DN-vs-EbKO anchor
+#   comparison; in DN-vs-EbKO the differential signal should concentrate
+#   here while DJ_RC stays null (Allyn 2025 Fig 5B shows CTCF binding at
+#   the DJ CBEs is preserved in EbKO/KO).
+#   Anchor: Bassing et al. 2003 (EbKO/KO mouse line); Bouvier et al. 1996
+#   and Mathieu et al. 2000 (Eb enhancer characterization);
+#   Allyn et al. 2025 Fig 5A (Eb deletion as drawn in EbKO/KO genotype).
+#
+# Format: chrom <TAB> start <TAB> end <TAB> name
+chr6	40880000	40905000	Trbv1
+chr6	41040000	41290000	Vbeta_cluster_main
+chr6	41313087	41486888	NEGCTL_inter_cluster_silent
+chr6	41500000	41551500	DJ_RC
+chr6	41552000	41562000	Ebeta_Trbv31_CBE3

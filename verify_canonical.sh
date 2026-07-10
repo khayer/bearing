@@ -10,7 +10,7 @@ date
 
 # ---------------------------------------------------------------------------
 # EDIT THESE TWO PATHS
-RUN_DIR="/mnt/isilon/bassing_lab/integration_paper/bearing/RESULTS_FROZEN"   # the folder you want to freeze
+RUN_DIR="/mnt/isilon/bassing_lab/integration_paper/bearing/workflow/results"   # the folder you want to freeze
 REPO="/mnt/isilon/bassing_lab/integration_paper/bearing"                      # repo with the scripts
 # ---------------------------------------------------------------------------
 
