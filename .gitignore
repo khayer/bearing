@@ -1,4 +1,18 @@
-# ---- OS / editor ----
+# BEARING .gitignore
+#
+# Goal: keep the repo to source, configs, and small reproducibility inputs.
+# Everything a pipeline RUN produces is ignored.
+#
+# Deliberately NOT ignored (these belong in git):
+#   *.py / *.sh / *.R analysis and helper scripts
+#   workflow/Snakefile, workflow/config/config.yaml, workflow/config/samples*.tsv
+#   workflow/profiles/, categories/, small annotation BEDs
+#
+# See the notes at the bottom before adding resources/ or annotations/.
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
 .DS_Store
 .DS_Store?
 ._*
@@ -9,8 +23,12 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+\#*\#
+.#*
 
-# ---- Python ----
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -22,18 +40,84 @@ dist/
 venv/
 .venv/
 
-# ---- Snakemake / workflow run artifacts ----
+# ---------------------------------------------------------------------------
+# Snakemake / workflow run artifacts
+# ---------------------------------------------------------------------------
 .snakemake/
 results/
-workflow/resources/staged/      # wget-staged inputs (regenerable)
+workflow/results/
+workflow/results_*/
+results_*/
+
+# ---------------------------------------------------------------------------
+# MCC / capture side-analyses
+# ---------------------------------------------------------------------------
+mcc_results_*/
+mcc_grid_benchmark/
+mcc_boundary/
+capture_cools/
+capture_cools.downsample_done
+
+# ---------------------------------------------------------------------------
+# GEO staging trees
+# ---------------------------------------------------------------------------
+geo_v1/
+geo_2024/
+geo_2025/
+geo_merged_manifest.tsv
+
+# ---------------------------------------------------------------------------
+# Auto-generated configs and per-sample plotting artifacts
+# ---------------------------------------------------------------------------
+workflow/config/*.generated.yaml
+*_cats.json
+*_tracks.ini
+*.cat.json
+tracks_mcc_*.ini
+
+# ---------------------------------------------------------------------------
+# Figures and rendered output
+# ---------------------------------------------------------------------------
+*.pdf
+*.png
+*.svg
+figures/
+
+# ---------------------------------------------------------------------------
+# Derived tables / intermediate result files
+# ---------------------------------------------------------------------------
+rna_concordance_*
+rna_concordance.zip
+*_across_runs.tsv
+*_corr_adaptive.*
+benchmark_comparisons.tsv
+capture_depth_probe.tsv
+capture_manifest.tsv
+cbe_significance_across_runs.tsv
+comparisons.tsv
+neg_mc3_missed.tsv
+SIGN_MAP.tsv
+vbeta_cohesin_quant_*.tsv
+counts
+
+# ---------------------------------------------------------------------------
+# BED/interval files produced by analyses (not inputs)
+# ---------------------------------------------------------------------------
+anchors_v1.bed
+bearing_bins_*.bed
+bearing_DNvs*.bed
+cbe_pad2k.bed
+seg_v1_*.bed
+superbins_v1*.bed
+vbeta_segments.bed
+vh.bed
+
+# ---------------------------------------------------------------------------
+# Workflow resources and bulk data files
+# ---------------------------------------------------------------------------
+workflow/resources/staged/
 workflow/resources/*.bw
 workflow/resources/*.cool
-floors.tsv
-
-# ---- container image (multi-GB; host on GHCR/Zenodo, not git) ----
-*.sif
-
-# ---- large data inputs / outputs (never commit) ----
 *.bw
 *.bigwig
 *.cool
@@ -48,22 +132,46 @@ floors.tsv
 *.bg
 *.bw.tmp
 *.part
+floors.tsv
 
-# ---- generated figures / reports (regenerable by the workflow) ----
-# Comment these out if you DO want to version final figures.
-# *.png
-# *.pdf
+# ---------------------------------------------------------------------------
+# Cluster / tooling noise
+# ---------------------------------------------------------------------------
+*.diff
+*.sif
+.Rhistory
+.Rsubread_*
+config_DN_vs_*.R
+Miniconda3-latest-Linux-x86_64.sh
+slurm-*.out
 
-# ---- secrets / credentials (S3 presigned URLs, tokens) ----
+# ---------------------------------------------------------------------------
+# Secrets / credentials
+# ---------------------------------------------------------------------------
 .env
 *.pem
 *credentials*
 *presigned*
 
-# ---- internal run notes (contain cluster-specific paths; kept local) ----
+# ---------------------------------------------------------------------------
+# Local notes and diagnostics
+# ---------------------------------------------------------------------------
+docs/categories.json
 docs/how_I_run_it.md
 
-.Rhistory
-
-docs/categories.json
-
+# ---------------------------------------------------------------------------
+# Notes -- decide before submission, do NOT blanket-ignore:
+#
+# workflow/resources/    mm10.chrom.sizes, mm10-blacklist.v2.bed, the GENCODE
+#                        GTF, mm10_genes.bed. Small files here are worth
+#                        tracking; the GTF is large. Recommended: track the
+#                        small ones, put the GTF behind a download script or
+#                        the Zenodo archive, and reference it from config.yaml.
+#
+# workflow/annotations/  tcrb_extension_features.bed, targets.tsv, AgRgenes.
+#                        These are SMALL and required to reproduce the paper's
+#                        regional analyses. They should be TRACKED.
+#
+# sync_manifest.sha256   currently tracked and modified -- decide whether it is
+#                        a build artifact (ignore) or a provenance record (commit).
+# ---------------------------------------------------------------------------

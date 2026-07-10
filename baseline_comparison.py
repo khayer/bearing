@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# baseline_comparison.py  (v5 -- bin values match production: values()+nan_to_num, not stats())
+# baseline_comparison.py  (v6 -- Q computed over ALL bins, as production does)
 #
 # Reviewer question (NAR): "is BEARING simply rediscovering what a simpler
 # statistic would show?"  For the SAME 200 bp bins and the SAME min_signal mask,
@@ -147,6 +147,25 @@ def load_matrix(bw_paths, chrom_sizes, data_dir):
     return R, index
 
 
+def compute_Q_all_bins(R, prob_fn, chunk=2_000_000):
+    """Production Q: mean of P over ALL bins, INCLUDING low-signal ones.
+
+    bigwig_to_qcat.py accumulates Q_accumulator += P.sum(axis=0) with
+    Q_denom += n over every bin, with no min_signal restriction. Empty bins
+    have all-zero raw signal, so signals_to_prob() returns a UNIFORM P for
+    them (pseudocount only); with ~51% of bins masked, those uniform vectors
+    pull Q toward uniform. Restricting Q to surviving bins gives a different
+    Q and a different score ranking (Spearman ~0.78 against production).
+    """
+    acc = np.zeros(R.shape[1], dtype=np.float64)
+    n = 0
+    for i in range(0, R.shape[0], chunk):
+        blk = R[i:i + chunk].astype(np.float64)
+        acc += prob_fn(blk).sum(axis=0)
+        n += blk.shape[0]
+    return acc / n
+
+
 def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
     P = prob_fn(R.astype(np.float64))
     if Q is None:
@@ -279,7 +298,9 @@ def main():
         print("  NOTE: Q is the mean of P over the SELECTED chromosomes only;")
         print("        production Q is genome-wide. Omit --chroms for a Q that")
         print("        matches production before quoting any number.")
-    st1, Q1 = statistics(R1[keep], kl_fn, prob_fn)
+    Q1 = compute_Q_all_bins(R1, prob_fn)          # ALL bins, as production does
+    print("  Q (all bins) =", np.round(Q1, 4))
+    st1, _ = statistics(R1[keep], kl_fn, prob_fn, Q=Q1)
 
     if a.check_qcat:
         print("\ncross-check vs stored qcat scores on %s" % a.check_chrom)
@@ -336,8 +357,9 @@ def main():
         sys.exit("no shared passing bins")
 
     # each sample gets its own Q, as in production
-    s1, _ = statistics(R1[both], kl_fn, prob_fn)
-    s2, _ = statistics(R2[both], kl_fn, prob_fn)  # each sample its own Q
+    Q2 = compute_Q_all_bins(R2, prob_fn)
+    s1, _ = statistics(R1[both], kl_fn, prob_fn, Q=Q1)   # each sample its own Q,
+    s2, _ = statistics(R2[both], kl_fn, prob_fn, Q=Q2)   # computed over all bins
     diff = {k: np.abs(s1[k] - s2[k]) for k in s1 if k in s2}
     if a.stride > 1:
         diff = {k: v[::a.stride] for k, v in diff.items()}
