@@ -18,6 +18,23 @@ Applies the SAME test, through the SAME production code path
 the same analysis locus and matched to each real region on the number of scored
 bins. Under the null the combined p-values should be approximately Uniform(0,1).
 
+CRITICAL: the contrast supplied must itself be NULL.
+p_spatial asks whether the LOCUS's significant bins concentrate in the
+sub-region; the test is conditional on the locus. If the contrast carries real
+differential signal inside the locus (e.g. DN vs DP at Tcrb), a random window
+that happens to overlap the Vbeta cluster is CORRECTLY significant, and the
+rejection rate is a measure of signal, not of type-I error. Use a within-condition
+replicate differential -- bearing_calibration.py writes
+results/calibration/<COND>/<COND>/<COND>_perbin.tsv.gz with exactly the columns
+this script needs -- and pass --null-contrast.
+
+  python regional_null_calibration.py \
+      --stats   workflow/results/calibration/DN/DN/DN_perbin.tsv.gz \
+      --regions workflow/annotations/tcrb_regions_v5.bed \
+      --locus   chr6:40790000-41690000 \
+      --p-thresh 0.05 --n-random 1000 --seed 42 --null-contrast \
+      --out     regional_null_calibration_tcrb_DNreplicate.tsv
+
 Reported per real region (i.e. per size class):
   - empirical type-I error at alpha = 0.05 and 0.01 for p_spatial,
     p_directional and p_combined
@@ -59,9 +76,12 @@ ASCII only. Reads real data; fabricates nothing.
 
 import argparse
 import bisect
+import gzip
 import logging
 import os
+import shutil
 import sys
+import tempfile
 
 import numpy as np
 
@@ -147,6 +167,14 @@ def main():
     ap.add_argument("--n-random", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--repo", default=".")
+    ap.add_argument("--avoid-real", action="store_true",
+                    help="forbid random windows overlapping the real regions. OFF by "
+                         "default: the real regions tile most of the locus, so this "
+                         "leaves zero placements for the larger size classes.")
+    ap.add_argument("--null-contrast", action="store_true",
+                    help="assert that --stats is a null contrast (e.g. a within-condition "
+                         "replicate differential). Required to print type-I error, since "
+                         "random windows inside a locus that CONTAINS signal are not null draws.")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -157,9 +185,19 @@ def main():
         a.diff_qcat = a.diff_pvals = a.stats
     if not (a.diff_qcat and a.diff_pvals):
         sys.exit("give --stats, or both --diff-qcat and --diff-pvals")
-    if a.diff_qcat.endswith(".bgz") or a.diff_qcat.endswith(".gz"):
+    if a.diff_qcat.endswith(".bgz"):
         sys.exit("regional_enrichment.parse_diff_qcat() uses plain open() and cannot "
                  "read a bgz file. Pass --stats <diff_*.stats.tsv> instead.")
+    tmpdir = None
+    if a.diff_qcat.endswith(".gz"):
+        # bearing_calibration.py writes <cond>_perbin.tsv.gz; the production
+        # parsers use plain open(), so decompress to a temp file first.
+        tmpdir = tempfile.mkdtemp(prefix="regcal_")
+        plain = os.path.join(tmpdir, "perbin.tsv")
+        with gzip.open(a.diff_qcat, "rt") as src, open(plain, "w") as dst:
+            shutil.copyfileobj(src, dst)
+        a.diff_qcat = a.diff_pvals = plain
+        print("  decompressed %s -> %s" % (a.stats, plain))
 
     print("loading differential scores + p-values ...")
     qcat = parse_qcat(a.diff_qcat)
@@ -169,27 +207,40 @@ def main():
     print("  %d qcat bins, %d p-value bins, %d real regions"
           % (len(qcat), len(pvals), len(real)))
 
-    avoid = [(s, e) for (c, s, e, _n) in real if c == lchrom]
+    avoid = [(s, e) for (c, s, e, _n) in real if c == lchrom] if a.avoid_real else []
     rng = np.random.default_rng(a.seed)
     starts = scored_starts(pvals, lchrom, lstart, lend)     # built once
     print("  %d scored bins inside the analysis locus" % len(starts))
 
     # real regions first, through the production code path
-    real_res = {r["region"] if "region" in r else r.get("name", "?"): r
+    real_res = {r["region_name"]: r
                 for r in compute(qcat, pvals, real, lchrom, lstart, lend, a.p_thresh)}
 
     rows = []
+    if not a.null_contrast:
+        print("\n" + "!" * 72)
+        print("WARNING: --null-contrast not set. The regional test is CONDITIONAL on the")
+        print("locus: p_spatial asks whether the locus's significant bins concentrate in")
+        print("the sub-region. If this locus carries real differential signal, a random")
+        print("window overlapping that signal is CORRECTLY significant, and the rejection")
+        print("rate below is NOT a type-I error. For calibration, pass a within-condition")
+        print("replicate differential (bearing_calibration.py's <cond>_perbin.tsv.gz) and")
+        print("set --null-contrast.")
+        print("!" * 72)
+
     print("\n%-28s %7s %10s %10s %10s %9s %8s"
-          % ("region (size class)", "n_bins", "FPR@0.05", "FPR@0.01", "KS dist",
-             "real p", "rank"))
+          % ("region (size class)", "n_bins",
+             "FPR@0.05" if a.null_contrast else "rej@0.05",
+             "FPR@0.01" if a.null_contrast else "rej@0.01",
+             "KS dist", "real p", "rank"))
     for (c, s, e, name) in real:
         if c != lchrom:
             continue
         nb = bins_in(starts, s, e)
         rand = sample_matched(starts, lchrom, lstart, lend, nb, a.n_random, rng, avoid)
         if len(rand) < 50:
-            print("%-28s %7d   (only %d matched random regions; skipped)"
-                  % (name[:28], nb, len(rand)))
+            print("%-28s %7d   (only %d matched random regions; skipped: %d scored bins "
+                  "in locus, need > %d)" % (name[:28], nb, len(rand), len(starts), nb))
             continue
         res = compute(qcat, pvals, rand, lchrom, lstart, lend, a.p_thresh)
         pc = [r["p_combined"] for r in res]
@@ -200,11 +251,8 @@ def main():
         fpr01 = sum(1 for p in pc if p < 0.01) / len(pc)
         ksd = ks_distance_uniform(pc)
 
-        rp = None
-        for k, r in real_res.items():
-            if str(k).startswith(name[:12]):
-                rp = r["p_combined"]
-                break
+        rr = real_res.get(name)
+        rp = rr["p_combined"] if rr else None
         rank = (sum(1 for p in pc if p <= rp) / len(pc)) if rp is not None else float("nan")
 
         print("%-28s %7d %10.4f %10.4f %10.3f %9s %8s"
