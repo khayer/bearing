@@ -175,3 +175,4 @@ docs/how_I_run_it.md
 # sync_manifest.sha256   currently tracked and modified -- decide whether it is
 #                        a build artifact (ignore) or a provenance record (commit).
 # ---------------------------------------------------------------------------
+workflow/resources/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf
