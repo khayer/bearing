@@ -514,7 +514,7 @@ rule pvalue_sample:
             out("perm", "perm%d" % i, wc.sample, "%s_perm%d.qcat.bgz" % (wc.sample, i))
             for i in PERM_INDICES)
     threads: 2
-    resources: mem_mb=64000, runtime=720, cpus_per_task=2
+    resources: mem_mb=164000, runtime=720, cpus_per_task=2
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "python {BIN}/bearing_pvalue.py --qcat {input.qcat} "
