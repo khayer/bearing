@@ -112,6 +112,61 @@ def _verify_parser(repo, path, keep, lc, ls, le, n=200):
     print("  parser check: %d bins match production parse_qcat exactly" % checked)
 
 
+def parse_qcat_genome(path, keep):
+    """Yield (reduced_score, sign) for EVERY bin, summing over kept tracks.
+    Genome-wide pass; used only to derive g_dir exactly as production does."""
+    keepset = set(keep)
+    with gzip.open(path, "rt") as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            tab1 = line.find("\t")
+            if tab1 < 0:
+                continue
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 4:
+                continue
+            col = f[3]
+            if col.startswith("{"):
+                pairs = json.loads(col).get("qcat", [])
+            else:
+                qs = col.find("qcat:")
+                if qs == -1:
+                    continue
+                rs = col.find(",raw:", qs)
+                payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
+                pairs = json.loads(payload)
+            s = 0.0
+            for score, idx in pairs:
+                if int(idx) in keepset:
+                    s += float(score)
+            yield s, (1 if s > 0 else -1)
+
+
+def genome_wide_g_dir(diff_path, keep, null_sorted, p_thresh):
+    """Reduced-panel g_dir = P(reduced_score > 0 | bin genome-wide significant),
+    matching regional_enrichment.py (which derives g_dir from ALL genome-wide
+    significant bins, not locus bins). Computing it from locus bins gives a
+    degenerate baseline and makes negative controls light up.
+
+    Null equivalence: the permutation nulls are per-track CIRCULAR SHIFTS, which
+    decorrelate position from signal, so the reduced-score null pooled from the
+    locus is identically distributed to the genome-wide reduced null. We reuse
+    the locus-pooled null (null_sorted) as the genome-wide reference, avoiding a
+    second genome-wide pass over the 100 perm files."""
+    pos = tot = 0
+    n = null_sorted.size
+    for s, sign in parse_qcat_genome(diff_path, keep):
+        ge = n - np.searchsorted(null_sorted, abs(s), side="left")
+        p = (1.0 + ge) / (1.0 + n)
+        if p < p_thresh:
+            tot += 1
+            if sign > 0:
+                pos += 1
+    g = (pos / tot) if tot else 0.5
+    return min(max(g, 1e-6), 1.0 - 1e-6), tot
+
+
 def load_observed(path, keep, locus):
     lc, ls, le = locus
     starts, scores, signs = [], [], []
@@ -205,12 +260,17 @@ def main():
     null = load_null(perm_paths, keep, locus, a.max_perms)
     print("  %d null bins" % null.size)
 
-    # per-bin empirical p on the reduced score, then g_dir over locus-significant bins
+    # per-bin empirical p on the reduced score (locus bins), for the spatial test
     pvals = empirical_p(np.abs(scores), null)
-    sig = pvals < a.p_thresh
-    g_dir = (signs[sig] > 0).mean() if sig.sum() else 0.5
-    g_dir = min(max(g_dir, 1e-6), 1.0 - 1e-6)
-    print("  reduced-panel g_dir = %.4f (%d locus-significant bins)\n" % (g_dir, int(sig.sum())))
+
+    # g_dir MUST be genome-wide (production uses all genome-wide significant bins,
+    # not locus bins) or the directional test is computed against a degenerate
+    # baseline and negative controls light up. Stream the observed diff qcat
+    # genome-wide, thresholding |reduced score| against the pooled reduced null.
+    print("  computing genome-wide reduced-panel g_dir (one pass over observed diff) ...")
+    g_dir, n_gw_sig = genome_wide_g_dir(a.diff_qcat, keep, null, a.p_thresh)
+    print("  reduced-panel g_dir = %.4f (%d genome-wide significant bins)\n"
+          % (g_dir, n_gw_sig))
 
     real = []
     with open(a.regions) as fh:
