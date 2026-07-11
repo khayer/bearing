@@ -115,13 +115,16 @@ def _verify_parser(repo, path, keep, lc, ls, le, n=200):
 def parse_qcat_genome(path, keep):
     """Yield (reduced_score, sign) for EVERY bin, summing over kept tracks.
     Genome-wide pass; used only to derive g_dir exactly as production does."""
+    for _chrom, _start, s, sign in _genome_stream_with_pos(path, keep):
+        yield s, sign
+
+
+def _genome_stream_with_pos(path, keep):
+    """Yield (chrom, start, reduced_score, sign) for EVERY bin, genome-wide."""
     keepset = set(keep)
     with gzip.open(path, "rt") as fh:
         for line in fh:
             if line.startswith("#") or not line.strip():
-                continue
-            tab1 = line.find("\t")
-            if tab1 < 0:
                 continue
             f = line.rstrip("\n").split("\t")
             if len(f) < 4:
@@ -140,7 +143,7 @@ def parse_qcat_genome(path, keep):
             for score, idx in pairs:
                 if int(idx) in keepset:
                     s += float(score)
-            yield s, (1 if s > 0 else -1)
+            yield f[0], int(f[1]), s, (1 if s > 0 else -1)
 
 
 def genome_wide_g_dir(diff_path, keep, null_sorted, p_thresh):
@@ -239,6 +242,11 @@ def main():
                     help="1-based track indices to retain (default in-house: ATAC,RNA+,RNA-)")
     ap.add_argument("--p-thresh", type=float, default=0.05)
     ap.add_argument("--max-perms", type=int, default=100)
+    ap.add_argument("--emit-stats", default=None,
+                    help="also write a genome-wide reduced-panel stats.tsv "
+                         "(chrom,start,end,bearing_score,pval,direction) so the "
+                         "reduced panel can be fed to regional_null_calibration_v2.py "
+                         "for the size-matched empirical null.")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -271,6 +279,31 @@ def main():
     g_dir, n_gw_sig = genome_wide_g_dir(a.diff_qcat, keep, null, a.p_thresh)
     print("  reduced-panel g_dir = %.4f (%d genome-wide significant bins)\n"
           % (g_dir, n_gw_sig))
+
+    if a.emit_stats:
+        # genome-wide reduced-panel stats.tsv, columns matching what
+        # regional_null_calibration_v2.load_stats expects (chrom,start,pval,
+        # bearing_score). pval is the reduced-score empirical p vs the reduced
+        # null; bearing_score carries the signed reduced score.
+        nnull = null.size
+        wrote = 0
+        with open(a.emit_stats, "w") as fh:
+            fh.write("chrom\tstart\tend\tbearing_score\tpval\tdirection\n")
+            for chrom, start, s, sign in _genome_stream_with_pos(a.diff_qcat, keep):
+                ge = nnull - np.searchsorted(null, abs(s), side="left")
+                p = (1.0 + ge) / (1.0 + nnull)
+                fh.write("%s\t%d\t%d\t%.6g\t%.6g\t%s\n"
+                         % (chrom, start, start + 200, s, p, "+" if sign > 0 else "-"))
+                wrote += 1
+        print("  wrote %d-bin reduced-panel stats -> %s" % (wrote, a.emit_stats))
+        print("  calibrate the reduced panel with the size-matched empirical null:")
+        print("    python regional_null_calibration_v2.py --stats %s \\" % a.emit_stats)
+        print("        --regions <same bed> --locus <same locus> \\")
+        print("        --chrom-sizes <mm10.chrom.sizes> --mode background \\")
+        print("        --n-random 500 --verify 0 --null-contrast --out <cal.tsv>")
+        print("    (--null-contrast is required to print type-I error; the DN-vs-X")
+        print("     signal calls are then compared against that null, exactly as in")
+        print("     Table S11, but on the reduced panel.)\n")
 
     real = []
     with open(a.regions) as fh:
