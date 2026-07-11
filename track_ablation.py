@@ -45,44 +45,92 @@ import math
 import os
 import sys
 
+import json
+
 import numpy as np
 import scipy.stats
 
 
-def _get_parser(repo):
-    """Import the production qcat parser so the payload format cannot drift."""
-    sys.path.insert(0, repo)
-    from bearing_pvalue import parse_qcat        # (chrom,start,end,score_total,per_track)
-    return parse_qcat
+def parse_qcat_locus(path, keep, lc, ls, le):
+    """Yield (start, sum_over_keep, sign) for bins on chrom lc within [ls, le).
 
-
-def parse_qcat_pertrack(path, keep, parse_qcat):
-    """Yield (chrom, start, sum_over_keep, sign), re-summing production per-track
-    KL contributions over the retained 1-based track indices `keep`."""
+    Filters on the tab-delimited chrom/start BEFORE json-parsing the payload, so
+    only in-locus lines are decoded -- essential when the perm qcats are
+    genome-wide (13.6M rows) but the locus is < 10k bins. Payload format matches
+    bearing_pvalue.parse_qcat: a 4th column that is either a JSON object with a
+    "qcat" key, or "qcat:[[score,idx],...]" optionally followed by ",raw:".
+    keep : 1-based track indices to retain.
+    """
     keepset = set(keep)
-    for chrom, start, _end, _total, per_track in parse_qcat(path, min_signal=0.0):
-        s = sum(v for idx, v in per_track.items() if idx in keepset)
-        yield chrom, start, s, (1 if s > 0 else -1)
+    lc_tab = lc + "\t"
+    with gzip.open(path, "rt") as fh:
+        for line in fh:
+            if not line.startswith(lc_tab):
+                continue
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 4:
+                continue
+            start = int(f[1])
+            if start < ls or start >= le:
+                continue
+            col = f[3]
+            if col.startswith("{"):
+                pairs = json.loads(col).get("qcat", [])
+            else:
+                qs = col.find("qcat:")
+                if qs == -1:
+                    continue
+                rs = col.find(",raw:", qs)
+                payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
+                pairs = json.loads(payload)
+            s = 0.0
+            for score, idx in pairs:
+                if int(idx) in keepset:
+                    s += float(score)
+            yield start, s, (1 if s > 0 else -1)
 
 
-def load_observed(path, keep, locus, parse_qcat):
+def _verify_parser(repo, path, keep, lc, ls, le, n=200):
+    """Sanity: the fast locus reader must match bearing_pvalue.parse_qcat exactly."""
+    sys.path.insert(0, repo)
+    from bearing_pvalue import parse_qcat
+    keepset = set(keep)
+    ref = {}
+    for chrom, start, _e, _t, per in parse_qcat(path, min_signal=0.0):
+        if chrom == lc and ls <= start < le:
+            ref[start] = sum(v for i, v in per.items() if i in keepset)
+            if len(ref) >= n:
+                break
+    checked = 0
+    for start, s, _sg in parse_qcat_locus(path, keep, lc, ls, le):
+        if start in ref:
+            if abs(ref[start] - s) > 1e-9:
+                sys.exit("locus reader disagrees with production parse_qcat at %d" % start)
+            checked += 1
+            if checked >= len(ref):
+                break
+    print("  parser check: %d bins match production parse_qcat exactly" % checked)
+
+
+def load_observed(path, keep, locus):
     lc, ls, le = locus
     starts, scores, signs = [], [], []
-    for chrom, start, s, sign in parse_qcat_pertrack(path, keep, parse_qcat):
-        if chrom == lc and ls <= start < le:
-            starts.append(start); scores.append(s); signs.append(sign)
+    for start, s, sign in parse_qcat_locus(path, keep, lc, ls, le):
+        starts.append(start); scores.append(s); signs.append(sign)
     o = np.argsort(starts, kind="stable")
     return (np.asarray(starts)[o], np.asarray(scores)[o], np.asarray(signs)[o])
 
 
-def load_null(perm_paths, keep, locus, max_perms, parse_qcat):
+def load_null(perm_paths, keep, locus, max_perms):
     """Pooled null of |reduced score| within the locus, from the permutation qcats."""
     lc, ls, le = locus
     vals = []
     for i, p in enumerate(perm_paths[:max_perms]):
-        for chrom, start, s, _sign in parse_qcat_pertrack(p, keep, parse_qcat):
-            if chrom == lc and ls <= start < le:
-                vals.append(abs(s))
+        for start, s, _sign in parse_qcat_locus(p, keep, lc, ls, le):
+            vals.append(abs(s))
+        if (i + 1) % 10 == 0:
+            print("    ... %d/%d perm files, %d null bins so far"
+                  % (i + 1, min(len(perm_paths), max_perms), len(vals)))
     return np.sort(np.asarray(vals))
 
 
@@ -139,14 +187,14 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
-    parse_qcat = _get_parser(os.path.abspath(a.repo))
     keep = [int(x) for x in a.keep.split(",")]
     lc, rest = a.locus.split(":"); ls, le = (int(v) for v in rest.split("-"))
     locus = (lc, ls, le)
     print("retaining tracks %s; locus %s" % (keep, a.locus))
 
     print("loading observed reduced scores ...")
-    starts, scores, signs = load_observed(a.diff_qcat, keep, locus, parse_qcat)
+    _verify_parser(os.path.abspath(a.repo), a.diff_qcat, keep, lc, ls, le)
+    starts, scores, signs = load_observed(a.diff_qcat, keep, locus)
     print("  %d bins in locus" % starts.size)
 
     perm_paths = sorted(glob.glob(a.perm_glob))
@@ -154,7 +202,7 @@ def main():
         sys.exit("no permutation qcats matched --perm-glob")
     print("loading pooled null from %d permutation files (cap %d) ..."
           % (len(perm_paths), a.max_perms))
-    null = load_null(perm_paths, keep, locus, a.max_perms, parse_qcat)
+    null = load_null(perm_paths, keep, locus, a.max_perms)
     print("  %d null bins" % null.size)
 
     # per-bin empirical p on the reduced score, then g_dir over locus-significant bins
