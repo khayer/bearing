@@ -155,7 +155,7 @@ def parse_regions_bed(path):
 
 def compute_regional_enrichment(diff_qcat_bins, diff_pvals_bins, regions,
                                 locus_chrom, locus_start, locus_end, p_thresh,
-                                verbose=False):
+                                verbose=False, region_assign='start'):
     """
     Compute regional enrichment for each region.
     Returns list of result dicts, one per region.
@@ -204,12 +204,32 @@ def compute_regional_enrichment(diff_qcat_bins, diff_pvals_bins, regions,
                 "Region {} ({}:{}-{}) extends beyond locus {}:{}-{}".format(
                     name, chrom, start, end, locus_chrom, locus_start, locus_end))
 
-        # Count region bins
-        region_bins = [
-            coord for coord in locus_bins
-            if coord[0] == chrom and start <= coord[1] < end
-        ]
+        # Count region bins. Two assignment modes:
+        #   'start'   (default): a bin belongs to the region if its start falls
+        #             inside [start, end). Correct and fast for regions larger
+        #             than the bin grid (the standard locus sub-regions); this
+        #             preserves the original, validated behaviour.
+        #   'overlap': a bin belongs if it overlaps the region by >=1 bp. Needed
+        #             for features SMALLER than the bin size (e.g. 18 bp CTCF-
+        #             binding elements), which under 'start' capture zero bins
+        #             because no 200 bp grid start lands inside them.
+        if region_assign == 'overlap':
+            region_bins = [
+                coord for coord in locus_bins
+                if coord[0] == chrom and coord[1] < end and coord[2] > start
+            ]
+        else:
+            region_bins = [
+                coord for coord in locus_bins
+                if coord[0] == chrom and start <= coord[1] < end
+            ]
         L_region_bins = len(region_bins)
+        if L_region_bins == 0:
+            logger.warning(
+                "region %s (%s:%d-%d) contains zero bins under assign='%s'; "
+                "its q_combined will be a trivial 1.0. If this feature is "
+                "smaller than the bin size, re-run with --region-assign overlap.",
+                name, chrom, start, end, region_assign)
 
         # Count low-p bins in region
         k = 0
@@ -313,6 +333,11 @@ def main():
                                help='Analysis locus (chrom:start-end)')
     single_parser.add_argument('--p-thresh', type=float, default=0.05,
                                help='P-value threshold for "significant" bins (default: 0.05)')
+    single_parser.add_argument('--region-assign', choices=['start', 'overlap'], default='start',
+                               help="Bin-to-region assignment. 'start' (default): a bin belongs "
+                                    "if its start falls inside the region. 'overlap': a bin "
+                                    "belongs if it overlaps the region by >=1 bp; use for features "
+                                    "smaller than the bin size, e.g. CTCF-binding elements.")
     single_parser.add_argument('--out', required=True,
                                help='Output TSV path')
     single_parser.add_argument('--bh-by', choices=['none', 'comparison', 'all'], default='all',
@@ -330,6 +355,11 @@ def main():
                               help='Analysis locus (chrom:start-end)')
     batch_parser.add_argument('--p-thresh', type=float, default=0.05,
                               help='P-value threshold for "significant" bins (default: 0.05)')
+    batch_parser.add_argument('--region-assign', choices=['start', 'overlap'], default='start',
+                              help="Bin-to-region assignment. 'start' (default): a bin belongs "
+                                   "if its start falls inside the region. 'overlap': a bin "
+                                   "belongs if it overlaps the region by >=1 bp; use for features "
+                                   "smaller than the bin size, e.g. CTCF-binding elements.")
     batch_parser.add_argument('--out', required=True,
                               help='Output TSV path')
     batch_parser.add_argument('--bh-by', choices=['none', 'comparison', 'all'], default='all',
@@ -366,7 +396,7 @@ def main():
         # Compute
         results = compute_regional_enrichment(
             diff_qcat_bins, diff_pvals_bins, regions,
-            locus_chrom, locus_start, locus_end, args.p_thresh, args.verbose
+            locus_chrom, locus_start, locus_end, args.p_thresh, args.verbose, region_assign=args.region_assign
         )
 
         # Add comparison label
@@ -404,7 +434,7 @@ def main():
                 # Compute
                 results = compute_regional_enrichment(
                     diff_qcat_bins, diff_pvals_bins, regions,
-                    locus_chrom, locus_start, locus_end, args.p_thresh, args.verbose
+                    locus_chrom, locus_start, locus_end, args.p_thresh, args.verbose, region_assign=args.region_assign
                 )
 
                 # Add comparison label
@@ -424,7 +454,7 @@ def main():
             # Compute
             results = compute_regional_enrichment(
                 diff_qcat_bins, diff_pvals_bins, regions,
-                locus_chrom, locus_start, locus_end, args.p_thresh, args.verbose
+                locus_chrom, locus_start, locus_end, args.p_thresh, args.verbose, region_assign=args.region_assign
             )
             
             # Add comparison label
