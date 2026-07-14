@@ -48,6 +48,23 @@ snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml --cores
 See `workflow/README.md` for the step-by-step breakdown and
 `paper/reproduce_all.sh` for the explicit staged-SLURM equivalents.
 
+### Two different `--min-signal` flags (do not conflate)
+
+Two scripts expose a flag named `--min-signal`, with **different meanings and
+different defaults**. They are intentionally not renamed (renaming would break
+the CLI); know which is which:
+
+- `bigwig_to_qcat.py --min-signal` is a per-sample **raw-signal** floor
+  (default `0.01`; the workflow sets `min_signal: 0.1`). It gates scoring.
+- `bearing_pvalue.py --min-signal` is a **|score|** floor on the differential
+  (default `0.5` for KL scores, `0.05` for JSD). Bins below it are not tested.
+
+In the workflow these are two separate config keys: `min_signal` (raw-signal,
+scoring) and `pvalue_min_signal` (differential score floor, p-value stage). The
+latter is set explicitly (`0.5` for the KL configs, `0.05` for the JSD config)
+so the historical implicit default is recorded and stays reproducible if the
+library default ever changes.
+
 ## Plotting entry points
 
 - `bearing_hic_combined_plot.py` -- **two-condition** comparison figure

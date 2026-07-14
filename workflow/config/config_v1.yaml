@@ -23,6 +23,10 @@ blacklist_external: "resources/mm10-blacklist.v2.bed"   # merged with detected
 
 # --- parameters to CONFIRM (these set whether the rerun matches the paper) --
 min_signal: 0.1        # CONFIRM: 0.1 (your runs) vs 0.01 (Methods M.4 default)
+# Differential-score floor for bearing_pvalue.py --diff (|summed differential|).
+# DISTINCT from min_signal above (a per-sample RAW-signal floor). 0.5 matches
+# the historical bearing_pvalue.py KL default; set explicitly for reproducibility.
+pvalue_min_signal: 0.5
 normalize: ""          # "" = off (Methods M.2); or "--normalize-method nonzero-quantile"
 n_perms: 10            # CONFIRM: 10 vs 5
 min_shift: 1500000     # CONFIRM: 1500000 vs 1000000
