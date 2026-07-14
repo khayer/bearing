@@ -39,6 +39,8 @@ dependencies:
   # workflow engine
   - snakemake>=8.0
   - snakemake-executor-plugin-slurm
+  # testing (run: pytest -q)
+  - pytest>=7.0
   - pip
   - pip:
       - -e .              # install the bearing package itself (pyproject.toml)

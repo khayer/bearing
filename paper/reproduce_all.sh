@@ -100,6 +100,13 @@ done
 python3 $BEARING/consolidate_regional_enrichment.py \
     --tsvs "enrich_DN_vs_*_tcrb_regions_v5.tsv" "enrich_DN_vs_*_igh_*.tsv" \
     --out consolidated_enrichment.tsv
+# Table S3: CBE regional enrichment (DN vs DP, Tcrb window). CBEs are treated
+# here as regions (distinct from the sub-bin CBE point query). CBEs are ~18 bp
+# (smaller than the 200 bp bin), so --region-assign overlap is required.
+sbatch -p dbhiq,defq -t 24:00:00 -c 2 --mem=100G --wrap="python3 $BEARING/regional_enrichment.py batch \
+    --diff-table $RESULTS/diff_DN_vs_DP.stats.tsv \
+    --regions cbe_mm10.bed --region-assign overlap --locus chr6:40790000-41690000 \
+    --out enrich_DN_vs_DP_cbe.tsv"
 python3 $BEARING/render_regional_enrichment_heatmap.py \
     --tsv consolidated_enrichment.tsv --out panel_E_heatmap.pdf \
     --comparisons DN_vs_DP DN_vs_EbKO DN_vs_Pro-B DN_vs_3T3

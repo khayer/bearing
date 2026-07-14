@@ -158,6 +158,10 @@ def all_targets():
             out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
             out("paper_figures", "collect.done"),
         ]
+    # Manuscript Table S3: CBE regional enrichment for DN vs DP (Tcrb window).
+    # Guarded so application configs without both DN and DP are unaffected.
+    if "DN_vs_DP" in ALL_PAIRWISE:
+        t.append(out("regional", "enrich_DN_vs_DP_cbe.tsv"))
     if HAS_HIC:
         t += [out("figures.done"),
               out("figures_combined.done"),
@@ -555,6 +559,25 @@ rule regional_consolidate:
         "--joint-bh "
         "--out {output.tsv} --heatmap-out {output.pdf} "
         "--comparisons " + " ".join(COMPARISONS)
+
+# Manuscript Table S3: regional enrichment of the DN-vs-DP differential BEARING
+# signal over the CBE intervals at Tcrb. This treats the CBEs as REGIONS (a
+# batch regional-enrichment test), which is distinct from the sub-bin CBE
+# point query below; both are reported in the paper. CBEs are ~18 bp (smaller
+# than the 200 bp bin), so --region-assign overlap is required -- the default
+# 'start' assignment would capture zero bins.
+rule regional_enrichment_cbe:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "enrich_DN_vs_DP_cbe.tsv")
+    params:
+        bed=os.path.join(BIN, "annotations/cbe_mm10.bed"),
+        window="chr6:40790000-41690000",
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/regional_enrichment.py batch "
+        "--diff-table {OUT}/pvalue/diff_DN_vs_DP.stats.tsv "
+        "--regions {params.bed} --region-assign overlap --locus {params.window} "
+        "--out {output}"
 
 # Per-CBE point query: CBEs are ~18 bp (sub-bin), so a regional-enrichment test
 # over them is structurally empty (zero bins fall within an 18 bp region). The
