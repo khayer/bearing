@@ -29,6 +29,7 @@ files the figure scripts consume.
 | Table | Script |
 |-------|--------|
 | S2 (regional q-values) | `../regional_enrichment.py` + `../consolidate_regional_enrichment.py` |
+| S3 (CBE regional enrichment, DN vs DP) | `../regional_enrichment.py batch --region-assign overlap` over `../annotations/cbe_mm10.bed` at `chr6:40790000-41690000` (Snakefile rule `regional_enrichment_cbe`; overlap assignment needed for sub-bin CBEs) |
 | S6 (FDR calibration)   | `../bearing_calibration.py` |
 | Hi-C data tables (TAD boundaries, anchor TAD, compartment switch, OE) | `../hic/` scripts |
 | cross-locus null       | `../hic/bes_hic_crosslocus.py` |
