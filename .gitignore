@@ -168,11 +168,12 @@ docs/how_I_run_it.md
 #                        small ones, put the GTF behind a download script or
 #                        the Zenodo archive, and reference it from config.yaml.
 #
-# workflow/annotations/  tcrb_extension_features.bed, targets.tsv, AgRgenes.
-#                        These are SMALL and required to reproduce the paper's
-#                        regional analyses. They should be TRACKED.
-#
-# sync_manifest.sha256   currently tracked and modified -- decide whether it is
-#                        a build artifact (ignore) or a provenance record (commit).
+# annotations/           region BEDs live at the repo ROOT and are TRACKED (the
+#                        duplicate workflow/annotations/ copy was removed).
 # ---------------------------------------------------------------------------
 workflow/resources/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf
+
+# sync_manifest.sha256 is a build artifact (a regenerated checksum manifest),
+# not a provenance record. Ignore it; untrack the committed copy once with:
+#   git rm --cached sync_manifest.sha256
+sync_manifest.sha256

@@ -285,7 +285,7 @@ rule build_adaptive_segmentation:
     threads: 8
     resources: mem_mb=96000, runtime=720, cpus_per_task=8
     shell:
-        "python {BIN}/build_adaptive_segmentation.py --sheet {input.sheet} "
+        "python {BIN}/mcc/scripts/build_adaptive_segmentation.py --sheet {input.sheet} "
         "--categories {CATS} --chrom-sizes {CS} --blacklist {input.blacklist} "
         "--fine-bp {params.fine} --min-signal {params.minsig} --target-bins {params.target} "
         "--main-chroms --jobs {threads} --with-stats --out {output}"

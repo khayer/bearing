@@ -12,6 +12,10 @@ per-track decompositions, p-value overlays, and gene annotations. It requires
 no pre-trained chromatin-state model and no replicates (significance comes from
 an empirical permutation null).
 
+> **New here?** See [`QUICKSTART.md`](QUICKSTART.md) for a 5-minute, no-data
+> path that installs, runs the tests, and scores a simulated chromosome end to
+> end -- the same path exercised by CI.
+
 ## Install
 
 ```bash
@@ -28,7 +32,9 @@ apptainer build bearing.sif Apptainer.def
 
 `pip install -e .` exposes console entry points: `bearing-score`,
 `bearing-compare`, `bearing-pvalue`, `bearing-regional`, `bearing-perm`,
-`bearing-shift`, `bearing-rebin`.
+`bearing-shift`, `bearing-rebin`. Add the test tools with
+`pip install -e ".[test]"` (the conda environment already includes `pytest`),
+then run the suite with `pytest -q`.
 
 ## Run the pipeline
 
@@ -42,13 +48,17 @@ snakemake -s workflow/Snakefile --configfile workflow/config/config.yaml --cores
 See `workflow/README.md` for the step-by-step breakdown and
 `paper/reproduce_all.sh` for the explicit staged-SLURM equivalents.
 
-## Two plotting entry points
+## Plotting entry points
 
 - `bearing_hic_combined_plot.py` -- **two-condition** comparison figure
   (Hi-C + per-track differential + p-value overlay), e.g. DN vs DP. This is the
-  entry point for the main per-comparison figures.
+  high-level entry point for the main per-comparison figures.
 - `compare_qcat.py` -- plots **all conditions** over a given set of regions, and
   produces the differential qcat, PCA, Spearman, and JSD diagnostics.
+- `bearing_hic_plot.py` -- the lower-level **single-region** plotter that the
+  combined figure builds on. Use it directly to render one region from explicit
+  `--contact`/`--qcat`/`--diff-qcat` inputs; this is the script used in the
+  reviewer walkthrough in `docs/working_examples.md`.
 
 ## Repository map
 
@@ -69,6 +79,10 @@ bearing_hic_combined_plot.py      two-condition figure (entry point)
 bearing_hic_plot.py / *_pval_overlay.py / *_triangle.py / bearing_hic_kl_track_plot.py
 bearing_kl_track_plot.py          focal-locus per-track tracks
 batch_bearing_hic_plots.py / batch_pygenometracks.py
+
+convert_categories.py    convert a JSON/YAML categories file to the standard categories YAML
+fetch_geo_bigwigs.py     fetch processed bigWigs from a GEO series into a BEARING-ready
+                         layout (writes a manifest + a resumable download script)
 
 hic/                     Hi-C analysis (Figs 3, 4, S7)
   tad_extension_analysis.py, tcrb_contact_isolation.py, compartment_analysis.py,
