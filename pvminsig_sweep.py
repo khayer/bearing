@@ -98,9 +98,14 @@ def iter_abs_scores(path, min_abs, block=1000000):
                 continue
             rs = col.find(b",raw:", qs)
             payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
-            total = 0.0
-            for m in SCORE_RE.finditer(payload):
-                total += float(m.group(1))
+            # Use builtin sum(), NOT a naive `total += x` loop. bearing_pvalue.py
+            # computes score_total = sum(per_track.values()), and CPython 3.12+
+            # gives sum() Neumaier compensated summation. Naive accumulation of
+            # the same six values in the same order can land 0.2 ULP lower --
+            # enough to flip a bin sitting exactly on the floor. Observed once in
+            # 5,013,001 bins (chr12:45070600, sums to exactly 0.5 under sum() and
+            # to 0.49999999999999994 naively).
+            total = sum(float(m.group(1)) for m in SCORE_RE.finditer(payload))
             a = abs(total)
             if a < min_abs:
                 continue

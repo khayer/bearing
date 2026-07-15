@@ -81,10 +81,12 @@ from bearing_hic_plot import (
     draw_genomic_axis,
     draw_legend,
     draw_pval_diff_horizontal,
+    draw_loops_horizontal,
     load_categories_yaml,
     load_genes,
     load_genes_gtf,
     load_highlights,
+    load_loops,
     load_qcat_scores,
     load_regions_file,
     load_pval_track_values,
@@ -280,6 +282,53 @@ def compute_insul_pctile_threshold(ins_A, ins_B, pctile=95.0):
     return merged
 
 
+def write_insul_sig_table(df, out_path, resolution, threshold_scope, chrom,
+                          insul_a_path, insul_b_path, pctile):
+    """Export the per-bin |delta insulation| table that
+    compute_insul_pctile_threshold() builds.
+
+    Export-only: this reads the already-computed table and writes it to disk. It
+    does not change the plot, the threshold, or any computation. `df` must be the
+    FULL pre-restriction (genome-wide or chrom-wide) table, i.e. the same scope
+    the threshold was computed over -- captured BEFORE the plotted-chromosome
+    filter -- so the exported `sig` column and threshold are self-consistent.
+
+    If out_path ends in .bedgraph/.bg, writes a 4-column bedgraph of the |delta|
+    values (chrom, start, end, delta_abs); otherwise a full TSV. `start`/`end`
+    are derived from `center` using `resolution`.
+    """
+    res = int(resolution)
+    thr = float(df["threshold"].iloc[0]) if len(df) else float("nan")
+    scope_desc = ("genome-wide (autosomes)" if threshold_scope == "genome"
+                  else "chrom-restricted (%s)" % chrom)
+    header = ("# bearing_hic_combined_plot.py |delta insulation| export | "
+              "insul_A=%s insul_B=%s resolution=%d percentile=%g scope=%s "
+              "threshold=%.6g" % (insul_a_path, insul_b_path, res, pctile,
+                                  scope_desc, thr))
+    low = str(out_path).lower()
+    is_bg = low.endswith(".bedgraph") or low.endswith(".bg")
+    with open(out_path, "w") as fh:
+        fh.write(header + "\n")
+        if is_bg:
+            for _, r in df.iterrows():
+                c = float(r["center"])
+                start = int(round(c - res / 2.0))
+                end = int(round(c + res / 2.0))
+                fh.write("%s\t%d\t%d\t%.6g\n" % (r["chrom"], start, end, r["obs"]))
+        else:
+            fh.write("chrom\tstart\tend\tcenter\tscore_A\tscore_B\t"
+                     "delta_abs\tthreshold\tpctile\tsig\n")
+            for _, r in df.iterrows():
+                c = float(r["center"])
+                start = int(round(c - res / 2.0))
+                end = int(round(c + res / 2.0))
+                cen = int(c) if c.is_integer() else c
+                fh.write("%s\t%d\t%d\t%s\t%.6g\t%.6g\t%.6g\t%.6g\t%g\t%d\n" % (
+                    r["chrom"], start, end, cen,
+                    float(r["score_A"]), float(r["score_B"]), float(r["obs"]),
+                    float(r["threshold"]), float(r["pctile"]), int(bool(r["sig"]))))
+
+
 # ---------------------------------------------------------------------
 # Per-track KL decomposition (ported from v10)
 # ---------------------------------------------------------------------
@@ -381,9 +430,27 @@ def draw_kl_decomposition_track(ax, centers, vals, color, track_name,
 # Figure layout
 # ---------------------------------------------------------------------
 
+def _filter_genes_by_name(genes, whitelist):
+    """Curate the gene track down to a whitelist (case-insensitive exact OR
+    substring match on the gene name). Returns genes unchanged if whitelist is
+    empty, so the default figure is untouched. `genes` is a list of
+    (start, end, name, strand) tuples."""
+    if not whitelist:
+        return genes
+    wanted = {str(w).lower() for w in whitelist}
+    kept = []
+    for g in genes:
+        nm = str(g[2] or "").lower()
+        if nm in wanted or any(w in nm for w in wanted):
+            kept.append(g)
+    return kept
+
+
 def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
                             has_insul, num_beds, bed_styles,
-                            num_decomp, has_pval_fill, fig_width_in=12.0):
+                            num_decomp, has_pval_fill, fig_width_in=12.0,
+                            has_loops_a=False, has_loops_b=False,
+                            rgb_slim=False):
     """Build the combined GridSpec. All data panels live in column 0 so
     genomic coordinates stay vertically aligned across the Hi-C, insulation,
     qcat and KL-decomposition panels. The legend spans column 1 over the
@@ -392,7 +459,8 @@ def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
     fig_width_in is auto-scaled by the caller so the Hi-C triangle keeps a
     sensible aspect (wide regions widen the figure rather than squishing)."""
     bed_styles = bed_styles or []
-    rgb_h = 4.3
+    rgb_h = 1.9 if rgb_slim else 4.3
+    loop_h = 0.42
     qcat_h = 0.95
     manhattan_h = 0.85
     pval_fill_h = 0.75
@@ -412,6 +480,10 @@ def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
         rows.append(("rgb", rgb_h))
     for k in show_hic_list:
         rows.append(("hic_{}".format(k), hic_height_in))
+    if has_loops_a:
+        rows.append(("loops_a", loop_h))
+    if has_loops_b:
+        rows.append(("loops_b", loop_h))
     if has_insul:
         rows.append(("insul", insul_h))
         rows.append(("delta_insul", delta_insul_h))
@@ -460,8 +532,12 @@ def make_combined_figure(
     categories=None, categories_json=None,
     pval_overlay=False,
     rgb_hic=False, rgb_palette="magenta-green",
+    rgb_overview=False,
     show_hic=("A", "B", "diff"),
+    loops_a_path=None, loops_b_path=None,
+    label_genes=None, tidy_labels=False,
     insul_a_path=None, insul_b_path=None, insul_pctile=95.0,
+    insul_sig_out=None,
     max_distance=500000, balance=True,
     hic_vmax_arg=None, diff_hic_vmax_arg=None,
     beds=None, bed_style_overrides=None,
@@ -478,13 +554,18 @@ def make_combined_figure(
         categories = ALL_CATEGORIES
 
     show_hic_list = [s for s in ("A", "B", "diff") if s in set(show_hic)]
+    # RGB triangle: rgb_hic replaces the panels with a big overview; rgb_overview
+    # adds a SLIM strip on top of the per-condition panels. Both use the same
+    # draw; only the row height differs. Default (both False) => unchanged.
+    show_rgb = bool(rgb_hic or rgb_overview)
+    rgb_slim = bool(rgb_overview and not rgb_hic)
 
     # ---- Hi-C via cooler (genomic-coordinate triangles + RGB overview) ----
     M_A = M_B = M_diff = None
     bin_starts = None
     binsize = None
     hic_norm = diff_norm = None
-    need_hic = bool(show_hic_list) or rgb_hic
+    need_hic = bool(show_hic_list) or show_rgb
     if need_hic:
         print("Loading Hi-C from cool files...")
         M_A, bin_starts, bs_A = fetch_cool_region(
@@ -536,9 +617,24 @@ def make_combined_figure(
     elif gtf_path:
         genes = load_genes_gtf(gtf_path, chrom, region_start, region_end)
         print("Loaded {} gene records from GTF".format(len(genes)))
+    if genes is not None and label_genes:
+        _n0 = len(genes)
+        genes = _filter_genes_by_name(genes, label_genes)
+        print("  curated gene track: {} -> {} genes ({})".format(
+            _n0, len(genes), ", ".join(label_genes)))
     highlights = None
     if highlights_path:
         highlights = load_highlights(highlights_path, chrom, region_start, region_end)
+
+    # ---- loop anchors (optional; drawn as arc tracks under the Hi-C) ----
+    loops_a = load_loops(loops_a_path, chrom, region_start, region_end) if loops_a_path else None
+    loops_b = load_loops(loops_b_path, chrom, region_start, region_end) if loops_b_path else None
+    has_loops_a = loops_a_path is not None
+    has_loops_b = loops_b_path is not None
+    if has_loops_a:
+        print("Loaded {} {} loop(s) in region".format(len(loops_a or []), label_a))
+    if has_loops_b:
+        print("Loaded {} {} loop(s) in region".format(len(loops_b or []), label_b))
 
     # ---- diff qcat ----
     pos_diff, scores_diff, ns_diff = [], np.zeros((0, 1), dtype=np.float32), 1
@@ -599,6 +695,18 @@ def make_combined_figure(
                 ins_B_ref = load_insul_bm_chr(insul_b_path, chrom)
             insul_sig_df = compute_insul_pctile_threshold(
                 ins_A_ref, ins_B_ref, pctile=insul_pctile)
+            # Export the FULL-scope table (before the plotted-chromosome filter
+            # below), so the exported sig/threshold reflect the scope the
+            # threshold was computed over. Export-only; does not touch plotting.
+            if insul_sig_out:
+                _res_insul = int(round(
+                    (ins_A_ref["end"] - ins_A_ref["start"]).median()))
+                write_insul_sig_table(
+                    insul_sig_df, insul_sig_out, _res_insul,
+                    threshold_scope, chrom, insul_a_path, insul_b_path,
+                    insul_pctile)
+                print("  Wrote |delta insul| table ({} bins) -> {}".format(
+                    len(insul_sig_df), insul_sig_out))
             insul_sig_df = insul_sig_df[insul_sig_df["chrom"] == chrom].reset_index(drop=True)
             thr_val = insul_sig_df["threshold"].iloc[0] if len(insul_sig_df) else float("nan")
             print("  threshold |delta insul| = {:.3f}".format(thr_val))
@@ -705,14 +813,15 @@ def make_combined_figure(
     fig_width_in = col0_w * (7.3 + 2.2) / 7.3
     fig_width_in = max(11.0, min(22.0, fig_width_in))
     fig, axes = _combined_figure_layout(
-        show_rgb=rgb_hic, show_hic_list=show_hic_list, hic_height_in=hic_height_in,
+        show_rgb=show_rgb, show_hic_list=show_hic_list, hic_height_in=hic_height_in,
         has_insul=has_insul, num_beds=len(bed_features_list), bed_styles=bed_styles,
         num_decomp=num_decomp,
         has_pval_fill=show_pval_fill and (pos_pval_diff is not None),
-        fig_width_in=fig_width_in)
+        fig_width_in=fig_width_in,
+        has_loops_a=has_loops_a, has_loops_b=has_loops_b, rgb_slim=rgb_slim)
 
     # ---- combined RGB triangle (optional overview) ----
-    if rgb_hic:
+    if show_rgb:
         print("Rendering combined RGB Hi-C triangle...")
         rgb_image = make_rgb_hic(np.nan_to_num(M_A, nan=0.0),
                                  np.nan_to_num(M_B, nan=0.0), palette=rgb_palette)
@@ -746,6 +855,22 @@ def make_combined_figure(
                                    label="{} - {}\nHi-C diff".format(label_b, label_a))
             _add_inset_colorbar(ax_h, pc, "{} - {}".format(label_b, label_a))
         ax_h.tick_params(axis="x", labelbottom=False)
+
+    # ---- loop-anchor arc tracks (optional) ----
+    if "loops_a" in axes:
+        draw_loops_horizontal(
+            axes["loops_a"], loops_a or [], region_start, region_end,
+            highlights=highlights, label="{} loops".format(label_a),
+            color="#d62728", anchor_color="#d62728")
+        axes["loops_a"].set_xlim(region_start, region_end)
+        axes["loops_a"].tick_params(axis="x", labelbottom=False)
+    if "loops_b" in axes:
+        draw_loops_horizontal(
+            axes["loops_b"], loops_b or [], region_start, region_end,
+            highlights=highlights, label="{} loops".format(label_b),
+            color="#2ca02c", anchor_color="#2ca02c")
+        axes["loops_b"].set_xlim(region_start, region_end)
+        axes["loops_b"].tick_params(axis="x", labelbottom=False)
 
     # ---- insulation panels ----
     if has_insul:
@@ -820,10 +945,12 @@ def make_combined_figure(
 
     # ---- diff qcat ----
     if has_diff:
+        _diff_lbl = ("diff qcat\n{}-{}".format(label_b, label_a) if tidy_labels
+                     else "diff qcat " + label_b + " - " + label_a)
         draw_diff_horizontal(
             axes["diff"], pos_diff, scores_diff, num_states, region_start, region_end,
             categories[:num_states], highlights=highlights,
-            label="diff qcat " + label_b + " - " + label_a, diff_max=y_max_shared)
+            label=_diff_lbl, diff_max=y_max_shared)
     else:
         axes["diff"].set_axis_off()
 
@@ -832,9 +959,11 @@ def make_combined_figure(
     if has_pm:
         y_max_pm = float(np.abs(vals_pval_diff).max()) if vals_pval_diff.size else 0.0
         y_max_pm = 1.0 if y_max_pm == 0 else y_max_pm * 1.05
+        _pm_lbl = ("diff p\n{}-{}".format(label_b, label_a) if tidy_labels
+                   else "diff p-value " + label_b + " - " + label_a)
         draw_pval_manhattan_horizontal(
             axes["manhattan"], pos_pval_diff, vals_pval_diff, region_start, region_end,
-            highlights=highlights, label="diff p-value " + label_b + " - " + label_a,
+            highlights=highlights, label=_pm_lbl,
             score_positions=pos_a, score_matrix=scores_a, categories=categories[:num_states],
             y_max=y_max_pm, cutoff_value=pval_cutoff_value, kl_scores=pval_diff_kl_scores)
     else:
@@ -940,6 +1069,10 @@ def main():
     parser.add_argument("--rgb-hic", action="store_true",
                         help="Also draw the combined magenta/green RGB overview "
                              "triangle above the single/diff Hi-C panels.")
+    parser.add_argument("--rgb-overview", action="store_true",
+                        help="Add a SLIM RGB overview strip on top of the "
+                             "quantitative single/diff Hi-C panels (does not "
+                             "replace them; good for a compact overview).")
     parser.add_argument("--rgb-palette",
                         choices=["magenta-green", "red-green", "blue-red",
                                  "green-blue", "magenta-green-white"],
@@ -955,17 +1088,28 @@ def main():
     parser.add_argument("--label-b", default="Condition B", metavar="STR")
     parser.add_argument("--genes", metavar="BED")
     parser.add_argument("--gtf", metavar="GTF")
+    parser.add_argument("--label-genes", nargs="+", default=None, metavar="NAME",
+                        help="Curate the gene track to only these gene names "
+                             "(case-insensitive, substring match), to de-clutter "
+                             "dense loci. Default: show all genes.")
+    parser.add_argument("--tidy-labels", action="store_true",
+                        help="Use compact two-line panel labels for the "
+                             "differential tracks (reduces left-margin crowding).")
     parser.add_argument("--highlights", metavar="BED")
     parser.add_argument("--categories", metavar="JSON/YAML",
                         help="Category names/colors. A JSON cats file is required "
                              "for the KL decomposition (maps kl_* columns).")
     parser.add_argument("--bed", action="append", default=[], metavar="FILE")
     parser.add_argument("--bed-style", action="append", default=[], metavar="FILE=STYLE")
-    # Accepted for batch drop-in compatibility; loop overlays are not drawn
-    # in this combined layout.
+    parser.add_argument("--loops-a", metavar="BEDPE", default=None,
+                        help="BEDPE loop calls for condition A; drawn as an arc "
+                             "track under the Hi-C panels.")
+    parser.add_argument("--loops-b", metavar="BEDPE", default=None,
+                        help="BEDPE loop calls for condition B; drawn as an arc "
+                             "track under the Hi-C panels.")
+    # Accepted for batch drop-in compatibility (single combined loop file); the
+    # per-condition --loops-a/--loops-b above are what get drawn.
     parser.add_argument("--loops", metavar="BEDPE", default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--loops-a", metavar="BEDPE", default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--loops-b", metavar="BEDPE", default=None, help=argparse.SUPPRESS)
 
     # Hi-C panels (genomic triangles)
     parser.add_argument("--show-hic", default="A,B,diff",
@@ -988,6 +1132,15 @@ def main():
     parser.add_argument("--insul-pctile", type=float, default=95.0,
                         help="Percentile threshold for |delta insul| significance "
                              "stars (default 95.0; 0 or 100 disables).")
+    parser.add_argument("--insul-sig-out", dest="insul_sig_out", metavar="PATH",
+                        default=None,
+                        help="Export the per-bin |delta insulation| table (the "
+                             "data behind the significance stars) to PATH as TSV. "
+                             "If PATH ends in .bedgraph or .bg, write a 4-column "
+                             "bedgraph of the |delta| values instead. Export-only; "
+                             "does not change the figure. Table covers the full "
+                             "--threshold-scope (genome or chrom), before the "
+                             "plotted-region restriction.")
 
     # KL decomposition
     parser.add_argument("--diff-stats", metavar="TSV", default=None,
@@ -1077,8 +1230,12 @@ def main():
         categories=cli_categories, categories_json=categories_json,
         pval_overlay=args.pval_overlay,
         rgb_hic=args.rgb_hic, rgb_palette=args.rgb_palette,
+        rgb_overview=args.rgb_overview,
         show_hic=show_hic,
+        loops_a_path=args.loops_a, loops_b_path=args.loops_b,
+        label_genes=args.label_genes, tidy_labels=args.tidy_labels,
         insul_a_path=args.insul_a, insul_b_path=args.insul_b, insul_pctile=args.insul_pctile,
+        insul_sig_out=args.insul_sig_out,
         max_distance=args.max_distance, balance=not args.no_balance,
         hic_vmax_arg=args.hic_vmax, diff_hic_vmax_arg=args.diff_hic_vmax,
         beds=args.bed, bed_style_overrides=bed_style_overrides,

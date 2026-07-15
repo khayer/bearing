@@ -779,6 +779,10 @@ rule bearing_hic_combined_one:
         insul_b=lambda wc: _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["insul"].replace("{res}", str(P["hic"].get("insulation_resolution", 25000)))),
         loops_a=lambda wc: ("--loops-a %s" % _abs_hic(HIC[REF]["loops"])) if HIC.get(REF, {}).get("loops") else "",
         loops_b=lambda wc: ("--loops-b %s" % _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["loops"])) if HIC.get(wc.cmp.split("_vs_")[-1], {}).get("loops") else "",
+        # Optional styling, config-gated (default off -> figures unchanged).
+        style=lambda wc: " ".join(filter(None, [
+            "--rgb-overview" if config.get("combined_rgb_overview", False) else "",
+            "--tidy-labels" if config.get("combined_tidy_labels", False) else ""])),
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
     shell:
@@ -789,7 +793,10 @@ rule bearing_hic_combined_one:
         "--diff-stats {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
         "--pval-diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
         "--insul-A {params.insul_a} --insul-B {params.insul_b} "
-        "{params.loops_a} {params.loops_b} "
+        # Export the per-bin |delta insul| table (genome-scope, region-independent)
+        # as a tracked artifact next to the PDFs. Export-only; does not alter figures.
+        "--insul-sig-out {params.subdir}/insul_sig_{wildcards.cmp}.tsv "
+        "{params.loops_a} {params.loops_b} {params.style} "
         "--show-hic A,B,diff --resolution {params.res} "
         "--regions-file {input.regions} --gtf {GTF} "
         "--categories {OUT}/DN_rep1_cats.json "
