@@ -1,165 +1,206 @@
 #!/usr/bin/env bash
 #
-# reproduce_all.sh -- end-to-end reproduction of the BEARING analyses.
+# reproduce_all.sh -- reproduce the BEARING analyses.
 #
-# This is a consolidated, ordered version of the real run commands. It is NOT
-# meant to be run blindly with `bash reproduce_all.sh`; step through it phase by
-# phase. SLURM submissions use the dbhiq,defq partitions.
+# READ THIS FIRST
+# ---------------
+# The pipeline IS the Snakemake workflow. This script does not re-implement it
+# and does not re-declare its parameters. Everything that determines whether a
+# rerun matches the paper lives in ONE place:
 #
-# >>> CONFIRM THE FOUR VALUES IN THE CONFIG BLOCK BEFORE RUNNING <<<
-# They determine whether the rerun reproduces the published numbers (see the
-# notes next to each). ASCII-only.
+#     workflow/config/config.yaml
+#
+# The previous version of this file carried its own copy of MIN_SIGNAL,
+# NORMALIZE, N_PERMS and MIN_SHIFT, with comments asking which values had
+# produced the published numbers. That copy drifted: it said N_PERMS=10 while
+# production ran 100, so anyone following it got different numbers. Parameters
+# are not duplicated here again. If you need to know what was run, read
+# config.yaml; if you need to change it, change config.yaml.
+#
+# What this file IS: the ordered list of commands, in three phases --
+#   Phase 1  the workflow (one snakemake invocation; builds nearly everything)
+#   Phase 2  post-hoc analyses that are NOT yet workflow rules
+#   Phase 3  assembly of the manuscript tables (not yet scripted -- see below)
+#
+# Step through it phase by phase. Do not run it blindly.
+# SLURM: partitions dbhiq,defq. ASCII only.
 
 set -euo pipefail
 
-# ============================ CONFIG (CONFIRM) =============================
-BEARING=~/data/tools/scripts/bigwig_to_qcat   # path to the cleaned repo
-SHEET=samples_calib.tsv                        # the real sample sheet
-REGIONS=regions_template.tsv                    # region set for compare/plots
-GENES=mm10_genes.bed
-GTF=../bearing_score/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf
-CATS=$BEARING/categories/mm10_6track_panel.yaml
-RESULTS=results_rerun                           # output dir for diff stats
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO"
 
-# --- the four values to confirm ---
-# (1) MIN_SIGNAL: your notes use 0.1 (and the dir is "..min_signal_test"), but
-#     Methods M.4 states the default 0.01. Which produced the PUBLISHED numbers?
-MIN_SIGNAL=0.1
-# (2) NORMALIZE: most commands omit it (default OFF, matching Methods M.2 which
-#     says normalization was NOT used); one variant used nonzero-quantile.
-#     Set to "" for none, or "--normalize-method nonzero-quantile" to turn on.
-NORMALIZE=""
-# (3) N_PERMS: notes show 10 in some commands and 5 in others.
-N_PERMS=10
-# (4) MIN_SHIFT: notes show 1500000 (perm) and 1000000 (diff perm).
-MIN_SHIFT=1500000
-SEED=42
-BLACKLIST=detected_blacklist_merged_with_encode_blacklist.bed
-# ==========================================================================
+CONFIG="workflow/config/config.yaml"
+OUT="workflow/results"          # matches `outdir:` in the config
+SHEET="workflow/config/samples.tsv"
+CHROM_SIZES="workflow/resources/mm10.chrom.sizes"
 
-# ---------------- Phase 0: blacklist (detect -> merge -> +ENCODE) ----------
-sbatch -p dbhiq,defq -t 24:00:00 -c 4 --mem=64G --wrap="python3 $BEARING/bigwig_to_qcat.py \
-    --sheet $SHEET --out placeholder.qcat.bgz \
-    --detect-unmappable --unmappable-zero-frac 0.90 \
-    --unmappable-out detected_blacklist.bed --jobs 4"
-# after it finishes:
-cat detected_blacklist.bed | sort -k1,1 -k2,2n | bedtools merge -d 3003 > detected_blacklist_merged.bed
-cat detected_blacklist_merged.bed <(cut -f1-3 mm10-blacklist.v2.bed) | sort -k1,1 -k2,2n | bedtools merge > $BLACKLIST
+echo "repo:   $REPO"
+echo "config: $CONFIG   <- the single source of truth for all parameters"
+echo
 
-# ---------------- Phase 1: observed scoring (+ write floors) ---------------
-# Writes per-sample qcat AND floors.tsv (reused by the permutation nulls).
-sbatch -p dbhiq,defq -t 24:00:00 -c 18 --mem=164G --wrap="python3 $BEARING/bigwig_to_qcat.py \
-    --sheet $SHEET --out placeholder.qcat.bgz \
-    --blacklist $BLACKLIST --min-signal $MIN_SIGNAL $NORMALIZE \
-    --write-floors-tsv floors.tsv \
-    --jobs 16 --signal-plots --stats median p90 p99 p80 --stats-plots \
-    --bed AgRgenes_mm10_s.bed $BLACKLIST $GENES"
+# ===========================================================================
+# Phase 0: environment and inputs
+# ===========================================================================
+#
+# conda env `bearing` (python 3.12). Inputs (BigWigs, Hi-C cools) resolve
+# against `data_dir:` in the config. If they are not mounted locally, stage
+# them first:
+#
+#   python3 workflow/stage_inputs.py --sheet $SHEET \
+#       --out-sheet workflow/config/samples.local.tsv --cache-dir resources/staged
+#   # then run snakemake with: --config samples_sheet=workflow/config/samples.local.tsv
+#
+# The GTF named by `gtf:` in the config is a processed file
+# (gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf). See
+# resources/README for how it is derived from the GENCODE release.
+#
+# Sanity-check the config and inputs before submitting anything:
+#
+#   python3 workflow/preflight.py --configfile $CONFIG
 
-# sanity check (optional)
-python3 $BEARING/batch_pygenometracks.py --sheet $SHEET --regions-file $REGIONS \
-    --outdir pygenometracks --threads 4 --run
+# ===========================================================================
+# Phase 1: the workflow
+# ===========================================================================
+#
+# ONE invocation builds: blacklist -> per-sample scoring -> compare ->
+# permutation nulls -> p-values -> regional enrichment -> Hi-C analyses ->
+# calibration -> the automated paper figures.
+#
+# Dry run first. It should list only what is missing; if it wants to rebuild
+# the world, something upstream changed -- find out what before you submit.
+#
+#   snakemake --configfile $CONFIG -n -p
+#
+# Local:
+#   snakemake --configfile $CONFIG --cores 16
+#
+# Cluster (each rule is submitted to SLURM):
+#   bash workflow/run_cluster.sh
+#
+# Node-local /tmp is only 8 GB on these nodes; point Snakemake's tmpdir at
+# scratch or large rules will fail:
+#   export TMPDIR=/scr1/users/$USER/snakemake
+#
+# Figures the workflow builds automatically (with source data alongside):
+#   $OUT/paper_figures/suppS1_jsd_decomposition.pdf   (+ .png, + _per_track.tsv)
+#   $OUT/paper_figures/fig6_panelB_igh_decomp.pdf
+#   $OUT/paper_figures/graphical_abstract_panel3.png
+#   $OUT/paper_figures/qc_crosslocus_ebko_survey_rawQ.pdf
+#   $OUT/paper_figures/fig3_panelB_oe_grid.png          (Hi-C configs only)
+#   $OUT/paper_figures/fig4_panelA_self_contact_grid.png
+#   $OUT/paper_figures/suppS7_panelB_compartment_res.png
+#
+# After a rerun, check nothing downstream is stale relative to the p-value layer:
+#   bash staleness_audit.sh
+#   bash verify_canonical_v2.sh
 
-# ---------------- Phase 2: compare (CHANGED) + perm nulls (parallel) -------
-# compare_qcat now emits PRIMARY Spearman (global-nonzero shared set) plus the
-# supplementary spearman_all_aligned_bins.* -- diff the TSVs against the paper.
-sbatch -p dbhiq,defq -t 24:00:00 -c 12 --mem=200G --wrap="python3 $BEARING/compare_qcat.py \
-    --sheet $SHEET --out $RESULTS \
-    --regions-file $REGIONS --genes $GENES --no-clip --workers 10"
+# ===========================================================================
+# Phase 2: post-hoc analyses (NOT yet workflow rules)
+# ===========================================================================
+#
+# These produce numbers that appear in the supplementary tables but are run by
+# hand. They are therefore NOT in the Snakemake DAG: nothing tells you when
+# their outputs are stale relative to $OUT/pvalue.done. Re-run them after any
+# change to the p-value layer, and check with staleness_audit.sh.
+#
+# TODO: promote these to rules so the DAG covers them.
 
-sbatch -p dbhiq,defq -t 24:00:00 -c 12 --mem=200G --wrap="python3 $BEARING/generate_perm_nulls.py \
-    --sheet $SHEET --out-dir perm --n-perms $N_PERMS \
-    --blacklist $BLACKLIST --floors-tsv floors.tsv --min-signal $MIN_SIGNAL \
-    --min-shift $MIN_SHIFT --seed $SEED --shift-workers 10 --jobs 10"
+# --- Table S10: baseline comparison ---------------------------------------
+# python3 dev/baseline_comparison.py --sheet $SHEET --repo . \
+#     --chrom-sizes $CHROM_SIZES --regions regions_manuscript.tsv \
+#     --min-signal 0.1 --out $OUT/tables/baseline_comparison.tsv
 
-# DATA QUIRK: DP rep2 reuses rep1's CTCF perm track. Replicate the manual copy
-# for each perm round (S25 -> S29) before p-values, or fix the sheet so DP_rep2
-# CTCF points to the intended file:
-# for k in $(seq 1 $N_PERMS); do cp perm/perm$k/..._S25_perm$k.bw perm/perm$k/..._S29_perm$k.bw; done
+# --- Table S11: regional-null calibration (empirical p) --------------------
+# The contrast supplied MUST itself be null: use a within-condition replicate
+# differential written by bearing_calibration.py (the `calibration` rule).
+# --mode background draws INDEPENDENT loci elsewhere in the genome; --mode
+# within samples inside the analysis locus and collapses to ~4 effective
+# placements for a large region, so background is the default and the mode used
+# for the published numbers.
+# NOTE: dev/regional_null_calibration.py (no --mode, no --verify, n=1000 within
+# the locus) is the superseded prototype with that flaw. Use the v2 script.
+#
+# for LOCUS_TAG in tcrb igh; do
+#   python3 dev/regional_null_calibration_v2.py \
+#       --stats   $OUT/calibration/DN/DN/DN_perbin.tsv.gz \
+#       --regions workflow/annotations/${LOCUS_TAG}_regions_v5.bed \
+#       --locus   chr6:40790000-41690000 \
+#       --chrom-sizes $CHROM_SIZES \
+#       --mode background --n-random 500 --p-thresh 0.05 --seed 42 \
+#       --verify 5 --null-contrast --repo . \
+#       --out $OUT/tables/regional_null_calibration_${LOCUS_TAG}_DNrep.tsv
+# done
+#
+# OPEN ISSUE (do not treat the current numbers as final): the background loci
+# are matched on scored-bin count to `ref_bins`, which is taken from the NULL
+# contrast at the analysis locus (~4500 bins for the DN replicate differential),
+# not from the PRODUCTION contrast being tested (1952 bins for DN-vs-Pro-B).
+# The null therefore has more bins, hence more power, hence reaches smaller p,
+# hence more null regions clear the real region's p -- i.e. the reported
+# empirical p is CONSERVATIVE. Matching would move every value DOWN. Two calls
+# are close enough for that to matter (Igh VH-proximal at 0.012, Tcrb DN-vs-DP
+# Vbeta at 0.064); the rest are floor-limited at 1/n_random or far from 0.05.
+# The correct matching must be specified BEFORE it is run, not chosen after
+# seeing which answer it gives.
 
-# ---------------- Phase 3: per-bin p-values --------------------------------
-COMPARISON_DIR_OVERRIDE=. $BEARING/submit_perm_qcat_pvalue_slurm.sh \
-    $SHEET $N_PERMS perm $RESULTS \
-    4 16G 04:00:00  8 24G 04:00:00  4 24G 02:00:00  2 24G 02:00:00 \
-    $MIN_SHIFT $BLACKLIST  floors.tsv $MIN_SIGNAL  $SEED 1000000 $SHEET
+# --- Table S12: track ablation --------------------------------------------
+# python3 dev/track_ablation.py --repo . \
+#     --diff-qcat $OUT/compare/diff_DN_vs_DP.qcat.bgz \
+#     --perm-glob "$OUT/perm/perm*/diff_comparison" \
+#     --regions regions_manuscript.tsv --locus chr6:40790000-41690000 \
+#     --p-thresh 0.05 --emit-stats \
+#     --out $OUT/tables/track_ablation_DN_vs_DP.tsv
 
-# ---------------- Phase 4: differential nulls + diff p-values --------------
-sbatch -p dbhiq,defq -t 24:00:00 -c 12 --mem=200G --wrap="python $BEARING/generate_perm_nulls.py \
-    --sheet $SHEET --diff-sheet $SHEET --n-perms $N_PERMS \
-    --out-dir perm --blacklist $BLACKLIST --floors-tsv floors.tsv --jobs 10"
-sbatch -p dbhiq,defq --cpus-per-task=4 --mem=256G --time=24:00:00 \
-    --wrap 'export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; \
-    bash '"$BEARING"'/run_perm_diff_pvalue.sh . '"$N_PERMS"' perm/perm '"$RESULTS"
+# --- Table S13: replicate stability ---------------------------------------
+# for CMP in DP EbKO ProB S3T3; do
+#   srun -p dbhiq,defq --mem=64G --time=2:00:00 \
+#     python3 dev/replicate_stability.py --repo . \
+#       --sheet $SHEET --chrom-sizes $CHROM_SIZES \
+#       --regions regions_manuscript.tsv \
+#       --cond-a "DN:DN_rep1,DN_rep2" --cond-b "${CMP}:${CMP}_rep1,${CMP}_rep2" \
+#       --out $OUT/tables/replicate_stability_DN_vs_${CMP}.tsv
+# done
 
-# ---------------- Phase 5: regional enrichment (all comparisons) -----------
-for cmp in DN_vs_DP DN_vs_EbKO DN_vs_ProB DN_vs_S3T3; do
-  sbatch -p dbhiq,defq -t 24:00:00 -c 2 --mem=100G --wrap="python3 $BEARING/regional_enrichment.py batch \
-      --diff-table $RESULTS/diff_${cmp}.stats.tsv \
-      --regions tcrb_regions_v5.bed --locus chr6:40790000-41690000 \
-      --out enrich_${cmp}_tcrb_regions_v5.tsv"
-done
-python3 $BEARING/consolidate_regional_enrichment.py \
-    --tsvs "enrich_DN_vs_*_tcrb_regions_v5.tsv" "enrich_DN_vs_*_igh_*.tsv" \
-    --out consolidated_enrichment.tsv
-# Table S3: CBE regional enrichment (DN vs DP, Tcrb window). CBEs are treated
-# here as regions (distinct from the sub-bin CBE point query). CBEs are ~18 bp
-# (smaller than the 200 bp bin), so --region-assign overlap is required.
-sbatch -p dbhiq,defq -t 24:00:00 -c 2 --mem=100G --wrap="python3 $BEARING/regional_enrichment.py batch \
-    --diff-table $RESULTS/diff_DN_vs_DP.stats.tsv \
-    --regions cbe_mm10.bed --region-assign overlap --locus chr6:40790000-41690000 \
-    --out enrich_DN_vs_DP_cbe.tsv"
-python3 $BEARING/render_regional_enrichment_heatmap.py \
-    --tsv consolidated_enrichment.tsv --out panel_E_heatmap.pdf \
-    --comparisons DN_vs_DP DN_vs_EbKO DN_vs_Pro-B DN_vs_3T3
+# --- Table S14 + Supplementary Figure S11: differential-floor sensitivity ---
+# Reuses the production diff qcats and the production permutation null; only the
+# floor varies. Do NOT subsample the null: with ~5M tests, BH significance needs
+# p ~1e-8 and the smallest attainable p is 1/(n_null+1).
+#
+# srun -p dbhiq,defq --mem=32G --cpus-per-task=12 --time=2:00:00 \
+#   python3 pvminsig_sweep.py \
+#       --diff-dir $OUT/compare \
+#       --perm-glob "$OUT/perm/perm*/diff_comparison" \
+#       --comparisons DN_vs_DP DN_vs_EbKO DN_vs_ProB DN_vs_S3T3 \
+#       --floors 0.1 0.25 0.5 1.0 1.5 --threads 12 \
+#       --out $OUT/sens/floor_sweep.tsv --verify $OUT/pvalue
+#
+# --verify must report [OK] at floor 0.5 for every comparison: that arm IS the
+# production floor, so it must reproduce production exactly.
+#
+# TODO: Supplementary Figure S11 itself has no script yet; it was built ad hoc.
+# See PROMPT_S11_reproducible_pipeline.md.
 
-# ---------------- Phase 6: BEARING + Hi-C figures (batch) -------------------
-sbatch -p dbhiq,defq -t 24:00:00 -c 2 --mem=100G --wrap="python3 $BEARING/batch_bearing_hic_plots.py \
-    --sheet $SHEET --regions-file $REGIONS --reference-condition DN \
-    --contact DN=../hic_files/merged_corrected_KR_DN_bs_10000.cool \
-    --contact DP=../hic_files/merged_corrected_KR_DP_bs_10000.cool \
-    --contact EbKO=../hic_files/merged_corrected_KR_EBKO_bs_10000.cool \
-    --contact ProB=../hic_files/merged_corrected_KR_ProB_bs_10000.cool \
-    --contact S3T3=../hic_files/merged_corrected_KR_s3T3_bs_10000.cool \
-    --comparison-dir . --gtf $GTF --results-dir $RESULTS/ \
-    --outdir hic_batch --triangle --run"
+# --- score autocorrelation (quoted in Methods: ~967 bp independence length) --
+# python3 dev/score_autocorrelation.py \
+#     --score-col bearing_score --bin-size 200 --max-lag-bp 5000 \
+#     --main-chroms-only < $OUT/pvalue/diff_DN_vs_DP.stats.tsv
 
-# ---------------- Phase 7: Hi-C analyses (Figs 3, 4, S7) -------------------
-# 7-condition set incl. the two V1-perturbation Hi-C backgrounds.
-CONDS="DN DP ProB EbKO S3T3 dV1P dV1CTCF"
-for res in 100000 25000 250000 500000; do
-  python3 $BEARING/hic/tad_extension_analysis.py --tad-dir ../tads/ --resolution $res \
-      --conditions $CONDS --anchor chr6:41550000 \
-      --features-bed tcrb_extension_features.bed --out-prefix tcrb_tad_${res} --plot
-done
-for res in 100000 250000 500000; do
-  python3 $BEARING/hic/compartment_analysis.py \
-      --pc1 $(for c in $CONDS; do echo $c=../comp/merged_corrected_KR_${c}_bs_${res}_pca1.bw; done | tr '\n' ' ') \
-      --region chr6:39000000-55000000 --features-bed tcrb_extension_features.bed \
-      --tad-dir ../tads/ --tad-resolution $res --orient-with-gtf $GTF \
-      --out-prefix tcrb_compartment_${res}
-done
-python3 $BEARING/hic/tcrb_contact_isolation.py \
-    --cool $(for c in $CONDS; do echo $c=../hic_files/merged_corrected_KR_${c}_bs_10000.cool; done | tr '\n' ' ') \
-    --target chr6:40850000-41600000 --window-size 750000 --max-distance 6000000 \
-    --perm-n 200 --out-prefix tcrb_isolation_OE_perm_10K
-# cross-locus BES-Hi-C co-localization (pooled AR loci)
-python3 $BEARING/hic/bes_hic_crosslocus.py \
-    --diffs DN_vs_DP=$RESULTS/diff_DN_vs_DP.stats.tsv DN_vs_ProB=$RESULTS/diff_DN_vs_ProB.stats.tsv \
-    --cool-a ../hic_files/merged_corrected_KR_DN_bs_10000.cool \
-    --cool-b DN_vs_DP=../hic_files/merged_corrected_KR_DP_bs_10000.cool \
-             DN_vs_ProB=../hic_files/merged_corrected_KR_ProB_bs_10000.cool \
-    --targets targets.tsv --hic-bin 10000 --aggregation p95 --contact-metric delta_contact \
-    --n-controls 200 --n-panels 1000 --blacklist mm10-blacklist.v2.bed \
-    --gtf $GTF --match-gene-density --out-prefix crosslocus_p95_dcontact
+# ===========================================================================
+# Phase 3: manuscript tables and figures
+# ===========================================================================
+#
+# GAP -- BE HONEST ABOUT THIS:
+# Nothing in this repository builds the manuscript tables workbook. Tables 1 and
+# S1-S14 are assembled by hand from the TSVs produced above. The NUMBERS are
+# reproducible (every one traces to a script in Phase 1 or Phase 2); the
+# WORKBOOK is not.
+#
+# TODO: build_tables.py -- read the Phase 1/2 outputs, emit the workbook, so
+# that the tables are regenerable rather than transcribed.
+#
+# The figure deck likewise assembles panels from $OUT/paper_figures/ plus
+# pyGenomeTracks output by hand.
 
-# ---------------- Phase 8: within-condition FDR calibration (Table S6) -----
-bash $BEARING/run_replicate_calibration.sh   # uses the same null machinery
-
-# ---------------- Phase 9: cross-comparison decomposition report -----------
-python3 $BEARING/bearing_decomposition_report.py \
-    --diff-dir $RESULTS --categories DN_rep1_cats.json --out cross_comparison --top-n 500
-
-# ---------------- Phase 10: synthetic benchmark (simulated data) -----------
-python3 $BEARING/benchmark/simulate_bearing_tracks.py --prefix sim --seed 1
-python3 $BEARING/benchmark/evaluate_bearing_recovery.py --prefix sim --out-prefix recovery
-bash $BEARING/benchmark/run_bearing_recovery_sweep.sh
-python3 $BEARING/benchmark/plot_bearing_sweep.py --master sweep_master.tsv --out-prefix sweep
+echo "This script is documentation, not an entrypoint. Step through the phases."
+echo "Parameters live in $CONFIG -- not here."
