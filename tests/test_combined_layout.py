@@ -87,3 +87,24 @@ def test_make_rgb_red_green_joint_match_is_yellow():
     r = make_rgb_hic(np.array([[10.0]]), np.array([[0.0]]),
                      palette="red-green", joint_norm=True)[0, 0]
     assert r[0] > 0 and r[1] == 0 and r[2] == 0   # A-only -> red
+
+
+def test_loops_with_offframe_partner_still_draw():
+    """A loop with one anchor in-frame and its partner outside the plotted
+    region must still draw a (partial) arc, not be dropped."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Arc
+    from bearing_hic_plot import draw_loops_horizontal
+    rs, re_ = 40_400_000, 42_300_000
+    loops = [
+        (41_000_000, 41_010_000, 41_500_000, 41_510_000, 1.0),  # both in-frame
+        (41_200_000, 41_210_000, 43_000_000, 43_010_000, 1.0),  # partner off right
+        (39_000_000, 39_010_000, 41_400_000, 41_410_000, 1.0),  # partner off left
+    ]
+    fig, ax = plt.subplots()
+    draw_loops_horizontal(ax, loops, rs, re_, label="loops")
+    arcs = [p for p in ax.patches if isinstance(p, Arc)]
+    plt.close(fig)
+    assert len(arcs) == 3

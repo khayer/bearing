@@ -856,10 +856,19 @@ def make_combined_figure(
         ax_rgb = axes["rgb"]
         ax_rgb.set_axis_off()
         _draw_rgb_triangle(ax_rgb, rgb_image, inverted=False)
+        # Label colors follow the palette's A/B channels so they match the image.
+        _rgb_label_colors = {
+            "red-green": ("#cc0000", "#00a83a"),
+            "magenta-green": ("#cc00cc", "#00a83a"),
+            "magenta-green-white": ("#cc00cc", "#00a83a"),
+            "blue-red": ("#1f4fd8", "#cc0000"),
+            "green-blue": ("#00a83a", "#1f4fd8"),
+        }
+        _ca, _cb = _rgb_label_colors.get(rgb_palette, ("#cc0000", "#00a83a"))
         ax_rgb.text(0.06, 0.94, label_a, transform=ax_rgb.transAxes, fontsize=8,
-                    color="#cc00cc", ha="left", va="top", fontweight="bold")
+                    color=_ca, ha="left", va="top", fontweight="bold")
         ax_rgb.text(0.94, 0.94, label_b, transform=ax_rgb.transAxes, fontsize=8,
-                    color="#00a83a", ha="right", va="top", fontweight="bold")
+                    color=_cb, ha="right", va="top", fontweight="bold")
 
     # ---- genomic Hi-C triangles (single A, single B, diff) ----
     for k in show_hic_list:

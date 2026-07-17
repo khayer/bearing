@@ -737,8 +737,12 @@ def load_loops(loops_path, chrom, start, end):
                     continue
             if _norm_chrom(c1) != want or _norm_chrom(c2) != want:
                 continue
-            # Keep if either anchor overlaps the region
-            if e1 < start or s1 > end:
+            # Keep if EITHER anchor overlaps the region (a loop with one anchor
+            # in-frame and a distal partner still matters -- it is drawn as a
+            # partial arc reaching the frame edge).
+            in1 = (e1 >= start and s1 <= end)
+            in2 = (e2 >= start and s2 <= end)
+            if not (in1 or in2):
                 continue
             loops.append((s1, e1, s2, e2, score))
     return loops

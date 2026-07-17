@@ -824,22 +824,29 @@ def draw_loops_horizontal(ax, loops, region_start, region_end,
         max_score = max(max_score, 1e-9)
 
         for s1, e1, s2, e2, score in loops:
-            a1s = genomic_to_ax(max(s1, region_start), region_start, region_end)
-            a1e = genomic_to_ax(min(e1, region_end), region_start, region_end)
-            a2s = genomic_to_ax(max(s2, region_start), region_start, region_end)
-            a2e = genomic_to_ax(min(e2, region_end), region_start, region_end)
-            if a1e <= 0 or a2e <= 0 or a1s >= 1 or a2s >= 1:
+            in1 = (e1 >= region_start and s1 <= region_end)
+            in2 = (e2 >= region_start and s2 <= region_end)
+            if not (in1 or in2):
                 continue
 
             # Short anchor boxes pinned to the baseline (default 10% height) so
-            # they don't obscure the arcs; semi-transparent so overlaps read.
-            ax.axvspan(a1s, a1e, ymin=0.0, ymax=anchor_height,
-                       color=anchor_color, alpha=0.6, zorder=1)
-            ax.axvspan(a2s, a2e, ymin=0.0, ymax=anchor_height,
-                       color=anchor_color, alpha=0.6, zorder=1)
+            # they don't obscure the arcs; drawn only for anchors in-frame.
+            if in1:
+                ax.axvspan(genomic_to_ax(max(s1, region_start), region_start, region_end),
+                           genomic_to_ax(min(e1, region_end), region_start, region_end),
+                           ymin=0.0, ymax=anchor_height,
+                           color=anchor_color, alpha=0.6, zorder=1)
+            if in2:
+                ax.axvspan(genomic_to_ax(max(s2, region_start), region_start, region_end),
+                           genomic_to_ax(min(e2, region_end), region_start, region_end),
+                           ymin=0.0, ymax=anchor_height,
+                           color=anchor_color, alpha=0.6, zorder=1)
 
-            m1 = genomic_to_ax(0.5 * (s1 + e1), region_start, region_end)
-            m2 = genomic_to_ax(0.5 * (s2 + e2), region_start, region_end)
+            # Arc between anchor midpoints, each CLAMPED to [0,1] so a loop whose
+            # partner is off-frame is drawn as a partial arc reaching the edge
+            # (instead of being dropped -- that hid every long-range loop).
+            m1 = min(1.0, max(0.0, genomic_to_ax(0.5 * (s1 + e1), region_start, region_end)))
+            m2 = min(1.0, max(0.0, genomic_to_ax(0.5 * (s2 + e2), region_start, region_end)))
             left, right = sorted([m1, m2])
             width = right - left
             if width <= 0:
