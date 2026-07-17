@@ -1,0 +1,553 @@
+readout	region	pairing	metric	value	p
+reproducibility	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	fold	0	1.0
+reproducibility	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	fold	0	1.0
+reproducibility	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	fold	1.63936	0.4583136793762802
+reproducibility	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	fold	0.489402	0.9444407042324943
+reproducibility	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	fold	1.79447	0.04733742571279015
+reproducibility	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	fold	0.652536	0.8613506829887796
+reproducibility	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	fold	1.63134	0.09208503844945458
+reproducibility	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	fold	0	1.0
+reproducibility	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	fold	0	1.0
+reproducibility	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	fold	0	1.0
+reproducibility	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	fold	1.69493	0.4473152132321967
+reproducibility	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	fold	0.578041	0.8242558277873052
+reproducibility	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	fold	1.15608	0.5171375336147286
+reproducibility	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	fold	0.578041	0.8242558277873052
+reproducibility	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	fold	0	1.0
+reproducibility	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	fold	0	1.0
+reproducibility	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	fold	0	1.0
+reproducibility	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	fold	0.52494	0.9462046878780639
+reproducibility	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	fold	0.78741	0.7728258534126995
+reproducibility	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	fold	0.78741	0.7728258534126995
+reproducibility	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	fold	1.18112	0.35428985953036973
+reproducibility	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	fold	5.29807	7.792708136832918e-11
+reproducibility	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	fold	4.85657	2.3204387978930985e-09
+reproducibility	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	fold	5.51883	1.3389230567204769e-11
+reproducibility	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	fold	5.51883	1.3389230567204769e-11
+reproducibility	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	fold	4.93833	0.009036946595185035
+reproducibility	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	fold	3.70375	0.04799302290465483
+reproducibility	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	fold	4.93833	0.009036946595185035
+reproducibility	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	fold	2.56121	2.5997757883377597e-08
+reproducibility	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	fold	1.70747	0.004105004724567825
+reproducibility	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	fold	1.65056	0.007325657467206695
+reproducibility	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	fold	1.19523	0.2348532603484065
+reproducibility	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	fold	2.05482	0.000490768612214153
+reproducibility	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	fold	2.05482	0.000490768612214153
+reproducibility	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	fold	1.8265	0.004306119499654506
+reproducibility	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	fold	1.7504	0.008247778105817697
+reproducibility	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	fold	0.757584	0.7346355528735664
+reproducibility	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	fold	0	1.0
+reproducibility	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	fold	0.757584	0.7346355528735664
+reproducibility	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	fold	0	1.0
+reproducibility	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	fold	0	1.0
+reproducibility	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	fold	1.11112	0.5952679813960947
+reproducibility	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	fold	2.22225	0.22732571913970906
+reproducibility	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	fold	0.404863	0.9164643105117372
+reproducibility	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	fold	0.404863	0.9164643105117372
+reproducibility	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	fold	0.404863	0.9164643105117372
+reproducibility	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	fold	0.404863	0.9164643105117372
+reproducibility	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	fold	1.67366	0.11034669834990557
+reproducibility	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	fold	1.46445	0.2055329739403374
+reproducibility	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	fold	1.04604	0.520809251046652
+reproducibility	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	fold	0.627622	0.8569010979451552
+reproducibility	Wapl	DN_rep1_vs_ProB_rep1	fold	3.00191	0.00012764932252968395
+reproducibility	Wapl	DN_rep1_vs_ProB_rep2	fold	5.25334	2.673517898478809e-12
+reproducibility	Wapl	DN_rep2_vs_ProB_rep1	fold	8.06763	4.141259100408765e-25
+reproducibility	Wapl	DN_rep2_vs_ProB_rep2	fold	13.321	3.439416722109079e-55
+reproducibility	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	fold	0.93634	0.6560327657702794
+reproducibility	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	fold	1.16106	0.22537773826433535
+reproducibility	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	fold	1.12361	0.28530987942746594
+reproducibility	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	fold	1.31088	0.0690737448312436
+reproducibility	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	fold	0.865811	0.672956752339457
+reproducibility	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	fold	1.29872	0.4070182675024436
+reproducibility	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	fold	0.432905	0.9018902150699334
+reproducibility	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	fold	0.874645	0.6673845420712388
+reproducibility	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	fold	0.583097	0.8578860104593444
+reproducibility	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	fold	0	1.0
+reproducibility	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	fold	0	1.0
+reproducibility	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	fold	0.555562	0.9063741945623981
+reproducibility	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	fold	1.11112	0.4542088129064915
+reproducibility	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	fold	0.925936	0.6278208508955387
+reproducibility	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	fold	1.11112	0.4542088129064915
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	ATAC	0.174896	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	RNA+	0.0101865	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	RNA-	0.00102787	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	CTCF	0.275288	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	Cohesin	0.269128	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep1	H3K27ac	0.269474	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	ATAC	0.0612206	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	RNA+	0.0107452	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	RNA-	0.00108042	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	CTCF	0.259504	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	Cohesin	0.295711	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep1_vs_ProB_rep2	H3K27ac	0.371738	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	ATAC	0.177706	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	RNA+	3.69275e-05	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	RNA-	0	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	CTCF	0.219376	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	Cohesin	0.369174	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep1	H3K27ac	0.233707	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	ATAC	0.0585616	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	RNA+	0	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	RNA-	0	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	CTCF	0.208007	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	Cohesin	0.389941	
+attribution	Trbv1 (5-prime Vbeta outlier)	DN_rep2_vs_ProB_rep2	H3K27ac	0.34349	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	ATAC	0.104585	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	RNA+	0.0661374	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	RNA-	0.046724	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	CTCF	0.257966	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	Cohesin	0.303785	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep1	H3K27ac	0.220802	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	ATAC	0.048243	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	RNA+	0.0787381	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	RNA-	0.0583952	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	CTCF	0.233305	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	Cohesin	0.365233	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep1_vs_ProB_rep2	H3K27ac	0.216085	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	ATAC	0.0984507	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	RNA+	0.0587831	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	RNA-	0.0376816	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	CTCF	0.201632	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	Cohesin	0.337267	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep1	H3K27ac	0.266185	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	ATAC	0.0483488	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	RNA+	0.0707831	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	RNA-	0.0499989	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	CTCF	0.208536	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	Cohesin	0.366195	
+attribution	Vbeta cluster (Trbv2-Trbv30)	DN_rep2_vs_ProB_rep2	H3K27ac	0.256138	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	ATAC	0.0965819	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	RNA+	0	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	RNA-	0	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	CTCF	0.229558	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	Cohesin	0.317431	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep1	H3K27ac	0.356429	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	ATAC	0.0732581	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	RNA+	0.00146641	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	RNA-	0	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	CTCF	0.232402	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	Cohesin	0.357626	
+attribution	NEGCTL inter-cluster silent	DN_rep1_vs_ProB_rep2	H3K27ac	0.335247	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	ATAC	0.0807788	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	RNA+	0	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	RNA-	0.00170301	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	CTCF	0.224889	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	Cohesin	0.294208	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep1	H3K27ac	0.398421	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	ATAC	0.0711464	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	RNA+	0.00136873	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	RNA-	0.00154393	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	CTCF	0.256185	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	Cohesin	0.324925	
+attribution	NEGCTL inter-cluster silent	DN_rep2_vs_ProB_rep2	H3K27ac	0.344831	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	ATAC	0.0594883	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	RNA+	0.280356	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	RNA-	0.100874	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	CTCF	0.184658	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	Cohesin	0.192345	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep1	H3K27ac	0.182277	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	ATAC	0.0448505	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	RNA+	0.287368	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	RNA-	0.104241	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	CTCF	0.151893	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	Cohesin	0.2651	
+attribution	DJ_RC (recombination center)	DN_rep1_vs_ProB_rep2	H3K27ac	0.146547	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	ATAC	0.0552481	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	RNA+	0.322756	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	RNA-	0.0390575	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	CTCF	0.121797	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	Cohesin	0.257937	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep1	H3K27ac	0.203205	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	ATAC	0.0423872	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	RNA+	0.332572	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	RNA-	0.0402319	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	CTCF	0.104045	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	Cohesin	0.311296	
+attribution	DJ_RC (recombination center)	DN_rep2_vs_ProB_rep2	H3K27ac	0.169469	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	ATAC	0.216478	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	RNA+	0.0709302	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	RNA-	0.00428223	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	CTCF	0.204652	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	Cohesin	0.364409	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep1	H3K27ac	0.139248	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	ATAC	0.041987	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	RNA+	0.0558815	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	RNA-	0.00424454	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	CTCF	0.162504	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	Cohesin	0.265397	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep1_vs_ProB_rep2	H3K27ac	0.469986	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	ATAC	0.20958	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	RNA+	0.0456688	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	RNA-	0.01442	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	CTCF	0.0970842	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	Cohesin	0.358864	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep1	H3K27ac	0.274383	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	ATAC	0.05346	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	RNA+	0.0482308	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	RNA-	0.016587	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	CTCF	0.0523843	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	Cohesin	0.321235	
+attribution	Ebeta/Trbv31/CBE3 (EbKO deletion)	DN_rep2_vs_ProB_rep2	H3K27ac	0.508103	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	ATAC	0.0764417	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	RNA+	0.38392	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	RNA-	0.00262965	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	CTCF	0.0805918	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	Cohesin	0.2526	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep1	H3K27ac	0.203816	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	ATAC	0.0567773	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	RNA+	0.363828	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	RNA-	0.00117505	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	CTCF	0.0774907	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	Cohesin	0.279372	
+attribution	NEGCTL 3-prime flanking silent	DN_rep1_vs_ProB_rep2	H3K27ac	0.221357	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	ATAC	0.0800018	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	RNA+	0.396096	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	RNA-	0.00283196	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	CTCF	0.0666296	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	Cohesin	0.241856	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep1	H3K27ac	0.212584	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	ATAC	0.0565682	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	RNA+	0.36561	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	RNA-	0.00213877	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	CTCF	0.085305	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	Cohesin	0.272019	
+attribution	NEGCTL 3-prime flanking silent	DN_rep2_vs_ProB_rep2	H3K27ac	0.218359	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	ATAC	0.0364341	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	RNA+	0.00350249	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	RNA-	0.257145	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	CTCF	0.130804	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	Cohesin	0.219654	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep1	H3K27ac	0.35246	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	ATAC	0.071969	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	RNA+	0.00305439	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	RNA-	0.230096	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	CTCF	0.0979952	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	Cohesin	0.22212	
+attribution	CH/JH/iEmu (constant region)	DN_rep1_vs_ProB_rep2	H3K27ac	0.374765	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	ATAC	0.0404604	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	RNA+	0.00167091	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	RNA-	0.272661	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	CTCF	0.210573	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	Cohesin	0.1817	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep1	H3K27ac	0.292935	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	ATAC	0.0782523	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	RNA+	0.00136462	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	RNA-	0.23916	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	CTCF	0.18399	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	Cohesin	0.206504	
+attribution	CH/JH/iEmu (constant region)	DN_rep2_vs_ProB_rep2	H3K27ac	0.290729	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	ATAC	0.0121642	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	RNA+	0.450657	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	RNA-	0.000874377	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	CTCF	0.202937	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	Cohesin	0.201201	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep1	H3K27ac	0.132166	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	ATAC	0.00776241	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	RNA+	0.438381	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	RNA-	0.0009163	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	CTCF	0.217318	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	Cohesin	0.201392	
+attribution	DH cluster (diversity segments)	DN_rep1_vs_ProB_rep2	H3K27ac	0.134231	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	ATAC	0.0130171	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	RNA+	0.480119	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	RNA-	0.000607859	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	CTCF	0.161475	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	Cohesin	0.218239	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep1	H3K27ac	0.126542	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	ATAC	0.00827895	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	RNA+	0.465322	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	RNA-	0.000634877	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	CTCF	0.167076	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	Cohesin	0.229741	
+attribution	DH cluster (diversity segments)	DN_rep2_vs_ProB_rep2	H3K27ac	0.128947	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	ATAC	0.0519466	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	RNA+	0.22599	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	RNA-	0.0146255	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	CTCF	0.247925	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	Cohesin	0.296257	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep1	H3K27ac	0.163256	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	ATAC	0.0292701	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	RNA+	0.179188	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	RNA-	0.0107846	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	CTCF	0.254782	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	Cohesin	0.305405	
+attribution	VH proximal (~1.4 Mb)	DN_rep1_vs_ProB_rep2	H3K27ac	0.220571	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	ATAC	0.0522116	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	RNA+	0.23711	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	RNA-	0.0140835	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	CTCF	0.217839	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	Cohesin	0.306738	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep1	H3K27ac	0.172018	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	ATAC	0.0283479	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	RNA+	0.190625	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	RNA-	0.010305	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	CTCF	0.241897	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	Cohesin	0.322412	
+attribution	VH proximal (~1.4 Mb)	DN_rep2_vs_ProB_rep2	H3K27ac	0.206413	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	ATAC	0.101555	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	RNA+	0.151712	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	RNA-	0.0721138	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	CTCF	0.22645	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	Cohesin	0.293599	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep1	H3K27ac	0.15457	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	ATAC	0.0313294	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	RNA+	0.13301	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	RNA-	0.0418475	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	CTCF	0.244149	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	Cohesin	0.30672	
+attribution	VH distal (~1.1 Mb)	DN_rep1_vs_ProB_rep2	H3K27ac	0.242943	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	ATAC	0.105068	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	RNA+	0.145816	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	RNA-	0.0750117	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	CTCF	0.187769	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	Cohesin	0.312927	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep1	H3K27ac	0.173408	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	ATAC	0.0335924	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	RNA+	0.136662	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	RNA-	0.0470385	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	CTCF	0.198133	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	Cohesin	0.338922	
+attribution	VH distal (~1.1 Mb)	DN_rep2_vs_ProB_rep2	H3K27ac	0.245651	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	ATAC	0.0781741	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	RNA+	0.156457	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	RNA-	0.455784	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	CTCF	0.0425764	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	Cohesin	0.155602	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep1	H3K27ac	0.111406	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	ATAC	0.0320363	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	RNA+	0.150877	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	RNA-	0.431001	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	CTCF	0.0568719	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	Cohesin	0.18223	
+attribution	Gapdh (housekeeping)	DN_rep1_vs_ProB_rep2	H3K27ac	0.146985	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	ATAC	0.0929561	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	RNA+	0.175812	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	RNA-	0.424398	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	CTCF	0.0248542	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	Cohesin	0.177341	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep1	H3K27ac	0.104639	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	ATAC	0.0343491	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	RNA+	0.148523	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	RNA-	0.434217	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	CTCF	0.0678381	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	Cohesin	0.184393	
+attribution	Gapdh (housekeeping)	DN_rep2_vs_ProB_rep2	H3K27ac	0.13068	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	ATAC	0.263215	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	RNA+	0.000415089	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	RNA-	0.174572	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	CTCF	0.0811798	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	Cohesin	0.354803	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep1	H3K27ac	0.125815	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	ATAC	0.0711323	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	RNA+	0.000501275	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	RNA-	0.183829	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	CTCF	0.0840581	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	Cohesin	0.416615	
+attribution	Actb (housekeeping)	DN_rep1_vs_ProB_rep2	H3K27ac	0.243864	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	ATAC	0.288304	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	RNA+	0	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	RNA-	0.266499	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	CTCF	0.0254414	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	Cohesin	0.269676	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep1	H3K27ac	0.15008	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	ATAC	0.0826942	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	RNA+	0	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	RNA-	0.323678	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	CTCF	0.0476663	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	Cohesin	0.339129	
+attribution	Actb (housekeeping)	DN_rep2_vs_ProB_rep2	H3K27ac	0.206833	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	ATAC	0.122318	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	RNA+	0.190888	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	RNA-	0.003583	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	CTCF	0.196268	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	Cohesin	0.247138	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep1	H3K27ac	0.239805	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	ATAC	0.0657221	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	RNA+	0.205446	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	RNA-	0.00231226	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	CTCF	0.163526	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	Cohesin	0.323544	
+attribution	Emc7 (housekeeping)	DN_rep1_vs_ProB_rep2	H3K27ac	0.239449	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	ATAC	0.122484	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	RNA+	0.184206	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	RNA-	0.00308945	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	CTCF	0.130022	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	Cohesin	0.27789	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep1	H3K27ac	0.282309	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	ATAC	0.0686131	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	RNA+	0.202597	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	RNA-	0.00260217	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	CTCF	0.145344	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	Cohesin	0.321077	
+attribution	Emc7 (housekeeping)	DN_rep2_vs_ProB_rep2	H3K27ac	0.259767	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	ATAC	0.067898	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	RNA+	0.221949	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	RNA-	0.0460204	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	CTCF	0.209774	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	Cohesin	0.286603	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep1	H3K27ac	0.167755	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	ATAC	0.0753927	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	RNA+	0.140655	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	RNA-	0.0537842	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	CTCF	0.207682	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	Cohesin	0.345195	
+attribution	Col1a1 (fibroblast marker)	DN_rep1_vs_ProB_rep2	H3K27ac	0.177292	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	ATAC	0.0730185	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	RNA+	0.22326	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	RNA-	0.0314118	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	CTCF	0.16458	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	Cohesin	0.343992	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep1	H3K27ac	0.163738	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	ATAC	0.078225	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	RNA+	0.135659	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	RNA-	0.0351157	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	CTCF	0.191055	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	Cohesin	0.402188	
+attribution	Col1a1 (fibroblast marker)	DN_rep2_vs_ProB_rep2	H3K27ac	0.157757	
+attribution	Wapl	DN_rep1_vs_ProB_rep1	ATAC	0.11803	
+attribution	Wapl	DN_rep1_vs_ProB_rep1	RNA+	0.291893	
+attribution	Wapl	DN_rep1_vs_ProB_rep1	RNA-	0.018376	
+attribution	Wapl	DN_rep1_vs_ProB_rep1	CTCF	0.178457	
+attribution	Wapl	DN_rep1_vs_ProB_rep1	Cohesin	0.25521	
+attribution	Wapl	DN_rep1_vs_ProB_rep1	H3K27ac	0.138034	
+attribution	Wapl	DN_rep1_vs_ProB_rep2	ATAC	0.0768559	
+attribution	Wapl	DN_rep1_vs_ProB_rep2	RNA+	0.330782	
+attribution	Wapl	DN_rep1_vs_ProB_rep2	RNA-	0.0190276	
+attribution	Wapl	DN_rep1_vs_ProB_rep2	CTCF	0.150243	
+attribution	Wapl	DN_rep1_vs_ProB_rep2	Cohesin	0.295395	
+attribution	Wapl	DN_rep1_vs_ProB_rep2	H3K27ac	0.127697	
+attribution	Wapl	DN_rep2_vs_ProB_rep1	ATAC	0.101597	
+attribution	Wapl	DN_rep2_vs_ProB_rep1	RNA+	0.393791	
+attribution	Wapl	DN_rep2_vs_ProB_rep1	RNA-	0.0112591	
+attribution	Wapl	DN_rep2_vs_ProB_rep1	CTCF	0.1519	
+attribution	Wapl	DN_rep2_vs_ProB_rep1	Cohesin	0.255481	
+attribution	Wapl	DN_rep2_vs_ProB_rep1	H3K27ac	0.0859716	
+attribution	Wapl	DN_rep2_vs_ProB_rep2	ATAC	0.0660699	
+attribution	Wapl	DN_rep2_vs_ProB_rep2	RNA+	0.418528	
+attribution	Wapl	DN_rep2_vs_ProB_rep2	RNA-	0.0113959	
+attribution	Wapl	DN_rep2_vs_ProB_rep2	CTCF	0.152448	
+attribution	Wapl	DN_rep2_vs_ProB_rep2	Cohesin	0.280027	
+attribution	Wapl	DN_rep2_vs_ProB_rep2	H3K27ac	0.0715315	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	ATAC	0.114889	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	RNA+	0.159138	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	RNA-	0.0719617	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	CTCF	0.209592	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	Cohesin	0.265532	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep1	H3K27ac	0.178887	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	ATAC	0.0850504	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	RNA+	0.1643	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	RNA-	0.0752665	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	CTCF	0.203334	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	Cohesin	0.268505	
+attribution	Igk (B-lineage locus)	DN_rep1_vs_ProB_rep2	H3K27ac	0.203545	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	ATAC	0.101257	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	RNA+	0.143715	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	RNA-	0.0780051	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	CTCF	0.230168	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	Cohesin	0.272366	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep1	H3K27ac	0.174489	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	ATAC	0.0681235	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	RNA+	0.142747	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	RNA-	0.0804198	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	CTCF	0.242339	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	Cohesin	0.275501	
+attribution	Igk (B-lineage locus)	DN_rep2_vs_ProB_rep2	H3K27ac	0.19087	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	ATAC	0.044417	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	RNA+	0.00338091	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	RNA-	0.00266579	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	CTCF	0.294374	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	Cohesin	0.315119	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep1	H3K27ac	0.340043	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	ATAC	0.0474623	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	RNA+	0.00666758	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	RNA-	0.004749	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	CTCF	0.224554	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	Cohesin	0.436026	
+attribution	Tcrb upstream (flanking)	DN_rep1_vs_ProB_rep2	H3K27ac	0.280541	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	ATAC	0.0521121	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	RNA+	0.00238585	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	RNA-	0.00234902	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	CTCF	0.344344	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	Cohesin	0.27735	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep1	H3K27ac	0.32146	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	ATAC	0.0562274	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	RNA+	0.00548468	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	RNA-	0.00448247	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	CTCF	0.302477	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	Cohesin	0.425764	
+attribution	Tcrb upstream (flanking)	DN_rep2_vs_ProB_rep2	H3K27ac	0.205564	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	ATAC	0.11824	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	RNA+	0.00626477	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	RNA-	0.0983136	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	CTCF	0.177676	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	Cohesin	0.415648	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep1	H3K27ac	0.183858	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	ATAC	0.0916189	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	RNA+	0.00686082	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	RNA-	0.103793	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	CTCF	0.185121	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	Cohesin	0.425922	
+attribution	Cd4 (induced at DP)	DN_rep1_vs_ProB_rep2	H3K27ac	0.186684	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	ATAC	0.124362	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	RNA+	0.00610622	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	RNA-	0.0766236	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	CTCF	0.154629	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	Cohesin	0.45604	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep1	H3K27ac	0.182239	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	ATAC	0.0910264	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	RNA+	0.00611937	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	RNA-	0.13199	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	CTCF	0.175779	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	Cohesin	0.428437	
+attribution	Cd4 (induced at DP)	DN_rep2_vs_ProB_rep2	H3K27ac	0.166648	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	ATAC	0.0484907	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	RNA+	0.0026311	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	RNA-	0.235091	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	CTCF	0.180642	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	Cohesin	0.307843	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep1	H3K27ac	0.225302	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	ATAC	0.0262727	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	RNA+	0.0871686	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	RNA-	0.262832	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	CTCF	0.138299	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	Cohesin	0.312288	
+attribution	Cd8a (induced at DP)	DN_rep1_vs_ProB_rep2	H3K27ac	0.173139	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	ATAC	0.0529025	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	RNA+	0.0033028	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	RNA-	0.304981	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	CTCF	0.164106	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	Cohesin	0.276038	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep1	H3K27ac	0.19867	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	ATAC	0.0285365	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	RNA+	0.0929445	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	RNA-	0.255716	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	CTCF	0.154552	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	Cohesin	0.312711	
+attribution	Cd8a (induced at DP)	DN_rep2_vs_ProB_rep2	H3K27ac	0.155541	
+sign_concordance	genome_wide	all_pairings	frac	0.507426	
+sign_concordance	Trbv1 (5-prime Vbeta outlier)	all_pairings	frac	0.540984	
+sign_concordance	Vbeta cluster (Trbv2-Trbv30)	all_pairings	frac	0.49429	
+sign_concordance	NEGCTL inter-cluster silent	all_pairings	frac	0.491525	
+sign_concordance	DJ_RC (recombination center)	all_pairings	frac	0.624277	
+sign_concordance	Ebeta/Trbv31/CBE3 (EbKO deletion)	all_pairings	frac	0.583333	
+sign_concordance	NEGCTL 3-prime flanking silent	all_pairings	frac	0.599738	
+sign_concordance	CH/JH/iEmu (constant region)	all_pairings	frac	0.671082	
+sign_concordance	DH cluster (diversity segments)	all_pairings	frac	0.703704	
+sign_concordance	VH proximal (~1.4 Mb)	all_pairings	frac	0.578828	
+sign_concordance	VH distal (~1.1 Mb)	all_pairings	frac	0.543379	
+sign_concordance	Gapdh (housekeeping)	all_pairings	frac	0.606061	
+sign_concordance	Actb (housekeeping)	all_pairings	frac	0.333333	
+sign_concordance	Emc7 (housekeeping)	all_pairings	frac	0.506073	
+sign_concordance	Col1a1 (fibroblast marker)	all_pairings	frac	0.598326	
+sign_concordance	Wapl	all_pairings	frac	0.673546	
+sign_concordance	Igk (B-lineage locus)	all_pairings	frac	0.489139	
+sign_concordance	Tcrb upstream (flanking)	all_pairings	frac	0.385281	
+sign_concordance	Cd4 (induced at DP)	all_pairings	frac	0.653061	
+sign_concordance	Cd8a (induced at DP)	all_pairings	frac	0.424074	

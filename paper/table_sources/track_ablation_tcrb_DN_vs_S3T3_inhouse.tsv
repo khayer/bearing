@@ -1,0 +1,6 @@
+region	L_region	k	k_pos	k_neg	p_spatial	p_directional	p_combined
+Trbv1	125	0	0	0	1	1	1
+Vbeta_cluster_main	1250	51	50	1	0.00173975	5.99333e-15	4.18141e-16
+NEGCTL_inter_cluster_silent	869	0	0	0	1	1	1
+DJ_RC	258	55	55	0	3.08831e-34	6.11882e-18	2.22596e-49
+Ebeta_Trbv31_CBE3	50	1	1	0	0.758046	0.486441	0.736623

@@ -1,0 +1,6 @@
+region	L_region	k	k_pos	k_neg	p_spatial	p_directional	p_combined
+NEGCTL_3flanking_silent	850	18	16	2	1	0.000258566	0.00239441
+CH_JH_iEmu	875	113	0	113	2.32967e-06	9.48888e-32	1.8879e-35
+DH_cluster	500	262	0	262	3.8641e-126	1.17778e-72	2.07254e-195
+VH_proximal	7150	331	2	329	1	5.73897e-87	1.14537e-84
+VH_distal	5500	548	2	546	1.96879e-08	4.18164e-146	2.9102e-151

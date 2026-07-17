@@ -7,7 +7,7 @@
 
 executor: slurm
 scheduler: greedy
-jobs: 50                 # max concurrent cluster jobs
+jobs: 144                 # max concurrent cluster jobs
 printshellcmds: true
 rerun-incomplete: true
 # Retry a failed job automatically. Per-sample perm jobs occasionally fail

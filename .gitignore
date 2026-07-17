@@ -177,3 +177,18 @@ workflow/resources/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf
 # not a provenance record. Ignore it; untrack the committed copy once with:
 #   git rm --cached sync_manifest.sha256
 sync_manifest.sha256
+
+# --- large intermediates: never tracked (Zenodo, not git) ---
+workflow/results/
+results/
+results_v1/
+*.stats.tsv          # genome-wide per-bin tables; hundreds of MB
+*.qcat.bgz
+*.qcat.bgz.tbi
+*.bw
+*.bigwig
+*.cool
+*.mcool
+*.gtf
+*.gtf.gz
+*.sif
