@@ -362,24 +362,54 @@ class Spec(object):
     records which file each row came from.
     """
 
-    def __init__(self, sheet, sources, title=None, note=""):
+    def __init__(self, sheet, sources, title=None, note="", expect="one",
+                 label_col=None):
+        # sources: list of glob strings, or (glob, label) pairs. A label is how a
+        # merged table keeps a meaningful column ("min.count=10") instead of a
+        # filename.
+        norm = []
+        for item in (sources if isinstance(sources, (list, tuple)) else [sources]):
+            if isinstance(item, (list, tuple)):
+                norm.append((item[0], item[1] if len(item) > 1 else None))
+            else:
+                norm.append((item, None))
         self.sheet = sheet
-        self.sources = sources if isinstance(sources, (list, tuple)) else [sources]
+        self.sources = norm
+        self.label_col = label_col
         self.title = title or sheet
         self.note = note
+        # "one"  -> exactly one file should match; several means the pattern is
+        #           ambiguous and we must NOT silently pick or merge.
+        # "many" -> the table is genuinely assembled from several files.
+        self.expect = expect
 
     def resolve(self):
+        """Glob every pattern; de-duplicate by REAL PATH.
+
+        Searching both `--sources-dir .` and the repo root yields './x.tsv' and
+        'x.tsv' for the same file. String de-duplication keeps both and the
+        sheet gets every row twice. Resolve to a canonical path first.
+        """
         import glob as _g
         hits = []
-        for pat in self.sources:
+        for pat, _lab in self.sources:
             hits.extend(sorted(_g.glob(pat)))
-        # de-duplicate, preserve order
         seen, out = set(), []
         for h in hits:
-            if h not in seen:
-                seen.add(h)
+            key = os.path.realpath(h)
+            if key not in seen:
+                seen.add(key)
                 out.append(h)
         return out
+
+    def label_for(self, path):
+        """Semantic label for a file if the registry gave one, else its name."""
+        import glob as _g
+        rp = os.path.realpath(path)
+        for pat, label in self.sources:
+            if label and any(os.path.realpath(h) == rp for h in _g.glob(pat)):
+                return label
+        return os.path.basename(path)
 
 
 def table_registry(results, sources):
@@ -405,10 +435,9 @@ def table_registry(results, sources):
         Spec("Table S2 - regional q-values",
              [j("regional", "consolidated_enrichment_tcrb.tsv"),
               j("regional", "consolidated_enrichment_igh.tsv")],
-             note="rule regional_consolidate"),
+             expect="many", note="rule regional_consolidate (one file per locus)"),
         Spec("Table S3 - CBE null",
-             [j("regional", "enrich_cbe_*.tsv"), s("enrich_cbe_*.tsv"),
-              root("enrich_cbe_*.tsv")],
+             [j("regional", "enrich_cbe_*.tsv"), s("enrich_cbe_*.tsv")],
              note="regional_enrichment.py --region-assign overlap on cbe_mm10.bed"),
         Spec("Table S6 - FDR calibration",
              [j("calibration", "calibration_summary.tsv")],
@@ -416,26 +445,40 @@ def table_registry(results, sources):
         Spec("Table S7 - recovery sweep",
              [j("benchmark", "*recovery*.tsv"), s("*recovery*.tsv")],
              note="benchmark rule"),
+        # EXPLICIT, not a glob. Table S8 reports DN-vs-DP ONLY, at two expression
+        # filters (min.count=10 and min.count=3) -- that is what its "Expression
+        # filter" column distinguishes. A rna_concordance_*_summary.tsv glob also
+        # matches DN_vs_EbKO_rc, DN_vs_ProB_igh, DN_vs_ProB_mc3_igh and
+        # fwd_DN_vs_DP: DIFFERENT analyses, belonging to other tables or to none.
+        # Merging them would produce a table that looks authoritative and is not.
         Spec("Table S8 - RNA edgeR validation",
-             [j("tables", "rna_concordance*.tsv"), s("rna_concordance*.tsv"),
-              root("rna_concordance*.tsv")],
-             note="rna_concordance_stranded.R"),
+             [(s("rna_concordance_DN_vs_DP_summary.tsv"), "min.count=10"),
+              (s("rna_concordance_DN_vs_DP_mc3_summary.tsv"), "min.count=3")],
+             expect="many", label_col="Expression filter",
+             note="rna_concordance_stranded.R; DN-vs-DP at two expression filters"),
         Spec("Table S10 - baselines",
-             [s("baseline_comparison*.tsv"), root("baseline_comparison*.tsv")],
+             [s("baseline_comparison*.tsv")],
              note="dev/baseline_comparison.py (NOT a workflow rule)"),
+        # EXPLICIT, not a glob: several regional_null_calibration_* files exist
+        # (tcrb/igh x within/background x different --n-random). They are
+        # DIFFERENT ANALYSES and must not be concatenated. Table S11's own note
+        # records the published run as background mode, n=500, seed=42 -- i.e.
+        # the *_bg files. Confirm before trusting this.
         Spec("Table S11 - regional null",
-             [s("regional_null_calibration_*.tsv"), root("regional_null_calibration_*.tsv")],
-             note="dev/regional_null_calibration.py (NOT a workflow rule). "
-                  "See the open issue on ref_bins matching in reproduce_all.sh."),
+             [s("regional_null_calibration_tcrb_DNrep_bg.tsv"),
+              s("regional_null_calibration_igh_DNrep_bg.tsv")],
+             expect="many",
+             note="dev/regional_null_calibration.py --mode background --n-random 500 "
+                  "--seed 42. See the ref_bins matching issue in reproduce_all.sh."),
         Spec("Table S12 - track ablation",
-             [s("track_ablation_*.tsv"), root("track_ablation_*.tsv")],
-             note="dev/track_ablation.py (NOT a workflow rule)"),
+             [s("track_ablation_*.tsv")],
+             expect="many", note="dev/track_ablation.py (NOT a workflow rule)"),
         Spec("Table S13 - replicate stability",
-             [s("replicate_stability_*.tsv"), root("replicate_stability_*.tsv")],
-             note="dev/replicate_stability.py (NOT a workflow rule)"),
+             [s("replicate_stability_DN_vs_*.tsv")],
+             expect="many", note="dev/replicate_stability.py (NOT a workflow rule)"),
         Spec("Table S14 - floor sensitivity",
              [j("sens", "floor_sweep.tsv"), s("sens", "floor_sweep.tsv"),
-              root("sens", "floor_sweep.tsv")],
+              s("floor_sweep.tsv")],
              note="pvminsig_sweep.py (NOT a workflow rule)"),
         Spec("data - significant bins",
              [j("regional", "significant_bins_summary.tsv")],
@@ -484,7 +527,13 @@ def main():
             hits = sp.resolve()
             if not hits:
                 missing += 1
-                print("%-42s %-9s %s" % (sp.sheet, "MISSING", " | ".join(sp.sources)))
+                print("%-42s %-9s %s" % (sp.sheet, "MISSING", " | ".join(x[0] for x in sp.sources)))
+            elif sp.expect == "one" and len(hits) > 1:
+                missing += 1
+                print("%-42s %-9s %s" % (sp.sheet, "AMBIGUOUS",
+                                         "%d files match a pattern expecting ONE:" % len(hits)))
+                for h in hits:
+                    print("%-42s %-9s %s" % ("", "", h))
             else:
                 print("%-42s %-9s %s" % (sp.sheet, "%d file(s)" % len(hits), hits[0]))
                 for h in hits[1:]:
@@ -539,9 +588,25 @@ def main():
         ws = wb.create_sheet(sp.sheet[:31])
         hits = sp.resolve()
         if not hits:
-            prov.record(sp.sheet, " | ".join(sp.sources), note=sp.note + " [NOT FOUND]")
-            banner_missing(ws, " | ".join(sp.sources))
-            failures.append("%s (%s)" % (sp.sheet, sp.sources[0]))
+            prov.record(sp.sheet, " | ".join(x[0] for x in sp.sources), note=sp.note + " [NOT FOUND]")
+            banner_missing(ws, " | ".join(x[0] for x in sp.sources))
+            failures.append("%s (%s)" % (sp.sheet, sp.sources[0][0]))
+            continue
+        if sp.expect == "one" and len(hits) > 1:
+            # Ambiguity is not resolvable by guessing: picking one, or merging
+            # them, both risk silently publishing the wrong run.
+            prov.record(sp.sheet, " | ".join(hits),
+                        note=sp.note + " [AMBIGUOUS: %d files matched]" % len(hits))
+            ws.cell(1, 1, "AMBIGUOUS SOURCE -- THIS SHEET WAS NOT BUILT").font = \
+                Font(bold=True, color="9C0006")
+            ws.cell(1, 1).fill = WARN_FILL
+            ws.cell(2, 1, "%d files matched a pattern that expects exactly one:" % len(hits))
+            for i, h in enumerate(hits):
+                ws.cell(3 + i, 1, h)
+            ws.cell(3 + len(hits), 1,
+                    "These may be different analyses. Name the intended file "
+                    "explicitly in table_registry() rather than letting a glob choose.")
+            failures.append("%s (ambiguous: %d files)" % (sp.sheet, len(hits)))
             continue
 
         # concatenate; a source_file column keeps every row traceable
@@ -550,9 +615,10 @@ def main():
             hdr, rows, comments = read_tsv(h)
             prov.record(sp.sheet, h, n_rows=len(rows), note=sp.note)
             all_comments.extend(comments)
-            tag = os.path.basename(h)
+            tag = sp.label_for(h)
             if all_hdr is None:
-                all_hdr = list(hdr) + (["source_file"] if len(hits) > 1 else [])
+                lab = sp.label_col or "source_file"
+                all_hdr = list(hdr) + ([lab] if len(hits) > 1 else [])
             elif hdr != all_hdr[:len(hdr)]:
                 # do not silently glue together tables with different columns
                 prov.rows[-1]["note"] += " [HEADER MISMATCH -- not merged]"
@@ -562,7 +628,7 @@ def main():
                 all_rows.append(list(row) + ([tag] if len(hits) > 1 else []))
 
         if all_hdr is None:
-            banner_missing(ws, " | ".join(sp.sources))
+            banner_missing(ws, " | ".join(x[0] for x in sp.sources))
             continue
         ws.cell(1, 1, sp.title).font = Font(bold=True, size=12)
         src_note = ("GENERATED from %d file(s): %s"
