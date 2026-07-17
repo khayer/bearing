@@ -504,7 +504,8 @@ def make_split_hic(mat_a, mat_b):
     return combined
 
 
-def make_rgb_hic(mat_a, mat_b, vmax_percentile=98, palette="magenta-green"):
+def make_rgb_hic(mat_a, mat_b, vmax_percentile=98, palette="magenta-green",
+                 joint_norm=False):
     """
         Build RGB Hi-C image for two-condition visualization.
 
@@ -523,20 +524,27 @@ def make_rgb_hic(mat_a, mat_b, vmax_percentile=98, palette="magenta-green"):
     a = np.asarray(mat_a[:n, :n], dtype=np.float64)
     b = np.asarray(mat_b[:n, :n], dtype=np.float64)
 
-    def _norm(x):
-        pos = x[x > 0]
+    def _vmax(pos):
         if pos.size == 0:
-            return np.zeros_like(x, dtype=np.float64)
+            return 1.0
         vmax = float(np.percentile(pos, vmax_percentile))
         if vmax <= 0:
             vmax = float(pos.max()) if pos.size else 1.0
-        if vmax <= 0:
-            vmax = 1.0
-        y = np.clip(x / vmax, 0.0, 1.0)
-        return y
+        return vmax if vmax > 0 else 1.0
 
-    a_n = _norm(a)
-    b_n = _norm(b)
+    def _norm(x, vmax):
+        return np.clip(x / vmax, 0.0, 1.0)
+
+    if joint_norm:
+        # One shared vmax over BOTH conditions, so equal (KR-balanced) contact
+        # renders as equal red+green -> yellow, and neither condition is
+        # visually amplified relative to the other (fixes the apparent skew).
+        vmax = _vmax(np.concatenate([a[a > 0], b[b > 0]]))
+        a_n = _norm(a, vmax)
+        b_n = _norm(b, vmax)
+    else:
+        a_n = _norm(a, _vmax(a[a > 0]))
+        b_n = _norm(b, _vmax(b[b > 0]))
     rgb = np.zeros((n, n, 3), dtype=np.uint8)
 
     a_u8 = (a_n * 255).astype(np.uint8)
@@ -685,21 +693,37 @@ def load_qcat_scores(qcat_path, chrom, start, end):
 # Annotation loaders
 # ---------------------------------------------------------------------------
 
+def _norm_chrom(c):
+    """Normalize a chromosome name for tolerant comparison: 'chr6' == '6'."""
+    c = str(c).strip()
+    return c[3:] if c.lower().startswith("chr") else c
+
+
 def load_loops(loops_path, chrom, start, end):
     """
     Load loop anchors from a BEDPE file within the region.
     Returns list of (s1, e1, s2, e2, score) tuples.
+
+    Robust to: header lines (skipped), tab OR whitespace delimiting, and
+    'chr6' vs '6' chromosome naming between the loop file and the region.
     """
+    want = _norm_chrom(chrom)
     loops = []
     with open(loops_path) as fh:
         for line in fh:
-            if line.startswith("#"):
+            if line.startswith("#") or not line.strip():
                 continue
-            parts = line.strip().split("\t")
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 6:
+                parts = line.split()          # fall back to whitespace-delimited
             if len(parts) < 6:
                 continue
-            c1, s1, e1 = parts[0], int(parts[1]), int(parts[2])
-            c2, s2, e2 = parts[3], int(parts[4]), int(parts[5])
+            try:
+                s1, e1 = int(parts[1]), int(parts[2])
+                s2, e2 = int(parts[4]), int(parts[5])
+            except ValueError:
+                continue                       # header or malformed row -> skip
+            c1, c2 = parts[0], parts[3]
             # Column 7+ varies by caller: some BEDPE put a numeric score there,
             # others (e.g. Mustache merged loops) put an anchor-name string like
             # 'AnchorA_3000_num365_'. Use the first parseable float at/after
@@ -711,7 +735,7 @@ def load_loops(loops_path, chrom, start, end):
                     break
                 except ValueError:
                     continue
-            if c1 != chrom or c2 != chrom:
+            if _norm_chrom(c1) != want or _norm_chrom(c2) != want:
                 continue
             # Keep if either anchor overlaps the region
             if e1 < start or s1 > end:

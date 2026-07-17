@@ -69,6 +69,13 @@ outdir: "results"
 bearing_dir: ".."
 container: "bearing.sif"
 
+# --- combined Hi-C + BEARING figure styling (bearing_hic_combined_plot.py) ---
+# Loop arcs and the |delta insul| export are always on when the sheet provides
+# them. These control optional styling; defaults reproduce the plain figure.
+combined_rgb_overview: false      # add a slim RGB overview strip on top of the Hi-C panels
+combined_tidy_labels:  false      # compact two-line labels on the differential panels
+combined_rgb_palette:  red-green  # RGB overview: DN=red, DP=green, match=yellow (joint-normalized)
+
 # --- optional input staging (no aws/mount-s3 on cluster) -------------------
 # Host inputs behind HTTPS (public bucket or presigned URLs) and put those URLs
 # in the sheet. Run workflow/stage_inputs.py once to wget them to a local cache

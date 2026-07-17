@@ -794,7 +794,8 @@ rule bearing_hic_combined_one:
         # Optional styling, config-gated (default off -> figures unchanged).
         style=lambda wc: " ".join(filter(None, [
             "--rgb-overview" if config.get("combined_rgb_overview", False) else "",
-            "--tidy-labels" if config.get("combined_tidy_labels", False) else ""])),
+            "--tidy-labels" if config.get("combined_tidy_labels", False) else "",
+            "--rgb-palette %s" % config.get("combined_rgb_palette", "red-green")])),
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
     shell:

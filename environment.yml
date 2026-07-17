@@ -20,7 +20,8 @@ dependencies:
   - matplotlib>=3.6
   - seaborn>=0.12
   - pillow>=9.0           # montage_panels.py (paper figure stitching)
-  - pyyaml>=6.0
+  - openpyxl>=3.1         # paper/build_tables.py (manuscript tables workbook)
+  - pyyaml>=6.0           # config.yaml parsing; paper/build_tables.py
   # genomics I/O (bioconda)
   - pybigwig>=0.3.18
   - pysam>=0.21

@@ -631,10 +631,37 @@ def make_combined_figure(
     loops_b = load_loops(loops_b_path, chrom, region_start, region_end) if loops_b_path else None
     has_loops_a = loops_a_path is not None
     has_loops_b = loops_b_path is not None
+    def _loops_msg(loops, path, label):
+        n = len(loops or [])
+        if n > 0:
+            print("Loaded {} {} loop(s) in region".format(n, label))
+            return
+        # 0 loops: report the file's chromosome naming so a chr6-vs-6 or
+        # wrong-region mismatch is obvious instead of a silently empty track.
+        seen = []
+        try:
+            with open(path) as fh:
+                for line in fh:
+                    if line.startswith("#") or not line.strip():
+                        continue
+                    p = line.split("\t")
+                    if len(p) < 6:
+                        p = line.split()
+                    if len(p) >= 6:
+                        seen.append(p[0])
+                    if len(seen) >= 200:
+                        break
+        except OSError:
+            print("  WARNING: could not open {} loops file {}".format(label, path))
+            return
+        chroms = sorted(set(seen))[:8]
+        print("  WARNING: 0 {} loops in {} for {} -- file chroms seen: {} "
+              "(want {})".format(label, path, chrom, chroms, chrom))
+
     if has_loops_a:
-        print("Loaded {} {} loop(s) in region".format(len(loops_a or []), label_a))
+        _loops_msg(loops_a, loops_a_path, label_a)
     if has_loops_b:
-        print("Loaded {} {} loop(s) in region".format(len(loops_b or []), label_b))
+        _loops_msg(loops_b, loops_b_path, label_b)
 
     # ---- diff qcat ----
     pos_diff, scores_diff, ns_diff = [], np.zeros((0, 1), dtype=np.float32), 1
@@ -824,7 +851,8 @@ def make_combined_figure(
     if show_rgb:
         print("Rendering combined RGB Hi-C triangle...")
         rgb_image = make_rgb_hic(np.nan_to_num(M_A, nan=0.0),
-                                 np.nan_to_num(M_B, nan=0.0), palette=rgb_palette)
+                                 np.nan_to_num(M_B, nan=0.0), palette=rgb_palette,
+                                 joint_norm=True)
         ax_rgb = axes["rgb"]
         ax_rgb.set_axis_off()
         _draw_rgb_triangle(ax_rgb, rgb_image, inverted=False)

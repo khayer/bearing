@@ -61,3 +61,29 @@ def test_loop_rows_added_when_requested():
 def test_rgb_overview_row_added():
     keys = _layout_keys(show_rgb=True, rgb_slim=True)
     assert "rgb" in keys
+
+
+# --- regression tests for the loop-loading + RGB fixes ---------------------
+
+def test_load_loops_chrom_and_delimiter_tolerant(tmp_path):
+    from bearing_hic_plot import load_loops
+    p = tmp_path / "loops.bedpe"
+    p.write_text(
+        "chrom1 start1 end1 chrom2 start2 end2 score\n"   # header, space-delimited
+        "6 41010000 41012000 6 41060000 41062000 AnchorA\n"  # chrom '6' vs region 'chr6'
+        "6\t41020000\t41022000\t6\t41090000\t41092000\t5.0\n"  # tab-delimited
+        "7 100 200 7 300 400 1\n")                             # different chrom -> excluded
+    loops = load_loops(str(p), "chr6", 41000000, 41100000)
+    assert len(loops) == 2
+
+
+def test_make_rgb_red_green_joint_match_is_yellow():
+    import numpy as np
+    from bearing_hic_plot import make_rgb_hic
+    a = np.array([[10.0, 0.0], [0.0, 4.0]])
+    rgb = make_rgb_hic(a, a.copy(), palette="red-green", joint_norm=True)
+    px = rgb[0, 0]
+    assert px[0] == px[1] and px[2] == 0          # equal contact -> yellow
+    r = make_rgb_hic(np.array([[10.0]]), np.array([[0.0]]),
+                     palette="red-green", joint_norm=True)[0, 0]
+    assert r[0] > 0 and r[1] == 0 and r[2] == 0   # A-only -> red
