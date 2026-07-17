@@ -3385,6 +3385,14 @@ def main():
         "--no-extras", action="store_true",
         help="Skip writing the categories JSON and .ini files.",
     )
+    parser.add_argument(
+        "--q-out", type=str, default=None, metavar="PATH",
+        help=(
+            "Write the background Q vector (per-track genome-wide mean of P, "
+            "per Methods M.2) as JSON, for downstream figures such as the "
+            "floor-sensitivity supplement. Export-only; does not change how Q "
+            "is computed or any other output."),
+    )
 
     args = parser.parse_args()
 
@@ -3695,6 +3703,33 @@ def main():
                 bins_bed=bins_bed,
             )
 
+            if args.q_out and q_values is not None:
+                # Export-only: serialize the already-computed background Q vector.
+                try:
+                    n_bins_used = int(sum(len(prob_cache[c][1]) for c in prob_cache))
+                except Exception:
+                    n_bins_used = None
+                cat_names = {k: (v[0] if isinstance(v, (list, tuple)) else v)
+                             for k, v in categories.items()}
+                q_map = {str(i + 1): float(q_values[i])
+                         for i in range(min(len(q_values), len(categories)))}
+                q_sample = args.sample_name or (
+                    str(out_path_job).replace(".qcat.bgz", "").replace(".bgz", ""))
+                q_payload = {
+                    "sample": Path(q_sample).name,
+                    "n_bins_used": n_bins_used,
+                    "categories": cat_names,
+                    "Q": q_map,
+                    "min_signal": args.min_signal,
+                    "score_method": args.score_method,
+                }
+                q_dir = os.path.dirname(os.path.abspath(args.q_out))
+                if q_dir:
+                    os.makedirs(q_dir, exist_ok=True)
+                with open(args.q_out, "w") as qf:
+                    json.dump(q_payload, qf, indent=2)
+                print(f"  Background Q -> {args.q_out}")
+
             if not args.no_extras:
                 base = str(out_path_job).replace(".qcat.bgz", "").replace(".bgz", "")
                 cats_json = base + "_cats.json"
@@ -3829,6 +3864,33 @@ def main():
     except Exception as _sig_err:
         print("  WARNING: could not write scoring-provenance signature: "
               + str(_sig_err))
+
+    if args.q_out and q_values is not None:
+        # Export-only: serialize the already-computed background Q vector.
+        try:
+            n_bins_used = int(sum(len(prob_cache[c][1]) for c in prob_cache))
+        except Exception:
+            n_bins_used = None
+        cat_names = {k: (v[0] if isinstance(v, (list, tuple)) else v)
+                     for k, v in categories.items()}
+        q_map = {str(i + 1): float(q_values[i])
+                 for i in range(min(len(q_values), len(categories)))}
+        q_sample = args.sample_name or (
+            str(out_path).replace(".qcat.bgz", "").replace(".bgz", ""))
+        q_payload = {
+            "sample": Path(q_sample).name,
+            "n_bins_used": n_bins_used,
+            "categories": cat_names,
+            "Q": q_map,
+            "min_signal": args.min_signal,
+            "score_method": args.score_method,
+        }
+        q_dir = os.path.dirname(os.path.abspath(args.q_out))
+        if q_dir:
+            os.makedirs(q_dir, exist_ok=True)
+        with open(args.q_out, "w") as qf:
+            json.dump(q_payload, qf, indent=2)
+        print(f"  Background Q -> {args.q_out}")
 
     if not args.no_extras:
         base = str(out_path).replace(".qcat.bgz", "").replace(".bgz", "")

@@ -77,6 +77,14 @@ REF = config["reference_condition"]
 CONDS = list(dict.fromkeys(BEARING_ROWS["condition"].tolist()))
 COMPARISONS = ["%s_vs_%s" % (REF, c) for c in CONDS if c != REF]
 
+# Reference-condition replicates (for the background-Q export, SuppFig S11).
+REF_SAMPLES = [r["sample"] for _, r in BEARING_ROWS.iterrows()
+               if r["condition"] == REF and str(r["sample"]).strip()]
+
+# Differential-floor sensitivity sweep (Supplementary Figure S11 / Table S14).
+FLOOR_SWEEP_FLOORS = config.get("floor_sweep_floors", [0.1, 0.25, 0.5, 1.0, 1.5])
+FLOOR_SWEEP_CMPS   = config.get("floor_sweep_comparisons", COMPARISONS)
+
 # Regional-enrichment loci (Methods M.7): one jointly BH-corrected test family
 # per locus (regions x comparisons), using the recalibrated one-sided
 # directional test against a per-comparison genome-wide baseline g_dir.
@@ -162,6 +170,10 @@ def all_targets():
     # Guarded so application configs without both DN and DP are unaffected.
     if "DN_vs_DP" in ALL_PAIRWISE:
         t.append(out("regional", "enrich_DN_vs_DP_cbe.tsv"))
+    # Supplementary Figure S11: differential-floor sensitivity.
+    if config.get("paper_figures", True) and "DN_vs_DP" in COMPARISONS:
+        t += [out("figures", "SuppFig_S11_floor_sensitivity.pdf"),
+              out("figures", "SuppFig_S11_floor_sensitivity.png")]
     if HAS_HIC:
         t += [out("figures.done"),
               out("figures_combined.done"),
@@ -1239,3 +1251,96 @@ rule collect_figures:
                     link(f, os.path.basename(f))
 
         print("[collect_figures] linked %d figures into %s" % (count[0], pf))
+
+
+# ===========================================================================
+# Supplementary Figure S11 / Table S14: differential-floor sensitivity
+# ===========================================================================
+
+# Background Q for the reference condition (mean of its replicates' per-track Q).
+# Reads the already-written *_cats.json (which persist q_values), so this does
+# NOT force a re-score. Schema matches bigwig_to_qcat.py --q-out.
+rule reference_q:
+    input: score=out("score.done")
+    output: out("qc", "Q_%s.json" % REF)
+    run:
+        import json
+        import numpy as np
+        q_sum = None
+        names = None
+        n = 0
+        for s in REF_SAMPLES:
+            cats_path = out("%s_cats.json" % s)
+            if not os.path.exists(cats_path):
+                continue
+            d = json.load(open(cats_path))
+            qv = d.get("q_values") or {}
+            if not qv:
+                continue
+            keys = sorted(qv, key=int)
+            arr = np.array([float(qv[k]) for k in keys])
+            q_sum = arr if q_sum is None else (q_sum + arr)
+            names = {k: d["categories"][k][0] for k in keys}
+            n += 1
+        if not n:
+            raise ValueError("no q_values in reference (%s) cats JSONs" % REF)
+        qmean = q_sum / n
+        keys = sorted(names, key=int)
+        payload = {
+            "sample": REF,
+            "n_bins_used": None,
+            "categories": names,
+            "Q": {k: float(v) for k, v in zip(keys, qmean)},
+            "min_signal": P["min_signal"],
+            "score_method": SCORE_METHOD,
+            "note": "mean of %d %s replicate background Q vectors (from *_cats.json)" % (n, REF),
+        }
+        os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+        json.dump(payload, open(output[0], "w"), indent=2)
+
+
+# Floor sweep. DAG note: the perm/diff qcats are SIDE-EFFECT files here (only
+# perm_diff.done is a declared output), so we depend on the .done sentinels --
+# they are re-touched when the perms/observed regenerate, which is how the DAG
+# knows to re-run the sweep. The script itself finds the files via --perm-glob.
+rule pvalue_floor_sweep:
+    input:
+        compare=out("compare.done"),
+        perm_diff=out("perm_diff.done"),
+        pvalue=out("pvalue.done"),
+    output:
+        tsv=out("sens", "floor_sweep.tsv"),
+        per_bin=directory(out("sens", "per_bin")),
+    params:
+        floors=" ".join(str(f) for f in FLOOR_SWEEP_FLOORS),
+        cmps=" ".join(FLOOR_SWEEP_CMPS),
+    threads: config.get("floor_sweep_threads", 12)
+    resources: mem_mb=32000, runtime=180
+    shell:
+        "python {BIN}/pvminsig_sweep.py "
+        "--diff-dir {OUT}/compare "
+        "--perm-glob '{OUT}/perm/perm*/diff_comparison' "
+        "--comparisons {params.cmps} --floors {params.floors} "
+        "--threads {threads} --per-bin-out {output.per_bin} "
+        "--out {output.tsv} --verify {OUT}/pvalue"
+
+
+rule plot_floor_sensitivity:
+    input:
+        sweep=out("sens", "floor_sweep.tsv"),
+        per_bin=out("sens", "per_bin"),
+        stats=expand(out("pvalue", "diff_{cmp}.stats.tsv"), cmp=FLOOR_SWEEP_CMPS),
+        q_json=out("qc", "Q_%s.json" % REF),
+        examples=wf("config/floor_example_bins.tsv"),
+    output:
+        pdf=out("figures", "SuppFig_S11_floor_sensitivity.pdf"),
+        png=out("figures", "SuppFig_S11_floor_sensitivity.png"),
+        src=out("figures", "SuppFig_S11_floor_sensitivity.source.tsv"),
+    resources: mem_mb=8000, runtime=60
+    shell:
+        "python {BIN}/plot_floor_sensitivity.py "
+        "--sweep-tsv {input.sweep} --per-bin-dir {input.per_bin} "
+        "--stats-dir {OUT}/pvalue --q-json {input.q_json} "
+        "--example-bins {input.examples} "
+        "--mechanism-comparison DN_vs_DP "
+        "--out-pdf {output.pdf} --out-png {output.png} --source-data {output.src}"

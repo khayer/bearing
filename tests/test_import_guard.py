@@ -74,6 +74,8 @@ CANONICAL_MODULES = [
     "batch_bearing_hic_plots",
     "batch_pygenometracks",
     # CI assertion helpers
+    "pvminsig_sweep",
+    "plot_floor_sensitivity",
     "assert_qcat_nonempty",
     "assert_score_provenance",
 ]

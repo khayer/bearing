@@ -78,6 +78,50 @@ def perm_label(d):
     return b
 
 
+def floor_tag(f):
+    """Format a floor for filenames: 0.25 -> '0p25', 1.0 -> '1p0' (config_minsig
+    style). Uses str() so the trailing zero in 1.0 is kept."""
+    return str(f).replace(".", "p")
+
+
+def read_observed_bins(path, min_abs):
+    """Like iter_abs_scores but keeps per-bin coordinates and the SIGNED score,
+    for --per-bin-out. Returns (abs_scores, chroms, starts, ends, signed), all
+    aligned. Only used when per-bin output is requested (higher memory than the
+    streaming abs-only path)."""
+    absv = []
+    chroms = []
+    starts = []
+    ends = []
+    signed = []
+    intern = sys.intern
+    with gzip.open(path, "rb") as fh:
+        for line in fh:
+            if not line or line[0:1] == b"#":
+                continue
+            parts = line.rstrip(b"\n").split(b"\t")
+            if len(parts) < 4:
+                continue
+            col = parts[3]
+            qs = col.find(b"qcat:")
+            if qs == -1:
+                continue
+            rs = col.find(b",raw:", qs)
+            payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
+            total = sum(float(m.group(1)) for m in SCORE_RE.finditer(payload))
+            a = abs(total)
+            if a < min_abs:
+                continue
+            chroms.append(intern(parts[0].decode()))
+            starts.append(int(parts[1]))
+            ends.append(int(parts[2]))
+            signed.append(total)
+            absv.append(a)
+    return (np.array(absv, dtype=np.float64), chroms,
+            np.array(starts, dtype=np.int64), np.array(ends, dtype=np.int64),
+            np.array(signed, dtype=np.float64))
+
+
 def iter_abs_scores(path, min_abs, block=1000000):
     """Yield float64 arrays of abs(signed summed score) for bins >= min_abs.
 
@@ -162,7 +206,14 @@ def main():
     ap.add_argument("--fdr", type=float, default=0.05)
     ap.add_argument("--out", required=True)
     ap.add_argument("--verify", default=None, metavar="PVALUE_DIR")
+    ap.add_argument("--per-bin-out", default=None, metavar="DIR",
+                    help="Write DIR/<CMP>_floor<TAG>.tsv.gz per comparison and "
+                         "floor: chrom start end bearing_score pval pval_adj_bh "
+                         "significant. Enables Panel C to cite a REAL flipping "
+                         "bin. Written incrementally + gzipped.")
     args = ap.parse_args()
+    if args.per_bin_out:
+        os.makedirs(args.per_bin_out, exist_ok=True)
 
     floors = sorted(args.floors)
     min_floor = floors[0]
@@ -190,12 +241,17 @@ def main():
             continue
 
         print("  Reading observed...", file=sys.stderr)
-        obs_chunks = list(iter_abs_scores(obs_path, min_floor))
-        if not obs_chunks:
+        obs_chrom = obs_start = obs_end = obs_signed = None
+        if args.per_bin_out:
+            (obs_abs, obs_chrom, obs_start,
+             obs_end, obs_signed) = read_observed_bins(obs_path, min_floor)
+        else:
+            obs_chunks = list(iter_abs_scores(obs_path, min_floor))
+            obs_abs = np.concatenate(obs_chunks) if obs_chunks else np.array([])
+            del obs_chunks
+        if len(obs_abs) == 0:
             print("  no observed bins >= %g" % min_floor, file=sys.stderr)
             continue
-        obs_abs = np.concatenate(obs_chunks)
-        del obs_chunks
         print("    %s observed bins >= %g" % (format(len(obs_abs), ","), min_floor),
               file=sys.stderr)
 
@@ -246,6 +302,21 @@ def main():
             q = bh_fdr(p)
             n_sig = int((q <= args.fdr).sum())
             rows.append((cmp_name, f, len(s_kept), n_null_f, n_sig, float(p.min())))
+
+            if args.per_bin_out:
+                # p/q are in obs_abs[keep] order == idx_kept order.
+                idx_kept = np.nonzero(keep)[0]
+                sig = (q <= args.fdr)
+                pb = os.path.join(args.per_bin_out,
+                                  "%s_floor%s.tsv.gz" % (cmp_name, floor_tag(f)))
+                with gzip.open(pb, "wt") as pf:   # incremental, gzipped
+                    pf.write("chrom\tstart\tend\tbearing_score\tpval\t"
+                             "pval_adj_bh\tsignificant\n")
+                    for k in range(len(idx_kept)):
+                        oi = int(idx_kept[k])
+                        pf.write("%s\t%d\t%d\t%.6g\t%.6g\t%.6g\t%d\n" % (
+                            obs_chrom[oi], obs_start[oi], obs_end[oi],
+                            obs_signed[oi], p[k], q[k], 1 if sig[k] else 0))
             print("    floor %-5g tested=%-12s null=%-15s sig=%-8s min_p=%.3g"
                   % (f, format(len(s_kept), ","), format(n_null_f, ","),
                      format(n_sig, ","), p.min()), file=sys.stderr)

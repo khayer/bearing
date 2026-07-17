@@ -19,12 +19,17 @@ blacklist_external: "resources/mm10-blacklist.v2.bed"   # merged with detected
 
 # --- parameters to CONFIRM (these set whether the rerun matches the paper) --
 min_signal: 0.1
-# Differential-score floor for bearing_pvalue.py --diff. Bins whose
-# |summed differential| falls below this are not tested. DISTINCT from
-# min_signal above (which is a per-sample RAW-signal floor). 0.5 matches
-# the historical bearing_pvalue.py default for KL scores; set explicitly
-# so runs are reproducible if that default ever changes.
+# Differential-score floor for bearing_pvalue.py --diff. Bins whose |summed
+# differential| falls below this are not tested at all. DISTINCT from min_signal
+# above, which is a per-sample RAW-signal floor. 0.5 matches the historical
+# bearing_pvalue.py default for KL scores; set explicitly so runs stay
+# reproducible if that default ever changes. Sensitivity: Supplementary
+# Table S14 / Figure S11.
 pvalue_min_signal: 0.5
+
+# Sensitivity sweep for the floor above (Supplementary Figure S11 / Table S14).
+floor_sweep_floors: [0.1, 0.25, 0.5, 1.0, 1.5]
+floor_sweep_threads: 12
 normalize: ""          # "" = off (Methods M.2); or "--normalize-method nonzero-quantile"
 n_perms: 100
 min_shift: 1500000
