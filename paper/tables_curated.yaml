@@ -1,0 +1,132 @@
+# tables_curated.yaml -- curated content for the BEARING manuscript tables.
+#
+# Tables 1 and S5 are NOT computed. Table 1 is genotype/provenance metadata;
+# Table S5 is a literature comparison. They cannot be derived from a pipeline
+# output, so they live here: version-controlled, reviewable in a diff, and
+# assembled by paper/build_tables.py rather than retyped into a spreadsheet.
+#
+# This is the ONLY hand-maintained content in the workbook. Everything else is
+# generated: Table S9 from config.yaml, Table S4 from the sample sheet, and the
+# rest from pipeline TSVs (see table_registry() in build_tables.py).
+#
+# Extracted verbatim from BEARING_tables_v22.xlsx. Greek characters were
+# transliterated for the ASCII-only rule (Eb = E-beta, DJb-Cb = DJbeta-Cbeta,
+# anti-CD3epsilon); restore them at typesetting if the journal prefers.
+#
+# [VERIFY] markers are live: those details are unconfirmed and must be
+# resolved before submission. Do not strip them silently.
+
+table1:
+  title: "Table 1. Mouse genotypes and cell types used in this study"
+  subtitle: "Five conditions in the panel, two replicates per condition (10 samples total). All assayed with the same six-track panel; mm10, 200 bp bins."
+  header:
+    - "Condition"
+    - "Sort markers / cell type"
+    - "Genotype"
+    - "Role"
+    - "Tcrb status"
+    - "Igh status"
+    - "Reps"
+    - "Source"
+    - "Public-data usage"
+  rows:
+    # --- DN ---
+    - ["DN",
+       "CD4- CD8- thymocytes (DN3 stage)",
+       "Rag1-/- (B6.129S7-Rag1tm1Mom/J)",
+       "T-lineage progenitor (DN3 arrest)",
+       "germline, unrearranged (Rag1-/-); recombination center active, germline DJb-Cb transcription",
+       "silent (T-lineage)",
+       "2",
+       "Bassing/Oltz lab; same WT control genotype as Allyn et al. (2024, Fig 4 DJb CBE-deletion comparator) and Allyn et al. (2025, Fig 5 EbKO/KO comparator)",
+       "none (all six tracks in-house, both replicates)"]
+    # --- DP ---
+    - ["DP",
+       "CD4+ CD8+ thymocytes (anti-CD3epsilon-induced; DP-like)",
+       "Rag1-/- (B6.129S7-Rag1tm1Mom/J); anti-CD3epsilon-induced",
+       "DP-stage thymocyte (anti-CD3epsilon-forced DN-to-DP transition; no V(D)J recombination)",
+       "germline, unrearranged (Rag1-/-); Vb-cluster chromatin decommissioned at DP stage",
+       "silent (T-lineage)",
+       "2",
+       "this work [VERIFY source]",
+       "none (all six tracks in-house, both replicates)"]
+    # --- EbKO ---
+    - ["EbKO",
+       "CD4- CD8- thymocytes (DN3 stage)",
+       "Rag1-/-; homozygous Eb enhancer deletion (Bassing et al., 2003)",
+       "T-lineage progenitor with focal cis-element deletion (Eb enhancer removed, CBEs intact; Allyn et al., 2025, Fig 5A)",
+       "germline, unrearranged (Rag1-/-); DJb activation lost (Eb deleted)",
+       "silent (T-lineage)",
+       "2",
+       "Bassing/Oltz lab; original mouse Bassing et al. (2003)",
+       "none (all six tracks in-house, both replicates)"]
+    # --- Pro-B ---
+    - ["Pro-B",
+       "B220+ CD43+ pro-B cells",
+       "Rag-deficient (developmental arrest; Igh locus unrearranged)",
+       "B-lineage progenitor",
+       "inactive/silent (B-lineage)",
+       "germline, unrearranged (Rag-deficient); locus activated for recombination (accessible, antisense-transcribed VH array)",
+       "2",
+       "this work [VERIFY source]",
+       "rep1: 1/6 public (RAD21 GSM987806); rep2: 3/6 public (CTCF GSM1145865, RAD21 GSM1156667, H3K27ac Busslinger lab); ATAC + stranded RNA in-house both reps. See Table S4."]
+    # --- 3T3 ---
+    - ["3T3",
+       "mouse embryonic fibroblasts",
+       "NIH/3T3 [VERIFY: NIH/3T3 vs Swiss/3T3; ATCC cat #]",
+       "cell line (immortalized; non-lymphoid control)",
+       "non-lymphoid control",
+       "inactive (non-lymphoid)",
+       "2",
+       "ATCC [VERIFY cat #] / [VERIFY in-house derivation]",
+       "rep1: 2/6 public (RAD21 from MEF cells, GSM2635598; H3K27ac GSM1618720); rep2: 3/6 public (CTCF GSM879923; RAD21 from MEF cells, GSM3714932; H3K27ac GSM1618721); ATAC + stranded RNA in-house both reps; 3T3 CTCF rep1 in-house. See Table S4."]
+  notes:
+    - "Panel: all conditions assayed with the same six-track multi-modal panel - ATAC-seq, CTCF ChIP-seq, RAD21 ChIP-seq, H3K27ac ChIP-seq, and stranded RNA-seq (sense and antisense strands scored separately): four chromatin assays plus stranded transcription, integrated by BEARING into a single per-bin saliency score."
+    - "Four conditions (DN, DP, EbKO, Pro-B) are primary mouse cell populations sorted from C57BL/6 mice; the fifth (3T3) is the established mouse embryonic fibroblast line, included as a non-lymphoid control."
+    - "Reference genome mm10; bin resolution 200 bp. Total: 6 tracks x 5 conditions x 2 replicates = 60 BigWig files."
+    - "Naming note: in supplementary data files and analysis code the 3T3 condition appears with a leading 'S' prefix ('S3T3'), an artifact of R column-name handling (identifiers cannot begin with a numeric character); the cell line itself is standard 3T3."
+    - "[VERIFY] All [VERIFY]-tagged genotype, source, and accession details to be confirmed before submission. Per-track accession manifest in Supplementary Table S4."
+    - "Note: the lymphocyte cells analysed here (DN, DP, EbKO, and the in-house Pro-B samples) are Rag-deficient; the public Pro-B architectural/H3K27ac tracks are also Rag-deficient (Rag1-/- or Rag2-/-; see Table S4) and therefore carry unrearranged, germline antigen-receptor loci. This is a deliberate design choice: because no intervening DNA is excised, chromatin and Hi-C contact differences between conditions cannot be confounded by recombination-mediated deletion. \"Active recombination\" in earlier drafts referred to locus activation/accessibility, not to completed rearrangement. [VERIFY] The RAG status of the mice underlying the PUBLIC Pro-B and 3T3 tracks (see Public-data usage) must be confirmed; Methods M.0 currently describes the published Pro-B samples as RAG-sufficient, which conflicts with this note."
+
+table_s5:
+  title: "Table S5. BEARING vs ChromHMM / Segway / EpiSegMix (capability comparison)"
+  subtitle: "In lieu of a benchmark: a head-to-head comparison is ill-posed because those tools answer a categorical question on binarized inputs. [VERIFY tool details before submission.]"
+  header:
+    - "Capability"
+    - "BEARING"
+    - "ChromHMM"
+    - "Segway"
+    - "EpiSegMix (ESMM)"
+  rows:
+    - ["Input signal", "Continuous BigWig", "Binarized", "Binarized/continuous (Gaussian)", "Mixed (per-mark distributions)"]
+    - ["Requires trained state model", "No", "Yes", "Yes", "Yes"]
+    - ["Requires replicates for differential inference", "No (empirical perm. null)", "Effectively yes", "Effectively yes", "Yes"]
+    - ["Output", "Continuous per-track score", "Discrete states", "Discrete states", "Discrete states"]
+    - ["Per-track attribution of change", "Yes", "No (state relabeling)", "No", "No"]
+    - ["Native two-condition differential", "Yes", "No (align states post hoc)", "No", "No"]
+    - ["Reference model-free", "Yes", "No", "No", "No"]
+    - ["Number of input tracks here", "6", "n/a (categorical)", "n/a", "n/a"]
+  notes:
+    - "[VERIFY] Confirm ChromHMM/Segway/ESMM rows against current tool docs and the Foroozandeh Shahraki et al. 2024 replicate-prerequisite argument."
+  # Related-work block, relocated here from Introduction paragraph 19 so the
+  # tools are tabulated rather than narrated. Citations must stay live in the
+  # manuscript's EndNote field codes -- this table carries the short form only.
+  related_header:
+    - "Method"
+    - "Class"
+    - "Operates on"
+    - "Key limitation for this regime"
+    - "Reference"
+  related_rows:
+    - ["Peak-based differential ChIP/ATAC", "Differential binding", "Binarized peak calls", "Require replicates; discard continuous signal", "Steinhauser et al. 2016; Eder & Grebien 2022"]
+    - ["dPCA", "Multi-mark differential", "Continuous signal", "No per-track attribution of change", "Ji et al. 2013"]
+    - ["mixNBHMM", "Multi-condition combinatorial", "Read counts", "Requires multi-replicate inputs", "Baldoni et al. 2020"]
+    - ["chromstaR", "Combinatorial state dynamics", "Binarized marks", "Requires multi-replicate inputs", "Taudt et al. 2016"]
+    - ["SCIDDO", "Information-theoretic (JSD on states)", "Chromatin-state segmentations", "Requires a pre-trained state model; discretized labels", "Ebert & Schulz 2021"]
+    - ["CSREP", "Group-wise state summarization", "Chromatin-state annotations", "Requires a pre-trained state model; discretized labels", "Vu et al. 2023"]
+    - ["dCaP (closest prior art)", "Multi-feature differential", "Continuous tracks (with/without replicates)", "No info-theoretic per-track decomposition; no Q-comparability check; no regional statistic; not designed for stranded RNA-seq", "Chen et al. 2014"]
+    - ["Chrom-Sig", "Empirical-null denoising", "Single 1D track", "Single track only; no cross-track attribution", "Gupta et al. 2025"]
+    - ["PBS (prob. of being signal)", "Bin-based background", "Single track", "Single track only; no cross-track attribution", "Hecht et al. 2023"]
+    - ["LEPAE", "Pairwise window association", "Trained NN over compendia", "Different inferential target (window-pair association, not per-bin per-track differential)", "Kwon & Ernst 2026"]
+    - ["Epilogos (S1 metric)", "Information-theoretic per-position", "Chromatin states", "Requires a pre-trained state model; single-panel, not two-condition differential", "Quon et al. 2025"]
+

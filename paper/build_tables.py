@@ -302,42 +302,143 @@ def build_s4(ws, sheet_path, prov):
 # registry
 # ---------------------------------------------------------------------------
 
+def build_curated(ws, spec, curated_path, sheet_label):
+    """
+    Render a curated table (Table 1, Table S5) from tables_curated.yaml.
+
+    Curated tables are metadata and literature, not measurements: they cannot be
+    derived from a pipeline output. Keeping them in a version-controlled YAML
+    means they are reviewable in a diff and assembled by script, rather than
+    retyped into a spreadsheet each revision.
+    """
+    r = 1
+    ws.cell(r, 1, spec.get("title", sheet_label)).font = Font(bold=True, size=12)
+    r += 1
+    if spec.get("subtitle"):
+        c = ws.cell(r, 1, spec["subtitle"])
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        r += 1
+    c = ws.cell(r, 1, "CURATED content from %s (version-controlled). Edit that file, "
+                      "not this sheet." % curated_path)
+    c.font = Font(italic=True, color="666666")
+    c.fill = GEN_FILL
+    r += 2
+
+    r = write_grid(ws, spec["header"], [[str(x) for x in row] for row in spec["rows"]], start=r)
+
+    if spec.get("notes"):
+        r += 1
+        ws.cell(r, 1, "Notes").font = BOLD
+        r += 1
+        for n in spec["notes"]:
+            c = ws.cell(r, 1, n)
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.merge_cells(start_row=r, start_column=1,
+                           end_row=r, end_column=max(2, len(spec["header"])))
+            ws.row_dimensions[r].height = 42
+            r += 1
+
+    # Table S5 carries a second block (related tools) with its own header
+    if spec.get("related_rows"):
+        r += 1
+        ws.cell(r, 1, "Related differential and information-theoretic methods").font = BOLD
+        r += 1
+        r = write_grid(ws, spec["related_header"],
+                       [[str(x) for x in row] for row in spec["related_rows"]], start=r)
+
+    widths = [26, 30, 30, 30, 30, 22, 8, 44, 30]
+    for j in range(1, len(spec["header"]) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(j)].width = \
+            widths[j - 1] if j <= len(widths) else 24
+    return r
+
+
 class Spec(object):
-    def __init__(self, sheet, source=None, title=None, kind="tsv", note=""):
+    """
+    One sheet. `sources` is a list of glob patterns: several tables are built
+    from more than one file (Table S13 has one replicate_stability_*.tsv per
+    comparison), and a single hard-coded path would silently drop the rest.
+    When several files match, they are concatenated and a `source_file` column
+    records which file each row came from.
+    """
+
+    def __init__(self, sheet, sources, title=None, note=""):
         self.sheet = sheet
-        self.source = source
+        self.sources = sources if isinstance(sources, (list, tuple)) else [sources]
         self.title = title or sheet
-        self.kind = kind
         self.note = note
 
+    def resolve(self):
+        import glob as _g
+        hits = []
+        for pat in self.sources:
+            hits.extend(sorted(_g.glob(pat)))
+        # de-duplicate, preserve order
+        seen, out = set(), []
+        for h in hits:
+            if h not in seen:
+                seen.add(h)
+                out.append(h)
+        return out
 
-def table_registry(results):
-    """Declarative map of sheet -> source. Paths are relative to --results-dir."""
+
+def table_registry(results, sources):
+    """
+    Declarative map of sheet -> source glob(s).
+
+    Two roots, because the pipeline and the hand-run analyses write to different
+    places:
+      results  -- Snakemake rule outputs (--results-dir)
+      sources  -- outputs of the dev/ scripts, which are NOT workflow rules and
+                  are run by hand (--sources-dir). Historically these landed in
+                  the repo root; both locations are searched during the
+                  transition.
+    """
     j = lambda *p: os.path.join(results, *p)
+    s = lambda *p: os.path.join(sources, *p)
+    root = lambda *p: os.path.join(*p)
+
     return [
-        Spec("Table S1 - pairwise JSD", j("compare", "samples_q_pair_jsd.tsv"),
+        Spec("Table S1 - pairwise JSD",
+             [j("compare", "*_q_pair_jsd.tsv"), s("*_q_pair_jsd.tsv")],
              note="compare_qcat.py write_q_pair_jsd_tsv"),
-        Spec("Table S2 - regional q-values", j("regional", "consolidated_enrichment_tcrb.tsv"),
+        Spec("Table S2 - regional q-values",
+             [j("regional", "consolidated_enrichment_tcrb.tsv"),
+              j("regional", "consolidated_enrichment_igh.tsv")],
              note="rule regional_consolidate"),
-        Spec("Table S3 - CBE null", j("regional", "enrich_cbe_consolidated.tsv"),
-             note="rule regional_enrichment_cbe"),
-        Spec("Table S6 - FDR calibration", j("calibration", "calibration_summary.tsv"),
+        Spec("Table S3 - CBE null",
+             [j("regional", "enrich_cbe_*.tsv"), s("enrich_cbe_*.tsv"),
+              root("enrich_cbe_*.tsv")],
+             note="regional_enrichment.py --region-assign overlap on cbe_mm10.bed"),
+        Spec("Table S6 - FDR calibration",
+             [j("calibration", "calibration_summary.tsv")],
              note="rule calibration"),
-        Spec("Table S7 - recovery sweep", j("benchmark", "recovery_sweep.tsv"),
-             note="rule benchmark"),
-        Spec("Table S8 - RNA edgeR validation", j("tables", "rna_concordance.tsv"),
+        Spec("Table S7 - recovery sweep",
+             [j("benchmark", "*recovery*.tsv"), s("*recovery*.tsv")],
+             note="benchmark rule"),
+        Spec("Table S8 - RNA edgeR validation",
+             [j("tables", "rna_concordance*.tsv"), s("rna_concordance*.tsv"),
+              root("rna_concordance*.tsv")],
              note="rna_concordance_stranded.R"),
-        Spec("Table S10 - baselines", j("tables", "baseline_comparison.tsv"),
+        Spec("Table S10 - baselines",
+             [s("baseline_comparison*.tsv"), root("baseline_comparison*.tsv")],
              note="dev/baseline_comparison.py (NOT a workflow rule)"),
-        Spec("Table S11 - regional null", j("tables", "regional_null_calibration_tcrb_DNrep.tsv"),
-             note="dev/regional_null_calibration.py (NOT a workflow rule)"),
-        Spec("Table S12 - track ablation", j("tables", "track_ablation_DN_vs_DP.tsv"),
+        Spec("Table S11 - regional null",
+             [s("regional_null_calibration_*.tsv"), root("regional_null_calibration_*.tsv")],
+             note="dev/regional_null_calibration.py (NOT a workflow rule). "
+                  "See the open issue on ref_bins matching in reproduce_all.sh."),
+        Spec("Table S12 - track ablation",
+             [s("track_ablation_*.tsv"), root("track_ablation_*.tsv")],
              note="dev/track_ablation.py (NOT a workflow rule)"),
-        Spec("Table S13 - replicate stability", j("tables", "replicate_stability_consolidated.tsv"),
+        Spec("Table S13 - replicate stability",
+             [s("replicate_stability_*.tsv"), root("replicate_stability_*.tsv")],
              note="dev/replicate_stability.py (NOT a workflow rule)"),
-        Spec("Table S14 - floor sensitivity", j("sens", "floor_sweep.tsv"),
+        Spec("Table S14 - floor sensitivity",
+             [j("sens", "floor_sweep.tsv"), s("sens", "floor_sweep.tsv"),
+              root("sens", "floor_sweep.tsv")],
              note="pvminsig_sweep.py (NOT a workflow rule)"),
-        Spec("data - significant bins", j("regional", "significant_bins_summary.tsv"),
+        Spec("data - significant bins",
+             [j("regional", "significant_bins_summary.tsv")],
              note="rule significant_bins_summary"),
     ]
 
@@ -354,6 +455,9 @@ def main():
     ap.add_argument("--sheet", default="workflow/config/samples.tsv")
     ap.add_argument("--curated", default="paper/tables_curated.yaml",
                     help="Version-controlled curated content (Table 1, S5).")
+    ap.add_argument("--sources-dir", default="paper/table_sources",
+                    help="Outputs of the dev/ scripts, which are run by hand and "
+                         "are not workflow rules. The repo root is also searched.")
     ap.add_argument("--repo", default=".", help="Repo root, for parsing script defaults.")
     ap.add_argument("--out", default="BEARING_tables.xlsx")
     ap.add_argument("--reference", default=None,
@@ -371,16 +475,20 @@ def main():
         print("NOTE: staleness reference %s not found; staleness will not be "
               "checked." % ref, file=sys.stderr)
 
-    specs = table_registry(a.results_dir)
+    specs = table_registry(a.results_dir, a.sources_dir)
 
     if a.dry_run:
-        print("%-42s %-8s %s" % ("SHEET", "SOURCE?", "PATH"))
+        print("%-42s %-9s %s" % ("SHEET", "FILES", "RESOLVED / SEARCHED"))
         missing = 0
-        for s in specs:
-            ok = os.path.exists(s.source) if s.source else False
-            if not ok:
+        for sp in specs:
+            hits = sp.resolve()
+            if not hits:
                 missing += 1
-            print("%-42s %-8s %s" % (s.sheet, "ok" if ok else "MISSING", s.source))
+                print("%-42s %-9s %s" % (sp.sheet, "MISSING", " | ".join(sp.sources)))
+            else:
+                print("%-42s %-9s %s" % (sp.sheet, "%d file(s)" % len(hits), hits[0]))
+                for h in hits[1:]:
+                    print("%-42s %-9s %s" % ("", "", h))
         print("\nderived sheets (no TSV source): Table S9 (from config.yaml), "
               "Table S4 (from the sample sheet)")
         print("curated sheets (from %s): Table 1, Table S5" % a.curated)
@@ -410,12 +518,8 @@ def main():
 
     # --- curated: Table 1 -------------------------------------------------
     if "table1" in curated:
-        ws = wb.create_sheet("Table 1 - cell types")
-        ws.cell(1, 1, curated["table1"].get("title", "Table 1")).font = Font(bold=True, size=12)
-        ws.cell(2, 1, "CURATED metadata from %s (version-controlled)." % a.curated).font = \
-            Font(italic=True, color="666666")
-        write_grid(ws, curated["table1"]["header"],
-                   [[str(c) for c in r] for r in curated["table1"]["rows"]], start=4)
+        build_curated(wb.create_sheet("Table 1 - cell types"),
+                      curated["table1"], a.curated, "Table 1")
 
     # --- derived: S4, S9 ---------------------------------------------------
     ws = wb.create_sheet("Table S4 - accessions")
@@ -427,27 +531,47 @@ def main():
 
     # --- curated: S5 -------------------------------------------------------
     if "table_s5" in curated:
-        ws = wb.create_sheet("Table S5 - capability compare")
-        ws.cell(1, 1, curated["table_s5"].get("title", "Table S5")).font = Font(bold=True, size=12)
-        ws.cell(2, 1, "CURATED from %s. [VERIFY tool details before submission]"
-                % a.curated).font = Font(italic=True, color="666666")
-        write_grid(ws, curated["table_s5"]["header"],
-                   [[str(c) for c in r] for r in curated["table_s5"]["rows"]], start=4)
+        build_curated(wb.create_sheet("Table S5 - capability compare"),
+                      curated["table_s5"], a.curated, "Table S5")
 
     # --- registry-driven ---------------------------------------------------
-    for s in specs:
-        ws = wb.create_sheet(s.sheet[:31])
-        exists = prov.record(s.sheet, s.source, note=s.note)
-        if not exists:
-            banner_missing(ws, s.source)
-            failures.append("%s (%s)" % (s.sheet, s.source))
+    for sp in specs:
+        ws = wb.create_sheet(sp.sheet[:31])
+        hits = sp.resolve()
+        if not hits:
+            prov.record(sp.sheet, " | ".join(sp.sources), note=sp.note + " [NOT FOUND]")
+            banner_missing(ws, " | ".join(sp.sources))
+            failures.append("%s (%s)" % (sp.sheet, sp.sources[0]))
             continue
-        hdr, rows, comments = read_tsv(s.source)
-        prov.rows[-1]["rows"] = len(rows)
-        ws.cell(1, 1, s.title).font = Font(bold=True, size=12)
-        ws.cell(2, 1, "GENERATED from %s" % s.source).font = Font(italic=True, color="666666")
-        write_grid(ws, hdr, rows, start=4, comments=comments)
-        for j in range(1, min(len(hdr), 30) + 1):
+
+        # concatenate; a source_file column keeps every row traceable
+        all_hdr, all_rows, all_comments = None, [], []
+        for h in hits:
+            hdr, rows, comments = read_tsv(h)
+            prov.record(sp.sheet, h, n_rows=len(rows), note=sp.note)
+            all_comments.extend(comments)
+            tag = os.path.basename(h)
+            if all_hdr is None:
+                all_hdr = list(hdr) + (["source_file"] if len(hits) > 1 else [])
+            elif hdr != all_hdr[:len(hdr)]:
+                # do not silently glue together tables with different columns
+                prov.rows[-1]["note"] += " [HEADER MISMATCH -- not merged]"
+                failures.append("%s (header mismatch in %s)" % (sp.sheet, tag))
+                continue
+            for row in rows:
+                all_rows.append(list(row) + ([tag] if len(hits) > 1 else []))
+
+        if all_hdr is None:
+            banner_missing(ws, " | ".join(sp.sources))
+            continue
+        ws.cell(1, 1, sp.title).font = Font(bold=True, size=12)
+        src_note = ("GENERATED from %d file(s): %s"
+                    % (len(hits), ", ".join(os.path.basename(h) for h in hits)))
+        c = ws.cell(2, 1, src_note)
+        c.font = Font(italic=True, color="666666")
+        c.fill = GEN_FILL
+        write_grid(ws, all_hdr, all_rows, start=4, comments=all_comments)
+        for j in range(1, min(len(all_hdr), 30) + 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(j)].width = 18
 
     # --- provenance sheet --------------------------------------------------
