@@ -31,9 +31,22 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
 CONFIG="workflow/config/config.yaml"
-OUT="workflow/results"          # matches `outdir:` in the config
+OUT="workflow/results"          # matches `outdir:` in the config; GITIGNORED
 SHEET="workflow/config/samples.tsv"
 CHROM_SIZES="workflow/resources/mm10.chrom.sizes"
+
+# Phase 2 outputs go HERE, not into $OUT.
+#
+# $OUT is gitignored (it holds hundreds of GB of qcats, nulls and per-bin
+# tables). The Phase 2 outputs are a few hundred KB and are the direct inputs to
+# paper/build_tables.py, so they are TRACKED: that is what lets a fresh clone
+# rebuild the tables workbook without re-running the pipeline. If these land in
+# $OUT instead, they vanish from the clone and build_tables.py reports MISSING.
+#
+# This path must match --sources-dir in build_tables.py. Changing one without
+# the other silently breaks the loop.
+SOURCES="paper/table_sources"
+mkdir -p "$SOURCES/sens"
 
 echo "repo:   $REPO"
 echo "config: $CONFIG   <- the single source of truth for all parameters"
@@ -109,7 +122,7 @@ echo
 # --- Table S10: baseline comparison ---------------------------------------
 # python3 dev/baseline_comparison.py --sheet $SHEET --repo . \
 #     --chrom-sizes $CHROM_SIZES --regions regions_manuscript.tsv \
-#     --min-signal 0.1 --out $OUT/tables/baseline_comparison.tsv
+#     --min-signal 0.1 --out $SOURCES/baseline_comparison.tsv
 
 # --- Table S11: regional-null calibration (empirical p) --------------------
 # The contrast supplied MUST itself be null: use a within-condition replicate
@@ -129,7 +142,7 @@ echo
 #       --chrom-sizes $CHROM_SIZES \
 #       --mode background --n-random 500 --p-thresh 0.05 --seed 42 \
 #       --verify 5 --null-contrast --repo . \
-#       --out $OUT/tables/regional_null_calibration_${LOCUS_TAG}_DNrep.tsv
+#       --out $SOURCES/regional_null_calibration_${LOCUS_TAG}_DNrep_bg.tsv
 # done
 #
 # OPEN ISSUE (do not treat the current numbers as final): the background loci
@@ -150,7 +163,7 @@ echo
 #     --perm-glob "$OUT/perm/perm*/diff_comparison" \
 #     --regions regions_manuscript.tsv --locus chr6:40790000-41690000 \
 #     --p-thresh 0.05 --emit-stats \
-#     --out $OUT/tables/track_ablation_DN_vs_DP.tsv
+#     --out $SOURCES/track_ablation_DN_vs_DP.tsv
 
 # --- Table S13: replicate stability ---------------------------------------
 # for CMP in DP EbKO ProB S3T3; do
@@ -159,7 +172,7 @@ echo
 #       --sheet $SHEET --chrom-sizes $CHROM_SIZES \
 #       --regions regions_manuscript.tsv \
 #       --cond-a "DN:DN_rep1,DN_rep2" --cond-b "${CMP}:${CMP}_rep1,${CMP}_rep2" \
-#       --out $OUT/tables/replicate_stability_DN_vs_${CMP}.tsv
+#       --out $SOURCES/replicate_stability_DN_vs_${CMP}.tsv
 # done
 
 # --- Table S14 + Supplementary Figure S11: differential-floor sensitivity ---
@@ -173,7 +186,7 @@ echo
 #       --perm-glob "$OUT/perm/perm*/diff_comparison" \
 #       --comparisons DN_vs_DP DN_vs_EbKO DN_vs_ProB DN_vs_S3T3 \
 #       --floors 0.1 0.25 0.5 1.0 1.5 --threads 12 \
-#       --out $OUT/sens/floor_sweep.tsv --verify $OUT/pvalue
+#       --out $SOURCES/sens/floor_sweep.tsv --verify $OUT/pvalue
 #
 # --verify must report [OK] at floor 0.5 for every comparison: that arm IS the
 # production floor, so it must reproduce production exactly.
@@ -190,17 +203,35 @@ echo
 # Phase 3: manuscript tables and figures
 # ===========================================================================
 #
-# GAP -- BE HONEST ABOUT THIS:
-# Nothing in this repository builds the manuscript tables workbook. Tables 1 and
-# S1-S14 are assembled by hand from the TSVs produced above. The NUMBERS are
-# reproducible (every one traces to a script in Phase 1 or Phase 2); the
-# WORKBOOK is not.
+# Check what resolves before building; it names every missing source:
 #
-# TODO: build_tables.py -- read the Phase 1/2 outputs, emit the workbook, so
-# that the tables are regenerable rather than transcribed.
+#   python3 paper/build_tables.py --results-dir $OUT --sources-dir $SOURCES \
+#       --curated paper/tables_curated.yaml --dry-run
 #
-# The figure deck likewise assembles panels from $OUT/paper_figures/ plus
-# pyGenomeTracks output by hand.
+# Then build. It refuses to write a workbook containing silently empty tables;
+# --allow-missing writes an explicit MISSING-SOURCE banner sheet instead.
+#
+#   python3 paper/build_tables.py \
+#       --results-dir $OUT --sources-dir $SOURCES \
+#       --config $CONFIG --sheet $SHEET \
+#       --curated paper/tables_curated.yaml --repo . \
+#       --out BEARING_tables.xlsx
+#
+# Sheets are generated, not transcribed:
+#   Table S9  from $CONFIG plus the defaults parsed out of the scripts, so the
+#             table cannot state a parameter the pipeline did not use;
+#   Table S4  from $SHEET;
+#   S1-S14    from the Phase 1/2 TSVs;
+#   Table 1 and Table S5 are curated metadata and literature -- they are not
+#             computable, so they live in paper/tables_curated.yaml, version
+#             controlled and reviewable in a diff.
+#
+# The workbook carries a Provenance sheet: every source with its SHA256, mtime
+# and row count, flagged STALE if it predates $OUT/pvalue.done.
+#
+# STILL A GAP: the figure deck assembles panels from $OUT/paper_figures/ plus
+# pyGenomeTracks output by hand, and Supplementary Figure S11 has no script at
+# all (see PROMPT_S11_reproducible_pipeline.md).
 
 echo "This script is documentation, not an entrypoint. Step through the phases."
 echo "Parameters live in $CONFIG -- not here."

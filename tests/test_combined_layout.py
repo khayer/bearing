@@ -108,3 +108,23 @@ def test_loops_with_offframe_partner_still_draw():
     arcs = [p for p in ax.patches if isinstance(p, Arc)]
     plt.close(fig)
     assert len(arcs) == 3
+
+
+def test_draw_loops_sets_axis_fraction_xlim():
+    """draw_loops_horizontal works in axis-fraction space and MUST leave
+    xlim=(0,1). The combined plot must not override it with genomic coords
+    (doing so squeezed every arc into an invisible sliver at x~0)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Arc
+    from bearing_hic_plot import draw_loops_horizontal
+    rs, re_ = 40_800_000, 41_680_000
+    loops = [(41_000_000, 41_010_000, 41_400_000, 41_410_000, 1.0)]
+    fig, ax = plt.subplots()
+    draw_loops_horizontal(ax, loops, rs, re_, label="loops")
+    assert ax.get_xlim() == (0.0, 1.0)
+    # the arc center sits within [0,1] (fraction space), not near 41e6
+    arc = [p for p in ax.patches if isinstance(p, Arc)][0]
+    assert 0.0 <= arc.get_center()[0] <= 1.0
+    plt.close(fig)

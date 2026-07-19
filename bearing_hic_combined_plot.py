@@ -894,19 +894,21 @@ def make_combined_figure(
         ax_h.tick_params(axis="x", labelbottom=False)
 
     # ---- loop-anchor arc tracks (optional) ----
+    # NOTE: draw_loops_horizontal works in axis-fraction coords (it sets
+    # xlim(0,1) and maps genomic->[0,1] internally). Do NOT override the xlim
+    # to genomic coordinates here -- that squeezes the arcs into an invisible
+    # sliver at x~0 (this is exactly why the loop track came up empty).
     if "loops_a" in axes:
         draw_loops_horizontal(
             axes["loops_a"], loops_a or [], region_start, region_end,
             highlights=highlights, label="{} loops".format(label_a),
             color="#d62728", anchor_color="#d62728")
-        axes["loops_a"].set_xlim(region_start, region_end)
         axes["loops_a"].tick_params(axis="x", labelbottom=False)
     if "loops_b" in axes:
         draw_loops_horizontal(
             axes["loops_b"], loops_b or [], region_start, region_end,
             highlights=highlights, label="{} loops".format(label_b),
             color="#2ca02c", anchor_color="#2ca02c")
-        axes["loops_b"].set_xlim(region_start, region_end)
         axes["loops_b"].tick_params(axis="x", labelbottom=False)
 
     # ---- insulation panels ----

@@ -420,9 +420,19 @@ def table_registry(results, sources):
     places:
       results  -- Snakemake rule outputs (--results-dir)
       sources  -- outputs of the dev/ scripts, which are NOT workflow rules and
-                  are run by hand (--sources-dir). Historically these landed in
-                  the repo root; both locations are searched during the
-                  transition.
+                  are run by hand (--sources-dir, default paper/table_sources).
+                  These are small and ARE tracked in git, so that a fresh clone
+                  can rebuild the workbook without re-running the pipeline.
+                  workflow/results/ is gitignored and cannot serve that purpose.
+
+    EACH TABLE HAS EXACTLY ONE CANONICAL LOCATION. Do not search both roots for
+    the same table: two copies of one table are different files with identical
+    content, so realpath de-duplication does not catch them, and a spec with
+    expect="many" would concatenate them into doubled rows.
+
+    paper/reproduce_all.sh must write the dev/ outputs to --sources-dir. If it
+    writes them elsewhere the loop is broken: the scripts run, and this script
+    still reports MISSING.
     """
     j = lambda *p: os.path.join(results, *p)
     s = lambda *p: os.path.join(sources, *p)
@@ -430,20 +440,20 @@ def table_registry(results, sources):
 
     return [
         Spec("Table S1 - pairwise JSD",
-             [j("compare", "*_q_pair_jsd.tsv"), s("*_q_pair_jsd.tsv")],
+             [j("compare", "*_q_pair_jsd.tsv")],
              note="compare_qcat.py write_q_pair_jsd_tsv"),
         Spec("Table S2 - regional q-values",
              [j("regional", "consolidated_enrichment_tcrb.tsv"),
               j("regional", "consolidated_enrichment_igh.tsv")],
              expect="many", note="rule regional_consolidate (one file per locus)"),
         Spec("Table S3 - CBE null",
-             [j("regional", "enrich_cbe_*.tsv"), s("enrich_cbe_*.tsv")],
+             [j("regional", "enrich_cbe_*.tsv")],
              note="regional_enrichment.py --region-assign overlap on cbe_mm10.bed"),
         Spec("Table S6 - FDR calibration",
              [j("calibration", "calibration_summary.tsv")],
              note="rule calibration"),
         Spec("Table S7 - recovery sweep",
-             [j("benchmark", "*recovery*.tsv"), s("*recovery*.tsv")],
+             [j("benchmark", "*recovery*.tsv")],
              note="benchmark rule"),
         # EXPLICIT, not a glob. Table S8 reports DN-vs-DP ONLY, at two expression
         # filters (min.count=10 and min.count=3) -- that is what its "Expression
@@ -477,8 +487,7 @@ def table_registry(results, sources):
              [s("replicate_stability_DN_vs_*.tsv")],
              expect="many", note="dev/replicate_stability.py (NOT a workflow rule)"),
         Spec("Table S14 - floor sensitivity",
-             [j("sens", "floor_sweep.tsv"), s("sens", "floor_sweep.tsv"),
-              s("floor_sweep.tsv")],
+             [s("sens", "floor_sweep.tsv")],
              note="pvminsig_sweep.py (NOT a workflow rule)"),
         Spec("data - significant bins",
              [j("regional", "significant_bins_summary.tsv")],
