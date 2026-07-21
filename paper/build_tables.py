@@ -440,7 +440,7 @@ def table_registry(results, sources):
 
     return [
         Spec("Table S1 - pairwise JSD",
-             [j("compare", "*_q_pair_jsd.tsv")],
+             [j("compare", "*q_pair_jsd.tsv")],
              note="compare_qcat.py write_q_pair_jsd_tsv"),
         Spec("Table S2 - regional q-values",
              [j("regional", "consolidated_enrichment_tcrb.tsv"),

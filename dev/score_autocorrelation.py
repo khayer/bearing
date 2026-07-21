@@ -18,6 +18,12 @@ ASCII only. Needs pandas + numpy (both in the bearing env).
 Usage:
   python score_autocorrelation.py STATS.tsv [--bin-size 200] [--max-lag-bp 60000]
     [--score-col bearing_score] [--main-chroms-only]
+    [--out per_chrom.tsv] [--summary-out summary.tsv]
+
+--out          per-chromosome decorrelation lengths (one row per chromosome).
+--summary-out  the single-line summary values quoted in Methods (median L(1/e),
+               median L(0.5), effective independent-test counts). Writing this
+               is what lets the Methods number trace to a file instead of stdout.
 """
 import argparse
 import sys
@@ -76,6 +82,10 @@ def main():
     ap.add_argument("--max-lag-bp", type=int, default=60000)
     ap.add_argument("--score-col", default="bearing_score")
     ap.add_argument("--main-chroms-only", action="store_true", default=True)
+    ap.add_argument("--out", default=None,
+                    help="Per-chromosome decorrelation-length table (TSV).")
+    ap.add_argument("--summary-out", default=None,
+                    help="One-row summary of the values quoted in Methods (TSV).")
     args = ap.parse_args()
 
     max_lag = args.max_lag_bp // args.bin_size
@@ -145,6 +155,39 @@ def main():
                        "grid coarser than independence scale")
             print("  %-28s : L(1/e)/width = %.2f  -> %s" % (name, rel, verdict))
     print("=" * 78)
+
+    if args.out:
+        import os
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        with open(args.out, "w") as fh:
+            fh.write("# score_autocorrelation.py per-chromosome table\n")
+            fh.write("# stats=%s score_col=%s bin_size=%d max_lag_bp=%d\n"
+                     % (args.stats, args.score_col, args.bin_size, args.max_lag_bp))
+            fh.write("chrom\tL_half_bp\tL_1e_bp\tn_bins\tspan_bp\n")
+            for chrom, L_h, L_e, n, span in rows:
+                fh.write("%s\t%s\t%s\t%d\t%d\n"
+                         % (chrom,
+                            "%.1f" % L_h if L_h else "NA",
+                            "%.1f" % L_e if L_e else "NA", n, span))
+        print("wrote %s (%d chromosomes)" % (args.out, len(rows)))
+
+    if args.summary_out:
+        import os
+        os.makedirs(os.path.dirname(args.summary_out) or ".", exist_ok=True)
+        with open(args.summary_out, "w") as fh:
+            fh.write("# score_autocorrelation.py summary (values quoted in Methods)\n")
+            fh.write("# stats=%s score_col=%s bin_size=%d\n"
+                     % (args.stats, args.score_col, args.bin_size))
+            fh.write("metric\tvalue\n")
+            fh.write("median_L_1e_bp\t%.1f\n" % med_e)
+            fh.write("median_L_half_bp\t%.1f\n" % med_h)
+            fh.write("genome_covered_bp\t%d\n" % genome_bp)
+            fh.write("present_bins\t%d\n" % n_bins_total)
+            fh.write("eff_indep_tests_L1e\t%.0f\n" % eff_e)
+            fh.write("eff_indep_tests_Lhalf\t%.0f\n" % eff_half)
+            fh.write("oversampling_factor_L1e\t%.2f\n"
+                     % (n_bins_total / eff_e if eff_e else float("nan")))
+        print("wrote %s" % args.summary_out)
 
 
 if __name__ == "__main__":
