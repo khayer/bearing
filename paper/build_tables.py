@@ -446,15 +446,20 @@ def table_registry(results, sources):
              [j("regional", "consolidated_enrichment_tcrb.tsv"),
               j("regional", "consolidated_enrichment_igh.tsv")],
              expect="many", note="rule regional_consolidate (one file per locus)"),
+        # EXPLICIT, not a glob. enrich_*_cbe.tsv also matches enrich_DN_vs_TKO_cbe
+        # and enrich_DN_vs_V1P_cbe -- TKO is not in this manuscript and V1P is
+        # MCC/thesis material. Table S3 is DN-vs-DP and DN-vs-EbKO only.
         Spec("Table S3 - CBE null",
-             [j("regional", "enrich_cbe_*.tsv")],
-             note="regional_enrichment.py --region-assign overlap on cbe_mm10.bed"),
+             [(s("enrich_DN_vs_DP_cbe.tsv"), "DN vs DP"),
+              (s("enrich_DN_vs_EbKO_cbe.tsv"), "DN vs EbKO")],
+             expect="many", label_col="comparison",
+             note="regional_enrichment.py on cbe_mm10.bed; manuscript comparisons only"),
         Spec("Table S6 - FDR calibration",
              [j("calibration", "calibration_summary.tsv")],
              note="rule calibration"),
         Spec("Table S7 - recovery sweep",
-             [j("benchmark", "*recovery*.tsv")],
-             note="benchmark rule"),
+             [j("benchmark", "recovery", "recovery_per_block.tsv")],
+             note="benchmark recovery rule (evaluate_bearing_recovery.py)"),
         # EXPLICIT, not a glob. Table S8 reports DN-vs-DP ONLY, at two expression
         # filters (min.count=10 and min.count=3) -- that is what its "Expression
         # filter" column distinguishes. A rna_concordance_*_summary.tsv glob also

@@ -52,30 +52,37 @@ pvminsig_sweep.py                       (repo root, not dev/)
     Produces: Table S14 and Supplementary Figure S11 (differential-floor
     sensitivity). Output: paper/table_sources/sens/floor_sweep.tsv
 
-score_autocorrelation.py
-    Produces: the ~967 bp score-independence length quoted in Methods (the
-    autocorrelation correction underlying Table S11).
-    Print-only. TODO: add --out so the value is persisted, not transcribed.
-
-region_match_ebko2.py
+region_match_ebko.py            (canonical; supersedes region_match_ebko2/3.py)
     Produces: the EbKO recombination-centre characterisation quoted in Results
-    (per-track share of the joint differential, ~36% RNA+; percent of edgeR-
-    significant RC bins in the DN direction; edgeR-logFC vs BEARING-dKL Spearman).
+    (per-track share of the joint differential, 36.3% RNA+; 100% of the 55
+    edgeR-significant plus-strand RC bins DN-directed; edgeR-logFC vs BEARING
+    RNA+ dKL Spearman rho=0.43, p=7e-4). Uses a 200 bp grid join that absorbs
+    the edgeR 1-based / BEARING 0-based offset (the earlier ebko2 raw-start join
+    matched zero bins; ebko3 fixed the join but dropped the composition block --
+    both retired).
     Reads DN-vs-EbKO diff plus rna_concordance_DN_vs_EbKO_{pos,neg}_edgeR_allbins.csv
     (produced by rna_concordance_stranded.R).
-    WARNING: print-only -- these numbers currently reach the manuscript by hand.
-    TODO: add --out so the RC characterisation is written to
-    paper/table_sources/ like every other source. Until then this is the least
-    reproducible number in the paper.
+    Output: paper/table_sources/region_match_ebko_rc.tsv (via --out).
 
 ===========================================================================
 B. SCRATCH and SUPERSEDED -- not used by the paper; do not run for results
 ===========================================================================
 
 Superseded (an A-script replaced these; kept only for history):
-    region_match_ebko.py     -- earlier RC scoping; replaced by region_match_ebko2.py
-    region_match_ebko3.py    -- bin-id-join debugging fork; not a results script
-    region_match_ebko.py and _v2 of any *_v2 pair: keep the canonical name only.
+    (region_match_ebko2.py and region_match_ebko3.py were retired once
+     region_match_ebko.py merged the correct join with the composition block.)
+
+Diagnostic that INFORMED a methodological choice (its number is not quoted):
+    score_autocorrelation.py
+        Measures the spatial decorrelation length of the per-bin BEARING score
+        (L(1/e) ~ 395 bp, L(0.5) ~ 237 bp on DN-vs-DP; ~2x the 200 bp grid).
+        This is the quantitative basis for the Methods statement that within-
+        track autocorrelation makes the binomial spatial null unreliable, so
+        the regional test is calibrated empirically instead. The manuscript
+        makes that argument QUALITATIVELY ("autocorrelation at the kb scale")
+        and does not cite the number, so this is a diagnostic, not the source
+        of a quoted value. --out / --summary-out persist it to
+        paper/table_sources/ for anyone who wants to check the claim.
 
 One-off diagnostics (never produced a manuscript number):
     tail_diag.py, diagnose_flat_pvalue.py, probe_capture_depth.py,
@@ -84,8 +91,7 @@ One-off diagnostics (never produced a manuscript number):
     prototype_adaptive_binning.py, tail_diag.py, plot_sig_density.py,
     plot_bearing_stats_summary.py, bin_hic_superbins.py, plot_hic_superbins.py,
     run_bes_hic_matrix.py, bearing_tad_decomposition.py, make_bearing_bins_bed.py,
-    extract_track_diff_bed.py, bearing_diff_concordance.py, regen_fig7_panelB.py,
-    region_match_ebko.py
+    extract_track_diff_bed.py, bearing_diff_concordance.py, regen_fig7_panelB.py
 
 If you promote any B-script to produce a paper number, MOVE it up to section A
 with its output path, or the mapping stops being trustworthy.
@@ -96,7 +102,7 @@ The goal
 Every number in the manuscript traces to a script. For the tables that is
 enforced by paper/build_tables.py (each sheet names its source file, and the
 Provenance sheet records the SHA256). For the numbers quoted in the TEXT, this
-README is the map -- so the two print-only scripts above (score_autocorrelation
-and region_match_ebko2) are the remaining gap: they compute real manuscript
-numbers but do not yet persist them. Closing that is the last step to "every
-number has a file."
+README is the map. region_match_ebko.py (the canonical EbKO RC script) now
+writes its numbers to a file, and score_autocorrelation.py -- a diagnostic
+whose number is not quoted -- also persists its output. Every value quoted in
+the text now traces to a file: "every number has a file" holds.

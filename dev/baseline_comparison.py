@@ -252,7 +252,7 @@ def hyper_sf(k, N, K, n):
         return float("nan")
 
 
-def locus_recovery(stats, region_masks, frac):
+def locus_recovery(stats, region_masks, frac, sink=None, contrast=""):
     """For each statistic: are its top-frac bins enriched inside each region?"""
     print("\nLOCUS RECOVERY -- enrichment of each statistic's top %.0f%% bins" % (100 * frac))
     print("(fold = observed/expected; p = hypergeometric upper tail)\n")
@@ -274,6 +274,11 @@ def locus_recovery(stats, region_masks, frac):
             fold = k / exp if exp > 0 else float("nan")
             p = hyper_sf(k, N, K, n) if k > 0 else 1.0
             print("    %-16s %8d %10.2f %12.3g" % (kname, k, fold, p))
+            if sink is not None:
+                sink.append(("locus_recovery", contrast, "%s@%s" % (kname, rname),
+                             "fold", "%.4f" % fold))
+                sink.append(("locus_recovery", contrast, "%s@%s" % (kname, rname),
+                             "hyper_p", "%.4g" % p))
         print("")
 
 
@@ -292,13 +297,18 @@ def top_jaccard(a, b, frac):
     return len(ta & tb) / float(len(ta | tb))
 
 
-def report(stats, ref, frac):
+def report(stats, ref, frac, sink=None, contrast=""):
     print("\n%-14s %10s %18s" % ("baseline", "Spearman", "top-%g%% Jaccard" % (100 * frac)))
     for k in stats:
         if k == ref:
             continue
-        print("%-14s %+10.3f %18.3f"
-              % (k, spearman(stats[ref], stats[k]), top_jaccard(stats[ref], stats[k], frac)))
+        rho = spearman(stats[ref], stats[k])
+        jac = top_jaccard(stats[ref], stats[k], frac)
+        print("%-14s %+10.3f %18.3f" % (k, rho, jac))
+        if sink is not None:
+            sink.append(("baseline_agreement", contrast, k, "spearman", "%.4f" % rho))
+            sink.append(("baseline_agreement", contrast, k,
+                         "top_%g_jaccard" % (100 * frac), "%.4f" % jac))
     print("\nReading the table:")
     print("  rho ~ 1 AND Jaccard ~ 1  -> that baseline reproduces the BEARING ranking;")
     print("                              BEARING adds nothing on this axis.")
@@ -326,6 +336,27 @@ def qcat_scores_for_chrom(path, chrom):
     return np.asarray(tot)
 
 
+def _write_out(a, sink):
+    """Write the collected rows, refusing to persist a non-production-Q run."""
+    if not a.out or sink is None:
+        return
+    if [c for c in a.chroms.split(",") if c]:
+        sys.stderr.write(
+            "REFUSING to write --out: --chroms was set, so Q is not genome-wide "
+            "and the numbers do not match production. Re-run without --chroms.\n")
+        return
+    import os
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    with open(a.out, "w") as fh:
+        fh.write("# baseline_comparison.py -- Table S10 source\n")
+        fh.write("# sample=%s vs=%s min_signal=%s top_frac=%s Q=genome-wide\n"
+                 % (a.sample_name, a.vs, a.min_signal, a.top_frac))
+        fh.write("section\tcontrast\tkey\tmetric\tvalue\n")
+        for r in sink:
+            fh.write("\t".join(r) + "\n")
+    sys.stderr.write("wrote %s (%d rows)\n" % (a.out, len(sink)))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet", default="workflow/config/samples.tsv")
@@ -345,7 +376,13 @@ def main():
     ap.add_argument("--check-chrom", default="chr19")
     ap.add_argument("--regions", default=None,
                     help="regions.tsv -> report locus recovery for each statistic")
+    ap.add_argument("--out", default=None,
+                    help="Write the baseline-agreement and locus-recovery rows to "
+                         "this TSV (Table S10 source). Omit --chroms for the run: "
+                         "Q must be genome-wide to match production, or the numbers "
+                         "are not quotable.")
     a = ap.parse_args()
+    _sink = [] if a.out else None
 
     kl_fn, prob_fn = import_production_scorer(os.path.abspath(a.repo))
     chroms = [c for c in a.chroms.split(",") if c]
@@ -410,11 +447,12 @@ def main():
               % (a.stride, st1["bearing_kl"].size))
 
     if a.vs is None:
-        report(st1, "bearing_kl", a.top_frac)
+        report(st1, "bearing_kl", a.top_frac, sink=_sink, contrast=a.sample_name)
         if a.regions:
             rms = [(lab, region_bin_mask(index, c, s, e, keep))
                    for _, c, s, e, lab in load_regions(a.regions)]
-            locus_recovery(st1, rms, a.top_frac)
+            locus_recovery(st1, rms, a.top_frac, sink=_sink, contrast=a.sample_name)
+        _write_out(a, _sink)
         return
 
     print("\nloading bigWigs for %s" % a.vs)
@@ -437,14 +475,16 @@ def main():
         diff = {k: v[::a.stride] for k, v in diff.items()}
     print("\nDIFFERENTIAL |%s - %s| (n=%d bins):"
           % (a.sample_name, a.vs, diff["bearing_kl"].size))
-    report(diff, "bearing_kl", a.top_frac)
+    _contrast = "%s_vs_%s" % (a.sample_name, a.vs)
+    report(diff, "bearing_kl", a.top_frac, sink=_sink, contrast=_contrast)
     if a.regions:
         if a.stride > 1:
             print("\n(skipping locus recovery: --stride subsamples bins)")
         else:
             rms = [(lab, region_bin_mask(index, c, s, e, both))
                    for _, c, s, e, lab in load_regions(a.regions)]
-            locus_recovery(diff, rms, a.top_frac)
+            locus_recovery(diff, rms, a.top_frac, sink=_sink, contrast=_contrast)
+    _write_out(a, _sink)
 
 
 if __name__ == "__main__":
