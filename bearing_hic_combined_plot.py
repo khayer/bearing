@@ -9,7 +9,7 @@ Merges the two figure styles you have been using:
   From bearing_hic_plot_triangle.py (rendered with the SAME shared helpers,
   so these look identical to what you already produce):
     - per-condition qcat epilogos tracks (qcat A, qcat B)
-    - diff qcat track (label_b - label_a)
+    - diff qcat track (label_a - label_b)
     - Manhattan "lollipop" differential p-value track
     - gene track, BED overlay rows, category legend
     - optional combined RGB Hi-C triangle (--rgb-hic)
@@ -29,7 +29,7 @@ Layout, top to bottom:
     [|delta insulation| + sig]
     qcat A
     qcat B
-    diff qcat (label_b - label_a)
+    diff qcat (label_a - label_b)
     diff p-value (Manhattan lollipops)
     [diff p-value fill]            (optional, --pval-fill)
     BED rows ...
@@ -44,9 +44,10 @@ Hi-C triangles and insulation are read directly with cooler from the
 --contact-a/--contact-b .cool files (.hic is not supported in this mode).
 
 Direction convention: the qcat diff, Manhattan p-values, KL decomposition,
-and Hi-C diff are all shown as label_b - label_a so the whole figure reads
-in one direction (positive = enriched in B). The Hi-C diff is therefore
-B - A, not the A - B that v10 used standalone.
+and Hi-C diff are all shown as label_a - label_b (reference minus condition,
+e.g. DN - S3T3) so the whole figure reads in one direction (positive =
+enriched in A, the reference). This matches the native sign of the diff-qcat
+and stats files and the per-track decomposition.
 """
 
 from __future__ import annotations
@@ -446,6 +447,49 @@ def _filter_genes_by_name(genes, whitelist):
     return kept
 
 
+def _solve_hic_height(layout_kwargs, data_aspect, hic_height_in,
+                      n_hic_rows, iters=4):
+    """Find the Hi-C row height (inches) that makes each Hi-C triangle box
+    PHYSICALLY match its data aspect (region_w : eff_max_d/2), so the rotated
+    diamonds render square instead of stretched.
+
+    The stacked figure shares one genomic x-axis across every panel, so we
+    cannot shrink the Hi-C box width to fix the aspect (that would misalign the
+    tracks below); the box must instead be given the correct HEIGHT. The exact
+    height depends on hspace, the figure margins and the other rows, which are
+    awkward to model by hand -- so we build throwaway probe figures with the
+    same layout, let matplotlib do the margin math, measure the real rendered
+    box, and correct the height by fixed-point iteration. The probes use empty
+    axes, so this needs no Hi-C data and never touches the .cool files."""
+    h = float(hic_height_in)
+    if n_hic_rows == 0 or data_aspect <= 0:
+        return h
+    for _ in range(max(1, iters)):
+        kw = dict(layout_kwargs)
+        kw["hic_height_in"] = h
+        fig, axes = _combined_figure_layout(**kw)
+        try:
+            fig.canvas.draw()
+            hkey = None
+            for cand in ("hic_A", "hic_B", "hic_diff"):
+                if cand in axes:
+                    hkey = cand
+                    break
+            if hkey is None:
+                return h
+            bb = axes[hkey].get_window_extent()
+            w_in = bb.width / float(fig.dpi)
+            h_in = bb.height / float(fig.dpi)
+        finally:
+            plt.close(fig)
+        if h_in <= 0 or w_in <= 0:
+            return h
+        box_aspect = w_in / h_in            # >data_aspect => box too wide/short
+        h *= box_aspect / data_aspect       # so grow the Hi-C row height
+        h = max(1.4, min(7.0, h))
+    return h
+
+
 def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
                             has_insul, num_beds, bed_styles,
                             num_decomp, has_pval_fill, fig_width_in=12.0,
@@ -577,8 +621,9 @@ def make_combined_figure(
         if M_A.shape != M_B.shape:
             sys.exit("cool matrix shapes differ: {} vs {}".format(M_A.shape, M_B.shape))
         binsize = bs_A
-        # Diff in the figure's B - A direction (matches qcat diff / lollipops).
-        M_diff = M_B - M_A
+        # Diff in the figure's A - B direction (reference minus condition;
+        # matches qcat diff / lollipops / decomposition).
+        M_diff = M_A - M_B
         print("  binsize={}, {} bins".format(binsize, M_A.shape[0]))
 
         if hic_vmax_arg is None:
@@ -669,7 +714,7 @@ def make_combined_figure(
     if has_diff:
         pos_diff, scores_diff, ns_diff = load_qcat_scores(
             diff_qcat_path, chrom, region_start, region_end)
-        scores_diff = -scores_diff  # label_b - label_a
+        # File is natively label_a - label_b (reference - condition); keep it.
         ns_full = max(ns_diff, num_states)
         if scores_diff.shape[1] < ns_full:
             scores_diff = np.pad(scores_diff, ((0, 0), (0, ns_full - scores_diff.shape[1])))
@@ -686,9 +731,7 @@ def make_combined_figure(
         else:
             pos_pval_diff, vals_pval_diff = load_pval_track_values(
                 pval_diff_path, chrom, region_start, region_end)
-        vals_pval_diff = -vals_pval_diff  # label_b - label_a
-        if pval_diff_kl_scores is not None and pval_diff_kl_scores.size > 0:
-            pval_diff_kl_scores = -pval_diff_kl_scores
+        # Keep native label_a - label_b (reference - condition) sign.
         print("Loaded diff p-value: {} bins".format(len(pos_pval_diff)))
 
     pos_pval_a = vals_pval_a = pos_pval_b = vals_pval_b = None
@@ -828,24 +871,31 @@ def make_combined_figure(
     # small region the panel must be SHORTER, and for a wide region WIDER.
     region_w = region_end - region_start
     eff_max_d = min(max_distance, region_w) if region_w > 0 else max_distance
-    # triangle data aspect width:height = region_w : (eff_max_d/2)
-    aspect = (region_w / (eff_max_d / 2.0)) if eff_max_d > 0 else 2.0
-    aspect = min(max(aspect, 1.6), 4.5)             # cap so neither squished nor too tall
-    hic_height_in = 3.0                              # nominal target height (in)
-    col0_w = hic_height_in * aspect
+    # True triangle data aspect width:height = region_w : (eff_max_d/2). This is
+    # the SAME extent plot_hic_triangle renders (it caps ylim at eff_max_d/2), so
+    # matching the physical box to it makes the diamonds square.
+    data_aspect = (region_w / (eff_max_d / 2.0)) if eff_max_d > 0 else 2.0
+    # Fix the figure WIDTH from a sensible nominal box, then solve the Hi-C row
+    # HEIGHT so the box aspect equals data_aspect (see _solve_hic_height). We
+    # never squeeze the width, so the genomic axis stays aligned with the tracks
+    # below; only the Hi-C rows grow/shrink vertically.
+    hic_height_nominal = 3.0
+    col0_w = hic_height_nominal * min(max(data_aspect, 1.2), 6.0)
     col0_w = max(7.0, min(16.0, col0_w))             # sane Hi-C column width
-    hic_height_in = col0_w / aspect                  # honor the capped aspect
-    hic_height_in = max(1.8, min(4.5, hic_height_in))
-    # column 0 is 7.3 of (7.3+2.2) of the figure width
     fig_width_in = col0_w * (7.3 + 2.2) / 7.3
     fig_width_in = max(11.0, min(22.0, fig_width_in))
-    fig, axes = _combined_figure_layout(
-        show_rgb=show_rgb, show_hic_list=show_hic_list, hic_height_in=hic_height_in,
+    layout_kwargs = dict(
+        show_rgb=show_rgb, show_hic_list=show_hic_list,
+        hic_height_in=hic_height_nominal,
         has_insul=has_insul, num_beds=len(bed_features_list), bed_styles=bed_styles,
         num_decomp=num_decomp,
         has_pval_fill=show_pval_fill and (pos_pval_diff is not None),
         fig_width_in=fig_width_in,
         has_loops_a=has_loops_a, has_loops_b=has_loops_b, rgb_slim=rgb_slim)
+    hic_height_in = _solve_hic_height(
+        layout_kwargs, data_aspect, hic_height_nominal, len(show_hic_list))
+    layout_kwargs["hic_height_in"] = hic_height_in
+    fig, axes = _combined_figure_layout(**layout_kwargs)
 
     # ---- combined RGB triangle (optional overview) ----
     if show_rgb:
@@ -889,8 +939,8 @@ def make_combined_figure(
             pc = plot_hic_triangle(ax_h, M_diff, bin_starts, binsize,
                                    region_start, region_end, max_distance,
                                    "RdBu_r", diff_norm,
-                                   label="{} - {}\nHi-C diff".format(label_b, label_a))
-            _add_inset_colorbar(ax_h, pc, "{} - {}".format(label_b, label_a))
+                                   label="{} - {}\nHi-C diff".format(label_a, label_b))
+            _add_inset_colorbar(ax_h, pc, "{} - {}".format(label_a, label_b))
         ax_h.tick_params(axis="x", labelbottom=False)
 
     # ---- loop-anchor arc tracks (optional) ----
@@ -984,8 +1034,8 @@ def make_combined_figure(
 
     # ---- diff qcat ----
     if has_diff:
-        _diff_lbl = ("diff qcat\n{}-{}".format(label_b, label_a) if tidy_labels
-                     else "diff qcat " + label_b + " - " + label_a)
+        _diff_lbl = ("diff qcat\n{}-{}".format(label_a, label_b) if tidy_labels
+                     else "diff qcat " + label_a + " - " + label_b)
         draw_diff_horizontal(
             axes["diff"], pos_diff, scores_diff, num_states, region_start, region_end,
             categories[:num_states], highlights=highlights,
@@ -998,8 +1048,8 @@ def make_combined_figure(
     if has_pm:
         y_max_pm = float(np.abs(vals_pval_diff).max()) if vals_pval_diff.size else 0.0
         y_max_pm = 1.0 if y_max_pm == 0 else y_max_pm * 1.05
-        _pm_lbl = ("diff p\n{}-{}".format(label_b, label_a) if tidy_labels
-                   else "diff p-value " + label_b + " - " + label_a)
+        _pm_lbl = ("diff p\n{}-{}".format(label_a, label_b) if tidy_labels
+                   else "diff p-value " + label_a + " - " + label_b)
         draw_pval_manhattan_horizontal(
             axes["manhattan"], pos_pval_diff, vals_pval_diff, region_start, region_end,
             highlights=highlights, label=_pm_lbl,
@@ -1015,7 +1065,7 @@ def make_combined_figure(
             y_max_pf = 1.0 if y_max_pf == 0 else y_max_pf * 1.05
             draw_pval_diff_horizontal(
                 axes["pval_fill"], pos_pval_diff, vals_pval_diff, region_start, region_end,
-                highlights=highlights, label="diff p-value (fill) " + label_b + " - " + label_a,
+                highlights=highlights, label="diff p-value (fill) " + label_a + " - " + label_b,
                 y_max=y_max_pf, cutoff_value=pval_cutoff_value,
                 diff_score_positions=pos_diff if has_diff else None,
                 diff_score_matrix=scores_diff if has_diff else None,
@@ -1198,8 +1248,9 @@ def main():
     parser.add_argument("--decomp-tracks", nargs="+", default=None,
                         help="Subset of category names for the decomposition.")
     parser.add_argument("--diff-sign", choices=["flip", "asis"], default="flip",
-                        help="'flip' (default) negates kl so decomposition matches "
-                             "the diff qcat (label_b - label_a).")
+                        help="Deprecated no-op. The per-track decomposition and the "
+                             "diff qcat now share the native label_a - label_b "
+                             "(reference - condition) sign; this flag is ignored.")
     parser.add_argument("--pval-fill", action="store_true",
                         help="Also show the filled signed diff p-value track.")
 

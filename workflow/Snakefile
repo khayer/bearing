@@ -795,7 +795,11 @@ rule bearing_hic_combined_one:
         style=lambda wc: " ".join(filter(None, [
             "--rgb-overview" if config.get("combined_rgb_overview", False) else "",
             "--tidy-labels" if config.get("combined_tidy_labels", False) else "",
-            "--rgb-palette %s" % config.get("combined_rgb_palette", "red-green")])),
+            "--rgb-palette %s" % config.get("combined_rgb_palette", "red-green"),
+            # Curate the gene track: only label these genes (declutters a busy
+            # region). Empty list -> flag omitted -> all genes shown (unchanged).
+            ("--label-genes %s" % " ".join(config.get("combined_label_genes", [])))
+            if config.get("combined_label_genes") else ""])),
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
     shell:
