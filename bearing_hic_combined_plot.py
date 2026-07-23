@@ -61,6 +61,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.gridspec as gridspec
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -447,6 +448,22 @@ def _filter_genes_by_name(genes, whitelist):
     return kept
 
 
+def _filter_bed_by_name(features, whitelist):
+    """Curate a BED overlay (e.g. the CBE / AgR-gene row) down to a whitelist,
+    case-insensitive exact OR substring match on the feature name. Returns the
+    features unchanged when the whitelist is empty, so the default figure is
+    untouched. `features` is a list of dicts with a 'name' key."""
+    if not whitelist:
+        return features
+    wanted = {str(w).lower() for w in whitelist}
+    kept = []
+    for f in features:
+        nm = str(f.get("name") or "").lower()
+        if nm in wanted or any(w in nm for w in wanted):
+            kept.append(f)
+    return kept
+
+
 def _solve_hic_height(layout_kwargs, data_aspect, hic_height_in,
                       n_hic_rows, iters=4):
     """Find the Hi-C row height (inches) that makes each Hi-C triangle box
@@ -560,6 +577,41 @@ def _combined_figure_layout(show_rgb, show_hic_list, hic_height_in,
     return fig, axes
 
 
+# Per-condition (A/B) colors, keyed by the RGB palette so EVERY panel that
+# distinguishes the two conditions -- RGB overview labels, loop arcs and the
+# insulation lines -- uses one consistent scheme. Default red-green => A(DN)=red,
+# B(DP)=green. Previously the insulation panel hardcoded DN=blue / DP=red, which
+# drew DP in the same red used for DN everywhere else (misleading).
+_CONDITION_COLORS = {
+    "red-green":            ("#cc0000", "#00a83a"),
+    "magenta-green":        ("#cc00cc", "#00a83a"),
+    "magenta-green-white":  ("#cc00cc", "#00a83a"),
+    "blue-red":             ("#1f4fd8", "#cc0000"),
+    "green-blue":           ("#00a83a", "#1f4fd8"),
+}
+
+
+def _condition_colors(rgb_palette):
+    """(color_a, color_b) for the two conditions, consistent across panels."""
+    return _CONDITION_COLORS.get(rgb_palette, ("#cc0000", "#00a83a"))
+
+
+def _hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _overlap_color(color_a, color_b):
+    """Color a bin takes in the joint-normalized RGB overview when BOTH
+    conditions have equal, saturating contact -- the additive mix of the two
+    channel colors (red-green -> yellow, blue-red -> magenta). This is what the
+    legend should show for 'shared'."""
+    ra, ga, ba = _hex_to_rgb(color_a)
+    rb, gb, bb = _hex_to_rgb(color_b)
+    r, g, b = min(255, ra + rb), min(255, ga + gb), min(255, ba + bb)
+    return "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+
 # ---------------------------------------------------------------------
 # Main figure builder
 # ---------------------------------------------------------------------
@@ -579,7 +631,7 @@ def make_combined_figure(
     rgb_overview=False,
     show_hic=("A", "B", "diff"),
     loops_a_path=None, loops_b_path=None,
-    label_genes=None, tidy_labels=False,
+    label_genes=None, label_bed_names=None, tidy_labels=False,
     insul_a_path=None, insul_b_path=None, insul_pctile=95.0,
     insul_sig_out=None,
     max_distance=500000, balance=True,
@@ -844,6 +896,11 @@ def make_combined_figure(
     bed_features_list, bed_styles, bed_paths_kept = [], [], []
     for bed_path in beds:
         feats = load_bed_for_region(bed_path, chrom, region_start, region_end)
+        if feats and label_bed_names:
+            _nb0 = len(feats)
+            feats = _filter_bed_by_name(feats, label_bed_names)
+            print("  curated bed {}: {} -> {} features ({})".format(
+                Path(bed_path).name, _nb0, len(feats), ", ".join(label_bed_names)))
         if not feats:
             # Locus-specific annotation (e.g. CBE at Tcrb, AgR genes at the
             # antigen-receptor loci) -- skip the track entirely where it has no
@@ -906,19 +963,29 @@ def make_combined_figure(
         ax_rgb = axes["rgb"]
         ax_rgb.set_axis_off()
         _draw_rgb_triangle(ax_rgb, rgb_image, inverted=False)
-        # Label colors follow the palette's A/B channels so they match the image.
-        _rgb_label_colors = {
-            "red-green": ("#cc0000", "#00a83a"),
-            "magenta-green": ("#cc00cc", "#00a83a"),
-            "magenta-green-white": ("#cc00cc", "#00a83a"),
-            "blue-red": ("#1f4fd8", "#cc0000"),
-            "green-blue": ("#00a83a", "#1f4fd8"),
-        }
-        _ca, _cb = _rgb_label_colors.get(rgb_palette, ("#cc0000", "#00a83a"))
+        # Colors follow the palette's A/B channels so they match the image (and
+        # every other per-condition panel -- see _condition_colors).
+        _ca, _cb = _condition_colors(rgb_palette)
+        # Bold corner cues (which side is which condition) ...
         ax_rgb.text(0.06, 0.94, label_a, transform=ax_rgb.transAxes, fontsize=8,
                     color=_ca, ha="left", va="top", fontweight="bold")
         ax_rgb.text(0.94, 0.94, label_b, transform=ax_rgb.transAxes, fontsize=8,
                     color=_cb, ha="right", va="top", fontweight="bold")
+        # ... plus an explicit color key: the overview is a blended RGB image, so
+        # readers need to be told red=A, green=B, and the additive mix=shared.
+        _shared = _overlap_color(_ca, _cb)
+        _rgb_handles = [
+            mpatches.Patch(facecolor=_ca, edgecolor="none",
+                           label="{} only".format(label_a)),
+            mpatches.Patch(facecolor=_cb, edgecolor="none",
+                           label="{} only".format(label_b)),
+            mpatches.Patch(facecolor=_shared, edgecolor="none", label="shared"),
+        ]
+        ax_rgb.legend(handles=_rgb_handles, loc="upper left",
+                      bbox_to_anchor=(0.13, 0.93), fontsize=6, frameon=True,
+                      framealpha=0.85, handlelength=1.1, handleheight=1.1,
+                      borderpad=0.4, labelspacing=0.35,
+                      title="joint-normalized", title_fontsize=6)
 
     # ---- genomic Hi-C triangles (single A, single B, diff) ----
     for k in show_hic_list:
@@ -948,25 +1015,26 @@ def make_combined_figure(
     # xlim(0,1) and maps genomic->[0,1] internally). Do NOT override the xlim
     # to genomic coordinates here -- that squeezes the arcs into an invisible
     # sliver at x~0 (this is exactly why the loop track came up empty).
+    cond_color_a, cond_color_b = _condition_colors(rgb_palette)
     if "loops_a" in axes:
         draw_loops_horizontal(
             axes["loops_a"], loops_a or [], region_start, region_end,
             highlights=highlights, label="{} loops".format(label_a),
-            color="#d62728", anchor_color="#d62728")
+            color=cond_color_a, anchor_color=cond_color_a)
         axes["loops_a"].tick_params(axis="x", labelbottom=False)
     if "loops_b" in axes:
         draw_loops_horizontal(
             axes["loops_b"], loops_b or [], region_start, region_end,
             highlights=highlights, label="{} loops".format(label_b),
-            color="#2ca02c", anchor_color="#2ca02c")
+            color=cond_color_b, anchor_color=cond_color_b)
         axes["loops_b"].tick_params(axis="x", labelbottom=False)
 
     # ---- insulation panels ----
     if has_insul:
         ax_ins = axes["insul"]
-        ax_ins.plot(ins_A["center"], ins_A["score"], color="#1f77b4",
+        ax_ins.plot(ins_A["center"], ins_A["score"], color=cond_color_a,
                     label=label_a, lw=1.2)
-        ax_ins.plot(ins_B["center"], ins_B["score"], color="#d62728",
+        ax_ins.plot(ins_B["center"], ins_B["score"], color=cond_color_b,
                     label=label_b, lw=1.2)
         ax_ins.axhline(0, color="gray", lw=0.5, ls="--")
         ax_ins.legend(loc="upper right", fontsize=7)
@@ -1190,6 +1258,10 @@ def main():
                         help="Curate the gene track to only these gene names "
                              "(case-insensitive, substring match), to de-clutter "
                              "dense loci. Default: show all genes.")
+    parser.add_argument("--label-bed-names", nargs="+", default=None, metavar="NAME",
+                        help="Curate the BED overlay rows (e.g. the CBE / AgR-gene "
+                             "track) to only these feature names (case-insensitive, "
+                             "substring match). Default: show all BED features.")
     parser.add_argument("--tidy-labels", action="store_true",
                         help="Use compact two-line panel labels for the "
                              "differential tracks (reduces left-margin crowding).")
@@ -1332,7 +1404,8 @@ def main():
         rgb_overview=args.rgb_overview,
         show_hic=show_hic,
         loops_a_path=args.loops_a, loops_b_path=args.loops_b,
-        label_genes=args.label_genes, tidy_labels=args.tidy_labels,
+        label_genes=args.label_genes, label_bed_names=args.label_bed_names,
+        tidy_labels=args.tidy_labels,
         insul_a_path=args.insul_a, insul_b_path=args.insul_b, insul_pctile=args.insul_pctile,
         insul_sig_out=args.insul_sig_out,
         max_distance=args.max_distance, balance=not args.no_balance,

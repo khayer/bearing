@@ -799,7 +799,10 @@ rule bearing_hic_combined_one:
             # Curate the gene track: only label these genes (declutters a busy
             # region). Empty list -> flag omitted -> all genes shown (unchanged).
             ("--label-genes %s" % " ".join(config.get("combined_label_genes", [])))
-            if config.get("combined_label_genes") else ""])),
+            if config.get("combined_label_genes") else "",
+            # Curate the BED overlay (CBE / AgR-gene) row the same way.
+            ("--label-bed-names %s" % " ".join(config.get("combined_agr_genes", [])))
+            if config.get("combined_agr_genes") else ""])),
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
     shell:

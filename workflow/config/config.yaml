@@ -79,6 +79,9 @@ combined_rgb_palette:  red-green  # RGB overview: DN=red, DP=green, match=yellow
 # (case-insensitive, substring match). Leave empty [] to show every gene.
 #   combined_label_genes: ["Trbv13", "Trbd2", "Trbc"]
 combined_label_genes:  []
+# Curate the BED overlay (CBE / AgR-gene) row the same way. Empty [] = show all.
+#   combined_agr_genes: ["V1_CBE", "CBE_1", "CBE_3", "Trbd2"]
+combined_agr_genes:    []
 
 # --- optional input staging (no aws/mount-s3 on cluster) -------------------
 # Host inputs behind HTTPS (public bucket or presigned URLs) and put those URLs
