@@ -1040,6 +1040,11 @@ def make_combined_figure(
             axes["diff"], pos_diff, scores_diff, num_states, region_start, region_end,
             categories[:num_states], highlights=highlights,
             label=_diff_lbl, diff_max=y_max_shared)
+        # The shared helper draws with an inverted y-axis (positive DOWN). Flip
+        # it here so positive label_a - label_b (DN-enriched) points UP, matching
+        # the +DN/-DP per-track decomposition and the qcat A/B tracks above.
+        # Local flip only -- the shared helper is untouched for other scripts.
+        axes["diff"].invert_yaxis()
     else:
         axes["diff"].set_axis_off()
 
@@ -1055,6 +1060,8 @@ def make_combined_figure(
             highlights=highlights, label=_pm_lbl,
             score_positions=pos_a, score_matrix=scores_a, categories=categories[:num_states],
             y_max=y_max_pm, cutoff_value=pval_cutoff_value, kl_scores=pval_diff_kl_scores)
+        # Flip to positive-UP so DN-enriched signal points up (see diff qcat note).
+        axes["manhattan"].invert_yaxis()
     else:
         axes["manhattan"].set_axis_off()
 
@@ -1070,6 +1077,8 @@ def make_combined_figure(
                 diff_score_positions=pos_diff if has_diff else None,
                 diff_score_matrix=scores_diff if has_diff else None,
                 categories=categories[:num_states] if has_diff else None)
+            # Flip to positive-UP for consistency with the diff qcat / manhattan.
+            axes["pval_fill"].invert_yaxis()
         else:
             axes["pval_fill"].set_axis_off()
 
