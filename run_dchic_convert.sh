@@ -43,7 +43,7 @@ INCLUDE='(DN|DP|EBKO|EbKO|ProB|S3T3|s3T3|dV1P|dV1CTCF|V1PRO|V1SCR|TKO)'
 # _DN. If a condition you need is missing from the DISCOVERY block, loosen this.
 EXCLUDE='(degron|MNK3|4GyIR|P5424|S6312|V31NT|d5PC|EbPrss2|ArimaBAA|ArimaBDA|ArimaBAProB|ArimaBADN|ArimaBAEbDN|ArimaBA)'
 
-declare -A RES_LABEL=( [100000]=100kb [50000]=50kb )
+declare -A RES_LABEL=( [100000]=100kb [50000]=50kb [250000]=250kb )
 
 # ---------------------------------------------------------------- sanity checks
 exec > >(tee -a "$LOG") 2>&1
@@ -68,7 +68,7 @@ CONVERTED=0
 SKIPPED=0
 
 # ---------------------------------------------------------------- main loop
-for RES in 100000 50000; do
+for RES in 100000 50000 250000; do
   LAB=${RES_LABEL[$RES]}
   OUTDIR="dchic_in_${LAB}"
   mkdir -p "$OUTDIR"

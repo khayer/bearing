@@ -192,3 +192,8 @@ results_v1/
 *.gtf
 *.gtf.gz
 *.sif
+
+paper/table_sources/*
+dchic*
+*.out
+*.tsv
