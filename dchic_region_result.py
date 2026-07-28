@@ -69,6 +69,30 @@ def main():
     if ai is None or bi is None:
         sys.exit("ERROR: could not find columns %r and %r in the bedGraph header.\n"
                  "  Available: %s" % (a.exp_a, a.exp_b, header))
+
+    # Detect a multi-condition MFA run. dcHiC computes ONE padj per bin that tests
+    # whether that bin varies across ALL experiments in the run, not the pairwise
+    # exp_a-vs-exp_b difference. With 3+ experiments the padj is therefore a
+    # GLOBAL (across-panel) significance, and a bin can be "significant" here while
+    # exp_a and exp_b are indistinguishable -- the significance may be driven by a
+    # third condition (e.g. a fibroblast). The SIGN CHANGE between exp_a and exp_b
+    # is still read pairwise from the two PC columns and is reliable; the padj is
+    # not pairwise. Label it so downstream readers of the TSV are not misled.
+    _meta = {"chr", "start", "end", "replicate_wt", "sample_maha",
+             "pval", "padj", "dist_clust", "padjust", "adj.pvalue", "qvalue"}
+    exp_cols = [h for h in header
+                if h.strip().lower() not in _meta
+                and not re.search(r"_rep\d", h)]
+    multi_condition = len(exp_cols) > 2
+    padj_label = "padj_global" if multi_condition else "padj"
+    if multi_condition:
+        print("\n  NOTE: %d experiments in this run (%s). dcHiC's padj is a GLOBAL"
+              % (len(exp_cols), ", ".join(exp_cols)))
+        print("  test of variation across all of them, NOT the pairwise %s-vs-%s"
+              % (a.exp_a, a.exp_b))
+        print("  difference. Trust the SIGN CHANGE (read from the two PC columns)")
+        print("  as the pairwise quantity; treat padj as panel-level significance.")
+        print("  For a clean pairwise test, rerun dcHiC on just these two conditions.")
     if pi is None:
         print("WARNING: no adjusted-p column found; reporting PC values only",
               file=sys.stderr)
@@ -101,23 +125,30 @@ def main():
         print("  and its --distclust / --numberclust filters exist for exactly this.")
 
     out_rows = []
-    print("\n  %-22s %10s %10s %10s %s" % ("bin", a.exp_a, a.exp_b, "padj", "sign change?"))
+    _sigtag = "(sig, global)" if multi_condition else "(significant)"
+    print("\n  %-22s %10s %10s %12s %s" % ("bin", a.exp_a, a.exp_b, padj_label, "sign change?"))
     for r in hits:
         va, vb = float(r[ai]), float(r[bi])
         p = float(r[pi]) if pi is not None and r[pi] not in ("NA", "") else float("nan")
         flip = (va > 0) != (vb > 0)
         sig = (p <= a.alpha) if p == p else False
-        print("  %s:%-12s %10.4f %10.4f %10.3g %s%s"
+        print("  %s:%-12s %10.4f %10.4f %12.3g %s%s"
               % (r[ci], "%s-%s" % (r[si], r[ei]), va, vb, p,
-                 "YES" if flip else "no", "  (significant)" if sig else ""))
+                 "YES" if flip else "no", "  " + _sigtag if sig else ""))
         out_rows.append((r[ci], r[si], r[ei], "%.6f" % va, "%.6f" % vb,
                          "%.6g" % p, "1" if flip else "0",
                          "1" if sig else "0"))
 
     n_flip = sum(1 for r in out_rows if r[6] == "1")
     n_sig = sum(1 for r in out_rows if r[7] == "1")
-    print("\n  VERDICT: %d/%d bin(s) change compartment sign; %d/%d significant at "
-          "padj <= %g" % (n_flip, len(hits), n_sig, len(hits), a.alpha))
+    _sigword = "global-significant (panel-level)" if multi_condition else "significant"
+    print("\n  VERDICT: %d/%d bin(s) change %s-vs-%s compartment sign; "
+          "%d/%d %s at %s <= %g"
+          % (n_flip, len(hits), a.exp_a, a.exp_b, n_sig, len(hits),
+             _sigword, padj_label, a.alpha))
+    if multi_condition:
+        print("  (sign change is the pairwise quantity; %s is panel-level -- see NOTE above)"
+              % padj_label)
     if n_sig == 0:
         print("  -> no significant compartment change at %s between %s and %s."
               % (a.label, a.exp_a, a.exp_b))
@@ -131,8 +162,17 @@ def main():
             fh.write("# bedgraph=%s\n# region=%s label=%s\n" % (a.bedgraph, a.region, a.label))
             fh.write("# exp_a=%s exp_b=%s alpha=%s binsize=%d bins=%d\n"
                      % (a.exp_a, a.exp_b, a.alpha, binsize, len(hits)))
-            fh.write("chr\tstart\tend\t%s_PC\t%s_PC\tpadj\tsign_change\tsignificant\n"
-                     % (a.exp_a, a.exp_b))
+            fh.write("# run_experiments=%s multi_condition=%s\n"
+                     % (",".join(exp_cols), multi_condition))
+            if multi_condition:
+                fh.write("# WARNING: padj is a GLOBAL across-panel test (all "
+                         "experiments), NOT pairwise %s-vs-%s. sign_change is "
+                         "pairwise and reliable; the 'significant' flag reflects "
+                         "panel-level padj.\n" % (a.exp_a, a.exp_b))
+            _pcol = "padj_global" if multi_condition else "padj"
+            _scol = "global_significant" if multi_condition else "significant"
+            fh.write("chr\tstart\tend\t%s_PC\t%s_PC\t%s\tsign_change\t%s\n"
+                     % (a.exp_a, a.exp_b, _pcol, _scol))
             for r in out_rows:
                 fh.write("\t".join(r) + "\n")
         print("\nwrote %s" % a.out)
