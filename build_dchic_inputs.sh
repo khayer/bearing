@@ -32,11 +32,32 @@ build_input() {
   done
 }
 
+# Fail loud if any listed sample has no converted .matrix/.bed in $dir. Without
+# this, a casing mismatch (e.g. EBKO vs EbKO) silently drops a condition and
+# dcHiC runs on a smaller-but-valid-looking panel -- exactly the kind of error
+# that produces a wrong table with no visible failure.
+check_samples_present() {
+  local dir="$1"; shift
+  local missing=()
+  for s in "$@"; do
+    [ -s "$dir/$s.matrix" ] && [ -s "$dir/$s.bed" ] || missing+=("$s")
+  done
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo "FATAL: $dir is missing .matrix/.bed for: ${missing[*]}" >&2
+    echo "       The sample ids in build_dchic_inputs.sh must match the converted" >&2
+    echo "       basenames EXACTLY (casing: s3T3 lower, EBKO upper). Fix the lists" >&2
+    echo "       or re-run run_dchic_convert.sh, then retry." >&2
+    exit 1
+  fi
+}
+
 for res in $RESOLUTIONS; do
   dir="$WORK/dchic_in_${res}"
   if [ ! -d "$dir" ]; then
     echo "SKIP: $dir not present (run run_dchic_convert.sh first)"; continue
   fi
+  check_samples_present "$dir" $MANUSCRIPT_SAMPLES
+  check_samples_present "$dir" $LYMPHOID_SAMPLES
   build_input "$dir" $MANUSCRIPT_SAMPLES > "$dir/input_manuscript.txt"
   build_input "$dir" $LYMPHOID_SAMPLES   > "$dir/input_lymphoid.txt"
   echo "wrote $dir/input_manuscript.txt ($(wc -l < "$dir/input_manuscript.txt") rows), input_lymphoid.txt ($(wc -l < "$dir/input_lymphoid.txt") rows)"

@@ -28,6 +28,7 @@ ASCII only.
 """
 
 import argparse
+import re
 import sys
 
 
@@ -35,6 +36,21 @@ def parse_region(s):
     chrom, rest = s.split(":")
     lo, hi = rest.replace(",", "").split("-")
     return chrom, int(lo), int(hi)
+
+
+# Metadata (non-experiment) columns a dcHiC bedGraph header may carry.
+_META_COLS = {"chr", "start", "end", "replicate_wt", "sample_maha",
+              "pval", "padj", "dist_clust", "padjust", "adj.pvalue", "qvalue"}
+
+
+def detect_experiment_columns(header):
+    """Experiment (per-condition PC) columns in a dcHiC bedGraph header: drop
+    the known metadata columns and any per-replicate '<name>_repN' column. A run
+    with >2 of these is a multi-condition MFA run whose padj is global, not
+    pairwise (see the NOTE in main)."""
+    return [h for h in header
+            if h.strip().lower() not in _META_COLS
+            and not re.search(r"_rep\d", h)]
 
 
 def main():
@@ -78,11 +94,7 @@ def main():
     # third condition (e.g. a fibroblast). The SIGN CHANGE between exp_a and exp_b
     # is still read pairwise from the two PC columns and is reliable; the padj is
     # not pairwise. Label it so downstream readers of the TSV are not misled.
-    _meta = {"chr", "start", "end", "replicate_wt", "sample_maha",
-             "pval", "padj", "dist_clust", "padjust", "adj.pvalue", "qvalue"}
-    exp_cols = [h for h in header
-                if h.strip().lower() not in _meta
-                and not re.search(r"_rep\d", h)]
+    exp_cols = detect_experiment_columns(header)
     multi_condition = len(exp_cols) > 2
     padj_label = "padj_global" if multi_condition else "padj"
     if multi_condition:

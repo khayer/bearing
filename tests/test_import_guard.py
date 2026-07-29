@@ -78,6 +78,10 @@ CANONICAL_MODULES = [
     "plot_floor_sensitivity",
     "assert_qcat_nonempty",
     "assert_score_provenance",
+    # dcHiC compartment table consumers (h5_to_dchic needs hicmatrix, so it is
+    # deliberately NOT listed here -- it cannot import in a bare test env)
+    "dchic_region_result",
+    "build_compartment_supp_table",
 ]
 
 # --- Modules that LOOK orphaned by name but are imported at run time. -------
