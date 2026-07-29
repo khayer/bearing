@@ -306,12 +306,23 @@ def main():
                     help="treat PC1 values within +/- this of 0 as "
                          "compartmentally ambiguous (no switch called "
                          "across them). Default 0.0.")
+    ap.add_argument("--highlight", default=None,
+                    help="Shade a region (chrom:start-end) behind all PC1 "
+                         "tracks, e.g. the Tcrb V1-V31 locus.")
     ap.add_argument("--out-prefix", required=True)
     args = ap.parse_args()
 
     # Parse region
     chrom, rng = args.region.split(":")
     r_start, r_end = map(int, rng.split("-"))
+
+    # Optional highlight span (drawn behind the PC1 tracks)
+    hl = None
+    if args.highlight:
+        _hc, _hr = args.highlight.split(":")
+        _hs, _he = _hr.replace(",", "").split("-")
+        if _hc == chrom:
+            hl = (int(_hs), int(_he))
 
     # Parse PC1 paths
     cond_paths = []
@@ -551,6 +562,8 @@ def main():
     ax_idx = 0
     for cond in cond_list:
         ax = axes[ax_idx]; ax_idx += 1
+        if hl is not None:
+            ax.axvspan(hl[0], hl[1], color="0.5", alpha=0.15, lw=0, zorder=0)
         df = pc1_region[cond]
         if len(df) > 0:
             mids = (df["start"] + df["end"]) / 2

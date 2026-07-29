@@ -60,6 +60,7 @@ hic:
   compartment_region: "chr6:39000000-55000000"
   fig4b_region: "chr6:39000000-44000000"
   s7b_region: "chr6:39000000-55000000"
+  tcrb_highlight: "chr6:40872100-41567200"
   isolation_target: "chr6:40850000-41600000"
   isolation_window: 750000
   isolation_max_distance: 6000000
