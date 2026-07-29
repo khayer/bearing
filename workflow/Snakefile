@@ -1112,7 +1112,7 @@ rule fig4b_compartment_100kb:
         "--region {params.orient_region} --features-bed {input.feats} "
         "--tad-dir {params.tad_dir} --tad-resolution 250000 "
         "--orient-with-gtf {input.gtf} "
-        "--out {output}"
+        "--out-prefix {output}.compartment_landscape"
 
 rule suppS7b_compartment_grid:
     input: gtf=GTF
