@@ -24,8 +24,9 @@ import argparse
 import os
 import sys
 
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+# openpyxl is imported lazily inside main() (see below) so the pure-logic helpers
+# -- call/pc_col/padj_col/load_contrast -- can be imported and unit-tested in an
+# environment without openpyxl (e.g. CI). It is only needed to write the xlsx.
 
 
 def read_tsv(path):
@@ -76,6 +77,9 @@ def call(pc):
 
 
 def main():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--tsv-dir", default="paper/table_sources",
                     help="dir with the 5-condition run TSVs "

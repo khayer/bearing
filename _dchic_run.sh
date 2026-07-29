@@ -53,6 +53,7 @@ REGION_SCRIPT="${REGION_SCRIPT:-$REPO_ROOT/dchic_region_result.py}"
 TABLE_OUT="${TABLE_OUT:-$REPO_ROOT/paper/table_sources}"
 
 dchic_run_all() {
+  local ran=0
   for RES in $RESOLUTIONS; do
     local INPUT="${INPUT_PREFIX}.txt"
     local DIFF="${DIFF_PREFIX}_${RES}"
@@ -105,7 +106,21 @@ dchic_run_all() {
         echo "  WARNING: expected bedGraph not found: $BG" >&2
       fi
     )
+    ran=$((ran + 1))
   done
+
+  # Every resolution was skipped (input file missing/empty at all of them, or no
+  # dchic_in_<res> converted). Without this a run with a missing input -- e.g. a
+  # v1/thesis script whose input_<x>.txt was never built -- exits 0 having done
+  # nothing, looking like success. Fail loud instead.
+  if [ "$ran" -eq 0 ]; then
+    echo "FATAL: dcHiC ran 0 of the requested resolutions ($RESOLUTIONS) for" >&2
+    echo "       INPUT_PREFIX='${INPUT_PREFIX}'. Every dchic_in_<res>/${INPUT_PREFIX}.txt" >&2
+    echo "       was missing or empty. Build the input first (build_dchic_inputs.sh" >&2
+    echo "       covers input_manuscript/input_lymphoid; v1/thesis inputs are built" >&2
+    echo "       separately), then re-run." >&2
+    return 1
+  fi
 }
 
 # dchic_region <region> <label> <expA> <expB>  -- run per resolution
