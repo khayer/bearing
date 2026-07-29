@@ -1111,7 +1111,7 @@ rule fig4b_compartment_100kb:
     shell:
         "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
         "--region {params.orient_region} --features-bed {input.feats} "
-        "--tad-dir {params.tad_dir} --tad-resolution 250000 "
+        "--tad-dir {params.tad_dir} --tad-resolution 25000 "
         "--orient-with-gtf {input.gtf} "
         "--out-prefix {params.out_prefix}"
 
