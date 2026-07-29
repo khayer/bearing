@@ -534,7 +534,10 @@ def main():
     panel_h_pc1 = 0.6
     panel_h_tad = 0.25 if has_tads else 0
     rows_per_cond = panel_h_pc1 + panel_h_tad
-    fig_h = 1.0 + n_cond * rows_per_cond + (0.5 if has_feat else 0)
+    # Taller features panel so staggered, leader-lined labels have room (a tight
+    # cluster like the Tcrb features needs several vertical levels).
+    feat_h = 1.15
+    fig_h = 1.0 + n_cond * rows_per_cond + (feat_h if has_feat else 0)
 
     fig, axes = plt.subplots(
         n_cond * (2 if has_tads else 1) + (1 if has_feat else 0),
@@ -544,7 +547,7 @@ def main():
                        "height_ratios": (
                            ([panel_h_pc1, panel_h_tad] * n_cond
                               if has_tads else [panel_h_pc1] * n_cond)
-                           + ([0.4] if has_feat else []))})
+                           + ([feat_h] if has_feat else []))})
     axes = list(axes) if hasattr(axes, "__iter__") else [axes]
 
     # Decide a consistent y-range across PC1 panels
@@ -612,17 +615,49 @@ def main():
             ax_f.spines[sp].set_visible(False)
         features = load_features_bed(args.features_bed, chrom_filter=chrom)
         features = features[(features["end"] > r_start)
-                              & (features["start"] < r_end)]
+                              & (features["start"] < r_end)].copy()
+        features = features.sort_values("start")
+        # Stagger labels across vertical levels so a tight cluster (the six Tcrb
+        # features packed into <1 Mb of a 16 Mb view) does not overprint. Each
+        # label drops to the lowest level whose previous label is far enough away
+        # in x; a thin leader line ties it back to its box. Isolated features
+        # (Cntnap2, Gpnmb) stay on the top level.
+        span = r_end - r_start
+        min_gap = span * 0.030          # ~ x-footprint of a 45-deg label
+        max_levels = 6
+        last_x = []                     # last label mid placed at each level
+        box_y0, box_y1 = 0.86, 0.99
+        top_y = 0.74                    # y anchor of the level-0 label
+        dy = 0.135                      # vertical step between levels
         for _, feat in features.iterrows():
             s = int(feat["start"]); e = int(feat["end"])
             mid = (s + e) / 2
-            w = max(e - s, (r_end - r_start) * 0.002)
+            w = max(e - s, span * 0.002)
             ax_f.add_patch(Rectangle(
-                (mid - w/2, 0.55), w, 0.3,
-                facecolor="#ffb703", edgecolor="black", linewidth=0.5))
-            ax_f.text(mid, 0.4, feat["name"],
-                        ha="center", va="top", fontsize=7,
-                        style="italic", rotation=15)
+                (mid - w/2, box_y0), w, box_y1 - box_y0,
+                facecolor="#ffb703", edgecolor="black", linewidth=0.5,
+                zorder=3))
+            level = None
+            for L in range(len(last_x)):
+                if mid - last_x[L] >= min_gap:
+                    level = L
+                    break
+            if level is None:
+                if len(last_x) < max_levels:
+                    level = len(last_x)
+                    last_x.append(mid)
+                else:                    # all full: reuse the oldest level
+                    level = min(range(len(last_x)), key=lambda L: last_x[L])
+                    last_x[level] = mid
+            else:
+                last_x[level] = mid
+            ly = top_y - level * dy
+            ax_f.plot([mid, mid], [box_y0, ly + 0.015],
+                        color="#999999", linewidth=0.4, zorder=2)
+            ax_f.text(mid, ly, feat["name"],
+                        ha="right", va="top", fontsize=6,
+                        style="italic", rotation=40, rotation_mode="anchor",
+                        zorder=4)
         ax_f.set_ylabel("features", fontsize=8, rotation=0,
                           ha="right", va="center")
 
