@@ -1105,14 +1105,15 @@ rule fig4b_compartment_100kb:
             "%s=%s" % (c, _abs_hic(HIC[c]["pca1"].replace("{res}", "100000")))
             for c in ["DN", "DP", "ProB", "EbKO", "S3T3"] if c in HIC),
         orient_region=P["hic"].get("compartment_region", "chr6:39000000-55000000"),
-        tad_dir=_abs_hic(P["hic"]["tad_dir"])
+        tad_dir=_abs_hic(P["hic"]["tad_dir"]),
+        out_prefix=out("paper_figures", "fig4_panelB_compartment_100kb")
     resources: mem_mb=32000, runtime=120
     shell:
         "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
         "--region {params.orient_region} --features-bed {input.feats} "
         "--tad-dir {params.tad_dir} --tad-resolution 250000 "
         "--orient-with-gtf {input.gtf} "
-        "--out-prefix {output}.compartment_landscape"
+        "--out-prefix {params.out_prefix}"
 
 rule suppS7b_compartment_grid:
     input: gtf=GTF
