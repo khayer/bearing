@@ -121,6 +121,10 @@ for _, r in _sheet.iterrows():
                   "loops": r.get("loops", "").strip()}
 HAS_HIC = len(HIC) > 0
 
+DCHIC_RES = config.get("dchic", {}).get("res", "100kb")
+DCHIC_TABLE_SOURCES = os.path.join(BIN, "paper", "table_sources")
+DCHIC_LYMPHOID_TABLE_SOURCES = os.path.join(DCHIC_TABLE_SOURCES, "lymphoid")
+
 def _abs_hic(p):
     """Resolve a Hi-C path (possibly relative like ../comp/...) to absolute
     against DATA_DIR, so it works regardless of a SLURM job's working dir."""
@@ -182,8 +186,10 @@ def all_targets():
               out("hic", "compartment.done"),
               out("hic", "contact_isolation.done"),
               out("hic", "crosslocus.done"),
+              out("paper_tables", "Supp_Table_compartment_dcHiC.xlsx"),
               out("paper_figures", "fig3_panelB_oe_grid.png"),
               out("paper_figures", "fig4_panelA_self_contact_grid.png"),
+              out("paper_figures", "fig4_panelB_compartment_100kb.png"),
               out("paper_figures", "suppS7_panelB_compartment_res.png"),
               out("hic", "bes_hic_within.done")]
     return t
@@ -934,6 +940,56 @@ rule hic_crosslocus:
               % (diffs, cool_a, cool_b, insul_a, insul_b, res))
 
 
+# ---- dcHiC compartment table and manuscript/lymphoid extracts ------------
+# The dcHiC scripts manage their own directories under the repo root (BIN).
+# These rules wrap the coarse shell steps and track the outputs by path.
+
+rule dchic_convert:
+    output: touch(out("dchic", "convert.done"))
+    resources: mem_mb=32000, runtime=240
+    shell:
+        "cd {BIN} && bash run_dchic_convert.sh && bash build_dchic_inputs.sh"
+
+rule dchic_manuscript:
+    input: out("dchic", "convert.done")
+    output:
+        bg=os.path.join(BIN, "dchic_in_%s" % DCHIC_RES, "DifferentialResult",
+                        "manuscript_%s" % DCHIC_RES, "fdr_result",
+                        "differential.intra_sample_combined.pcQnm.bedGraph"),
+        tsv=os.path.join(DCHIC_TABLE_SOURCES, "Tcrb_compartment_dchic_ProB_%s.tsv" % DCHIC_RES)
+    resources: mem_mb=64000, runtime=600
+    shell:
+        "cd {BIN} && bash run_all_manuscript.sh"
+
+rule dchic_lymphoid:
+    input: out("dchic", "convert.done")
+    output:
+        bg=os.path.join(BIN, "dchic_in_%s" % DCHIC_RES, "DifferentialResult",
+                        "lymphoid_%s" % DCHIC_RES, "fdr_result",
+                        "differential.intra_sample_combined.pcQnm.bedGraph"),
+        tsv=os.path.join(DCHIC_LYMPHOID_TABLE_SOURCES,
+                         "Tcrb_compartment_dchic_ProB_%s.tsv" % DCHIC_RES)
+    params: res=DCHIC_RES
+    resources: mem_mb=64000, runtime=600
+    shell:
+        "cd {BIN} && RESOLUTIONS={params.res} bash run_all_lymphoid.sh"
+
+rule compartment_supp_table:
+    input:
+        man=rules.dchic_manuscript.output.tsv,
+        lym=rules.dchic_lymphoid.output.tsv
+    output: out("paper_tables", "Supp_Table_compartment_dcHiC.xlsx")
+    params:
+        res=DCHIC_RES,
+        tsv_dir=DCHIC_TABLE_SOURCES,
+        lymphoid_dir=DCHIC_LYMPHOID_TABLE_SOURCES
+    resources: mem_mb=8000, runtime=30
+    shell:
+        "python {BIN}/build_compartment_supp_table.py "
+        "--tsv-dir {params.tsv_dir} --lymphoid-dir {params.lymphoid_dir} "
+        "--res {params.res} --out {output}"
+
+
 # ---- Phase 8-10: calibration, decomposition, synthetic benchmark ----------
 rule calibration_one:
     # Per-condition replicate calibration; one SLURM job per condition so the
@@ -1038,6 +1094,23 @@ rule fig4a_self_contact_grid:
         "python {BIN}/paper/figures/oe_contact_grid.py --cool {params.cools} "
         "--region chr6:39900000-42900000 --resolution 25000 --vmin -2 --vmax 2 "
         "--ncols 5 --annotate-oe-region chr6:40400000-42400000 --out {output}"
+
+rule fig4b_compartment_100kb:
+    input: gtf=GTF
+    output: out("paper_figures", "fig4_panelB_compartment_100kb.png")
+    params:
+        pc1=lambda wc: " ".join(
+            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"])) for c in LYMPH5),  # path keeps {res}
+        orient_region=P["hic"].get("compartment_region", "chr6:39000000-55000000"),
+        region=P.get("fig4b_region", "chr6:39000000-44000000")
+    resources: mem_mb=32000, runtime=120
+    shell:
+        "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
+        "--resolutions 100000 --region {params.region} "
+        "--gtf {input.gtf} --orient-region {params.orient_region} "
+        "--tcrb-span chr6:40793981-41688054 "
+        "--landmarks Cntnap2:chr6:46400000:B Gpnmb:chr6:48900000:A Tcrb:chr6:41000000:A "
+        "--out {output}"
 
 rule suppS7b_compartment_grid:
     input: gtf=GTF
@@ -1208,6 +1281,7 @@ def _collect_fig_inputs():
         figs += [out("figures.done"), out("figures_combined.done"),
                  out("paper_figures", "fig3_panelB_oe_grid.png"),
                  out("paper_figures", "fig4_panelA_self_contact_grid.png"),
+                 out("paper_figures", "fig4_panelB_compartment_100kb.png"),
                  out("paper_figures", "suppS7_panelB_compartment_res.png"),
                  out("hic", "bes_hic_within.done")]
     return figs

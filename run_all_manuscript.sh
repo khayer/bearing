@@ -13,6 +13,15 @@ source ./_dchic_run.sh
 
 dchic_run_all
 
+# region extracts: DN vs each condition over the Tcrb window
+export TABLE_OUT="$(pwd)/paper/table_sources"
+mkdir -p "$TABLE_OUT"
+export RESOLUTIONS="100kb"
+dchic_region chr6:40400000-42400000 Tcrb DN S3T3
+dchic_region chr6:40400000-42400000 Tcrb DN DP
+dchic_region chr6:40400000-42400000 Tcrb DN EBKO
+dchic_region chr6:40400000-42400000 Tcrb DN ProB
+
 echo ""
 echo "Manuscript run complete. The differential bedGraph per resolution is:"
 echo "  dchic_in_<res>/DifferentialResult/manuscript_<res>/fdr_result/differential.intra_sample_combined.pcQnm.bedGraph"
