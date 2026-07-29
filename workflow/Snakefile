@@ -190,7 +190,9 @@ def all_targets():
               out("paper_figures", "fig3_panelB_oe_grid.png"),
               out("paper_figures", "fig4_panelA_self_contact_grid.png"),
               out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf"),
-              out("paper_figures", "suppS7_panelB_compartment_res.png"),
+              out("paper_figures", "suppS7b_compartment_50kb_core.compartment_landscape.pdf"),
+              out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf"),
+              out("paper_figures", "suppS7b_compartment_100kb_all7.compartment_landscape.pdf"),
               out("hic", "bes_hic_within.done")]
     return t
 
@@ -1104,7 +1106,7 @@ rule fig4b_compartment_100kb:
         pc1=lambda wc: " ".join(
             "%s=%s" % (c, _abs_hic(HIC[c]["pca1"].replace("{res}", "100000")))
             for c in ["DN", "DP", "ProB", "EbKO", "S3T3"] if c in HIC),
-        orient_region=P["hic"].get("compartment_region", "chr6:39000000-55000000"),
+        orient_region=P["hic"].get("fig4b_region", "chr6:39000000-44000000"),
         tad_dir=_abs_hic(P["hic"]["tad_dir"]),
         out_prefix=out("paper_figures", "fig4_panelB_compartment_100kb")
     resources: mem_mb=32000, runtime=120
@@ -1115,21 +1117,58 @@ rule fig4b_compartment_100kb:
         "--orient-with-gtf {input.gtf} "
         "--out-prefix {params.out_prefix}"
 
-rule suppS7b_compartment_grid:
-    input: gtf=GTF
-    output: out("paper_figures", "suppS7_panelB_compartment_res.png")
+# ---- Supp S7B: wide-view compartment robustness (compartment_analysis.py) --
+_S7B_CORE   = [c for c in ["DN", "DP", "ProB", "EbKO", "S3T3"] if c in HIC]
+_S7B_ALL7   = [c for c in ["DN", "DP", "ProB", "EbKO", "S3T3", "dV1P", "dV1CTCF"]
+               if c in HIC]
+_S7B_REGION = P["hic"].get("s7b_region", P["hic"].get("compartment_region", "chr6:39000000-55000000"))
+_S7B_FEATS  = os.path.join(BIN, P["hic"]["features_bed"])
+_S7B_TADDIR = _abs_hic(P["hic"]["tad_dir"])
+
+rule suppS7b_compartment_50kb_core:
+    input: gtf=GTF, feats=_S7B_FEATS
+    output: out("paper_figures", "suppS7b_compartment_50kb_core.compartment_landscape.pdf")
     params:
-        pc1=lambda wc: " ".join(
-            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"])) for c in LYMPH5),  # path keeps {res}
-        orient_region=P["hic"].get("compartment_region", "chr6:39000000-55000000")
-    resources: mem_mb=32000, runtime=240
+        pc1=lambda wc: hic_arg("pca1", 50000, conds=_S7B_CORE),
+        region=_S7B_REGION,
+        tad_dir=_S7B_TADDIR
+    resources: mem_mb=64000, runtime=240
     shell:
-        "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
-        "--resolutions 50000 100000 250000 --region chr6:39000000-43500000 "
-        "--gtf {input.gtf} --orient-region {params.orient_region} "
-        "--tcrb-span chr6:40793981-41688054 "
-        "--landmarks Cntnap2:chr6:46400000:B Gpnmb:chr6:48900000:A Tcrb:chr6:41000000:A "
-        "--out {output}"
+        "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
+        "--region {params.region} --features-bed {input.feats} "
+        "--tad-dir {params.tad_dir} --tad-resolution 25000 "
+        "--orient-with-gtf {input.gtf} "
+        "--out-prefix {OUT}/paper_figures/suppS7b_compartment_50kb_core"
+
+rule suppS7b_compartment_250kb_core:
+    input: gtf=GTF, feats=_S7B_FEATS
+    output: out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf")
+    params:
+        pc1=lambda wc: hic_arg("pca1", 250000, conds=_S7B_CORE),
+        region=_S7B_REGION,
+        tad_dir=_S7B_TADDIR
+    resources: mem_mb=64000, runtime=240
+    shell:
+        "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
+        "--region {params.region} --features-bed {input.feats} "
+        "--tad-dir {params.tad_dir} --tad-resolution 25000 "
+        "--orient-with-gtf {input.gtf} "
+        "--out-prefix {OUT}/paper_figures/suppS7b_compartment_250kb_core"
+
+rule suppS7b_compartment_100kb_all7:
+    input: gtf=GTF, feats=_S7B_FEATS
+    output: out("paper_figures", "suppS7b_compartment_100kb_all7.compartment_landscape.pdf")
+    params:
+        pc1=lambda wc: hic_arg("pca1", 100000, conds=_S7B_ALL7),
+        region=_S7B_REGION,
+        tad_dir=_S7B_TADDIR
+    resources: mem_mb=64000, runtime=240
+    shell:
+        "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
+        "--region {params.region} --features-bed {input.feats} "
+        "--tad-dir {params.tad_dir} --tad-resolution 25000 "
+        "--orient-with-gtf {input.gtf} "
+        "--out-prefix {OUT}/paper_figures/suppS7b_compartment_100kb_all7"
 
 
 # ---- Additional manuscript-figure rules -----------------------------------
@@ -1285,7 +1324,9 @@ def _collect_fig_inputs():
                  out("paper_figures", "fig3_panelB_oe_grid.png"),
                  out("paper_figures", "fig4_panelA_self_contact_grid.png"),
                  out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf"),
-                 out("paper_figures", "suppS7_panelB_compartment_res.png"),
+                 out("paper_figures", "suppS7b_compartment_50kb_core.compartment_landscape.pdf"),
+                 out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf"),
+                 out("paper_figures", "suppS7b_compartment_100kb_all7.compartment_landscape.pdf"),
                  out("hic", "bes_hic_within.done")]
     return figs
 
