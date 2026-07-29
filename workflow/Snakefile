@@ -189,7 +189,7 @@ def all_targets():
               out("paper_tables", "Supp_Table_compartment_dcHiC.xlsx"),
               out("paper_figures", "fig3_panelB_oe_grid.png"),
               out("paper_figures", "fig4_panelA_self_contact_grid.png"),
-              out("paper_figures", "fig4_panelB_compartment_100kb.png"),
+              out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf"),
               out("paper_figures", "suppS7_panelB_compartment_res.png"),
               out("hic", "bes_hic_within.done")]
     return t
@@ -1096,20 +1096,22 @@ rule fig4a_self_contact_grid:
         "--ncols 5 --annotate-oe-region chr6:40400000-42400000 --out {output}"
 
 rule fig4b_compartment_100kb:
-    input: gtf=GTF
-    output: out("paper_figures", "fig4_panelB_compartment_100kb.png")
+    input:
+        gtf=GTF,
+        feats=os.path.join(BIN, P["hic"]["features_bed"])
+    output: out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf")
     params:
         pc1=lambda wc: " ".join(
-            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"])) for c in LYMPH5),  # path keeps {res}
+            "%s=%s" % (c, _abs_hic(HIC[c]["pca1"].replace("{res}", "100000")))
+            for c in ["DN", "DP", "ProB", "EbKO", "S3T3"] if c in HIC),
         orient_region=P["hic"].get("compartment_region", "chr6:39000000-55000000"),
-        region=P.get("fig4b_region", "chr6:39000000-44000000")
+        tad_dir=_abs_hic(P["hic"]["tad_dir"])
     resources: mem_mb=32000, runtime=120
     shell:
-        "python {BIN}/paper/figures/compartment_resolution_grid.py --pc1 {params.pc1} "
-        "--resolutions 100000 --region {params.region} "
-        "--gtf {input.gtf} --orient-region {params.orient_region} "
-        "--tcrb-span chr6:40793981-41688054 "
-        "--landmarks Cntnap2:chr6:46400000:B Gpnmb:chr6:48900000:A Tcrb:chr6:41000000:A "
+        "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
+        "--region {params.orient_region} --features-bed {input.feats} "
+        "--tad-dir {params.tad_dir} --tad-resolution 250000 "
+        "--orient-with-gtf {input.gtf} "
         "--out {output}"
 
 rule suppS7b_compartment_grid:
@@ -1281,7 +1283,7 @@ def _collect_fig_inputs():
         figs += [out("figures.done"), out("figures_combined.done"),
                  out("paper_figures", "fig3_panelB_oe_grid.png"),
                  out("paper_figures", "fig4_panelA_self_contact_grid.png"),
-                 out("paper_figures", "fig4_panelB_compartment_100kb.png"),
+                 out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf"),
                  out("paper_figures", "suppS7_panelB_compartment_res.png"),
                  out("hic", "bes_hic_within.done")]
     return figs

@@ -371,6 +371,40 @@ def main():
 
     cond_list = list(pc1_region.keys())
 
+    # ---- orientation consistency guard ----
+    # After orientation every condition should share the A=positive convention,
+    # so each condition's PC1 sign should agree with the panel consensus on most
+    # bins (a genuinely different cell type still agrees on the majority of the
+    # region). A condition that agrees on < 50% is sign-inverted relative to the
+    # others -- almost always a missing or failed --orient-with-gtf. Fail loudly
+    # rather than emit inverted switch counts (e.g. DN-vs-DP 153/160 not 7/160).
+    if len(cond_list) >= 2:
+        merged = None
+        for c in cond_list:
+            d = pc1_region[c][["start", "value"]].rename(columns={"value": c})
+            merged = d if merged is None else merged.merge(d, on="start",
+                                                           how="inner")
+        vals = merged[cond_list].values
+        consensus = np.sign(np.nanmedian(vals, axis=1))
+        keep = consensus != 0
+        bad = []
+        for j, c in enumerate(cond_list):
+            if keep.sum() == 0:
+                continue
+            agree = np.mean(np.sign(vals[keep, j]) == consensus[keep])
+            if agree < 0.5:
+                bad.append((c, agree))
+        if bad:
+            detail = "; ".join("%s agrees with panel on %.0f%% of bins"
+                               % (c, 100 * a) for c, a in bad)
+            sys.exit(
+                "ORIENTATION GUARD FAILED: PC1 signs are inconsistent across "
+                "conditions (%s). Raw hicPCA PC1 sign is arbitrary per "
+                "condition, so this almost always means --orient-with-gtf was "
+                "omitted or its GTF path was not found. Re-run with a valid "
+                "--orient-with-gtf (or --normalize-sign); the switch counts "
+                "above cannot be trusted until orientation is consistent." % detail)
+
     # ---- 1. PC1 at each feature per condition ----
     if args.features_bed:
         print("\n=== PC1 at each feature ===")
