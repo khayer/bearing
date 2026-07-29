@@ -60,7 +60,9 @@ hic:
   compartment_region: "chr6:39000000-55000000"
   fig4b_region: "chr6:39000000-44000000"
   s7b_region: "chr6:39000000-55000000"
-  tcrb_highlight: "chr6:40872100-41567200"
+  # Tcrb V1-V31 highlight span: V1 element 5' end (deletion context, promoter
+  # included) to the Trbv31 gene 3' end (from tcrb_extension_features.bed).
+  tcrb_highlight: "chr6:40872100-41558435"
   isolation_target: "chr6:40850000-41600000"
   isolation_window: 750000
   isolation_max_distance: 6000000

@@ -1108,7 +1108,7 @@ rule fig4b_compartment_100kb:
             for c in ["DN", "DP", "ProB", "EbKO", "S3T3"] if c in HIC),
         orient_region=P["hic"].get("fig4b_region", "chr6:39000000-44000000"),
         tad_dir=_abs_hic(P["hic"]["tad_dir"]),
-        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41567200"),
+        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41558435"),
         out_prefix=out("paper_figures", "fig4_panelB_compartment_100kb")
     resources: mem_mb=32000, runtime=120
     shell:
@@ -1134,7 +1134,7 @@ rule suppS7b_compartment_50kb_core:
         pc1=lambda wc: hic_arg("pca1", 50000, conds=_S7B_CORE),
         region=_S7B_REGION,
         tad_dir=_S7B_TADDIR,
-        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41567200")
+        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41558435")
     resources: mem_mb=64000, runtime=240
     shell:
         "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
@@ -1151,7 +1151,7 @@ rule suppS7b_compartment_250kb_core:
         pc1=lambda wc: hic_arg("pca1", 250000, conds=_S7B_CORE),
         region=_S7B_REGION,
         tad_dir=_S7B_TADDIR,
-        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41567200")
+        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41558435")
     resources: mem_mb=64000, runtime=240
     shell:
         "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
@@ -1168,7 +1168,7 @@ rule suppS7b_compartment_100kb_all7:
         pc1=lambda wc: hic_arg("pca1", 100000, conds=_S7B_ALL7),
         region=_S7B_REGION,
         tad_dir=_S7B_TADDIR,
-        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41567200")
+        highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41558435")
     resources: mem_mb=64000, runtime=240
     shell:
         "python {BIN}/hic/compartment_analysis.py --pc1 {params.pc1} "
