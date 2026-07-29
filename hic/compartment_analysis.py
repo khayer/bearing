@@ -619,8 +619,16 @@ def main():
     axes[-1].set_xlabel(chrom + " position (Mb)")
 
     res_lbl = args.tad_resolution // 1000
-    title = "PC1 compartments across conditions ({}:{:,}-{:,})".format(
-        chrom, r_start, r_end)
+    # Infer the PC1 bin size from the loaded tracks so the title reflects the
+    # compartment resolution even when it differs from the TAD overlay.
+    try:
+        _df0 = next(iter(pc1_region.values()))
+        pc1_kb = int(round((_df0["end"] - _df0["start"]).median() / 1000))
+        pc1_lbl = "PC1 compartments ({} kb)".format(pc1_kb)
+    except Exception:
+        pc1_lbl = "PC1 compartments"
+    title = "{} across conditions ({}:{:,}-{:,})".format(
+        pc1_lbl, chrom, r_start, r_end)
     if has_tads:
         title += " - TADs at {} kb".format(res_lbl)
     if args.orient_with_gtf:
