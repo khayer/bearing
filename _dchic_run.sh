@@ -45,6 +45,10 @@ GENOME="${GENOME:-mm10}"
 # absolute path to the repo root (where dchic_region_result.py and paper/ live).
 # The region-extract cds into dchic_in_<res>/, so a relative path would break.
 REPO_ROOT="${REPO_ROOT:-$(pwd)}"
+# Parent dir for the dchic_in_<res> scratch (matches run_dchic_convert.sh /
+# build_dchic_inputs.sh). Defaults to the repo root; the Snakemake rule points
+# it at the results outdir.
+DCHIC_WORKDIR="${DCHIC_WORKDIR:-$REPO_ROOT}"
 REGION_SCRIPT="${REGION_SCRIPT:-$REPO_ROOT/dchic_region_result.py}"
 TABLE_OUT="${TABLE_OUT:-$REPO_ROOT/paper/table_sources}"
 
@@ -52,7 +56,7 @@ dchic_run_all() {
   for RES in $RESOLUTIONS; do
     local INPUT="${INPUT_PREFIX}.txt"
     local DIFF="${DIFF_PREFIX}_${RES}"
-    local DIR="dchic_in_${RES}"
+    local DIR="$DCHIC_WORKDIR/dchic_in_${RES}"
 
     echo ""
     echo "############################################################"
@@ -109,7 +113,7 @@ dchic_region() {
   local REGION="$1" LABEL="$2" EXPA="$3" EXPB="$4"
   for RES in $RESOLUTIONS; do
     local DIFF="${DIFF_PREFIX}_${RES}"
-    local DIR="dchic_in_${RES}"
+    local DIR="$DCHIC_WORKDIR/dchic_in_${RES}"
     local BG="$DIR/DifferentialResult/${DIFF}/fdr_result/differential.intra_sample_combined.pcQnm.bedGraph"
     [ -s "$BG" ] || { echo "  region: no bedGraph for $DIFF, skipping"; continue; }
     echo ""

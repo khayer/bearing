@@ -31,6 +31,10 @@ MATDIR="../../projects/HiC_V31_NT_allele/data/endpoints/HiC_explorer_mm10/04mat_
 CONVERTER="h5_to_dchic.py"
 CHROMS="chr2,chr6,chr12,chr13,chr14,chr16,chr17,chr18,chr19"
 LOG="dchic_convert.log"
+# Parent dir for the dchic_in_<res> scratch. Defaults to the repo root (cwd) for
+# a standalone run; the Snakemake rule points it at the results outdir.
+WORK="${DCHIC_WORKDIR:-$(pwd)}"
+mkdir -p "$WORK"
 
 # Which samples to include. Generous on purpose -- edit after reading the
 # DISCOVERY block in the log if something is missing or something unwanted
@@ -70,7 +74,7 @@ SKIPPED=0
 # ---------------------------------------------------------------- main loop
 for RES in 100000 50000 250000; do
   LAB=${RES_LABEL[$RES]}
-  OUTDIR="dchic_in_${LAB}"
+  OUTDIR="$WORK/dchic_in_${LAB}"
   mkdir -p "$OUTDIR"
 
   echo ""
@@ -154,10 +158,10 @@ echo "replicates each, then run dcHiC per resolution:"
 echo ""
 for LAB in 100kb 50kb; do
 cat <<EOF
-  Rscript dchicf.r --file dchic_in_${LAB}/input.txt --pcatype cis     --dirovwt T --cthread 2 --pthread 4
-  Rscript dchicf.r --file dchic_in_${LAB}/input.txt --pcatype select  --dirovwt T --genome mm10
-  Rscript dchicf.r --file dchic_in_${LAB}/input.txt --pcatype analyze --dirovwt T --diffdir comp_${LAB}
-  Rscript dchicf.r --file dchic_in_${LAB}/input.txt --pcatype viz     --diffdir comp_${LAB} --genome mm10
+  Rscript dchicf.r --file $WORK/dchic_in_${LAB}/input.txt --pcatype cis     --dirovwt T --cthread 2 --pthread 4
+  Rscript dchicf.r --file $WORK/dchic_in_${LAB}/input.txt --pcatype select  --dirovwt T --genome mm10
+  Rscript dchicf.r --file $WORK/dchic_in_${LAB}/input.txt --pcatype analyze --dirovwt T --diffdir comp_${LAB}
+  Rscript dchicf.r --file $WORK/dchic_in_${LAB}/input.txt --pcatype viz     --diffdir comp_${LAB} --genome mm10
 
 EOF
 done

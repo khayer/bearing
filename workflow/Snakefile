@@ -122,8 +122,19 @@ for _, r in _sheet.iterrows():
 HAS_HIC = len(HIC) > 0
 
 DCHIC_RES = config.get("dchic", {}).get("res", "100kb")
-DCHIC_TABLE_SOURCES = os.path.join(BIN, "paper", "table_sources")
+# Per-rule conda environments (the DAG owns the env switching via `conda run`):
+#   convert_env  has hicmatrix/HiCExplorer (h5 -> dcHiC convert; also the python
+#                that builds the xlsx), run_env has Rscript + functionsdchic.
+DCHIC_CONVERT_ENV = config.get("dchic", {}).get("convert_env", "bearing")
+DCHIC_RUN_ENV     = config.get("dchic", {}).get("run_env", "dchic")
+# All dcHiC outputs live under the results outdir, NOT the bearing repo: the
+# region TSVs, the supp table, AND dcHiC's compute scratch (dchic_in_<res>/ with
+# the per-sample matrices + its DifferentialResult tree). The scripts honor
+# DCHIC_WORKDIR for the scratch parent (default: repo root, for standalone runs).
+DCHIC_TABLE_SOURCES = out("dchic", "table_sources")
 DCHIC_LYMPHOID_TABLE_SOURCES = os.path.join(DCHIC_TABLE_SOURCES, "lymphoid")
+DCHIC_WORKDIR = out("dchic", "scratch")
+DCHIC_SCRATCH = os.path.join(DCHIC_WORKDIR, "dchic_in_%s" % DCHIC_RES)
 
 def _abs_hic(p):
     """Resolve a Hi-C path (possibly relative like ../comp/...) to absolute
@@ -943,38 +954,62 @@ rule hic_crosslocus:
 
 
 # ---- dcHiC compartment table and manuscript/lymphoid extracts ------------
-# The dcHiC scripts manage their own directories under the repo root (BIN).
-# These rules wrap the coarse shell steps and track the outputs by path.
+# Each rule enters its own conda env via `conda run -n <env>` (convert/python in
+# DCHIC_CONVERT_ENV, the Rscript stages in DCHIC_RUN_ENV), so a single snakemake
+# launch drives both environments without a manual `conda activate`. dcHiC keeps
+# its compute scratch in BIN (dchic_in_<res>/); the DECLARED rule outputs -- the
+# region TSVs, the depended-on bedGraph and the supp table -- all land under OUT.
+# `conda run` needs conda initialised in the job; if the profile does not source
+# conda, add `source <conda>/etc/profile.d/conda.sh &&` before it here.
 
 rule dchic_convert:
     output: touch(out("dchic", "convert.done"))
+    params: cenv=DCHIC_CONVERT_ENV, work=DCHIC_WORKDIR
     resources: mem_mb=32000, runtime=240
     shell:
-        "cd {BIN} && bash run_dchic_convert.sh && bash build_dchic_inputs.sh"
+        "cd {BIN} && mkdir -p {params.work} && export DCHIC_WORKDIR={params.work} && "
+        "conda run --no-capture-output -n {params.cenv} bash run_dchic_convert.sh && "
+        "conda run --no-capture-output -n {params.cenv} bash build_dchic_inputs.sh"
 
 rule dchic_manuscript:
     input: out("dchic", "convert.done")
     output:
-        bg=os.path.join(BIN, "dchic_in_%s" % DCHIC_RES, "DifferentialResult",
-                        "manuscript_%s" % DCHIC_RES, "fdr_result",
-                        "differential.intra_sample_combined.pcQnm.bedGraph"),
+        bg=out("dchic", "manuscript_%s.differential.intra_sample_combined.pcQnm.bedGraph" % DCHIC_RES),
         tsv=os.path.join(DCHIC_TABLE_SOURCES, "Tcrb_compartment_dchic_ProB_%s.tsv" % DCHIC_RES)
+    params:
+        renv=DCHIC_RUN_ENV,
+        work=DCHIC_WORKDIR,
+        table_out=DCHIC_TABLE_SOURCES,
+        scratch_bg=os.path.join(DCHIC_SCRATCH, "DifferentialResult",
+                                "manuscript_%s" % DCHIC_RES, "fdr_result",
+                                "differential.intra_sample_combined.pcQnm.bedGraph")
     resources: mem_mb=64000, runtime=600
     shell:
-        "cd {BIN} && bash run_all_manuscript.sh"
+        "cd {BIN} && mkdir -p {params.table_out} && "
+        "TABLE_OUT={params.table_out} DCHIC_WORKDIR={params.work} "
+        "conda run --no-capture-output -n {params.renv} bash run_all_manuscript.sh && "
+        "mkdir -p $(dirname {output.bg}) && cp {params.scratch_bg} {output.bg}"
 
 rule dchic_lymphoid:
     input: out("dchic", "convert.done")
     output:
-        bg=os.path.join(BIN, "dchic_in_%s" % DCHIC_RES, "DifferentialResult",
-                        "lymphoid_%s" % DCHIC_RES, "fdr_result",
-                        "differential.intra_sample_combined.pcQnm.bedGraph"),
+        bg=out("dchic", "lymphoid_%s.differential.intra_sample_combined.pcQnm.bedGraph" % DCHIC_RES),
         tsv=os.path.join(DCHIC_LYMPHOID_TABLE_SOURCES,
                          "Tcrb_compartment_dchic_ProB_%s.tsv" % DCHIC_RES)
-    params: res=DCHIC_RES
+    params:
+        res=DCHIC_RES,
+        renv=DCHIC_RUN_ENV,
+        work=DCHIC_WORKDIR,
+        table_out=DCHIC_LYMPHOID_TABLE_SOURCES,
+        scratch_bg=os.path.join(DCHIC_SCRATCH, "DifferentialResult",
+                                "lymphoid_%s" % DCHIC_RES, "fdr_result",
+                                "differential.intra_sample_combined.pcQnm.bedGraph")
     resources: mem_mb=64000, runtime=600
     shell:
-        "cd {BIN} && RESOLUTIONS={params.res} bash run_all_lymphoid.sh"
+        "cd {BIN} && mkdir -p {params.table_out} && "
+        "RESOLUTIONS={params.res} TABLE_OUT={params.table_out} DCHIC_WORKDIR={params.work} "
+        "conda run --no-capture-output -n {params.renv} bash run_all_lymphoid.sh && "
+        "mkdir -p $(dirname {output.bg}) && cp {params.scratch_bg} {output.bg}"
 
 rule compartment_supp_table:
     input:
@@ -983,10 +1018,13 @@ rule compartment_supp_table:
     output: out("paper_tables", "Supp_Table_compartment_dcHiC.xlsx")
     params:
         res=DCHIC_RES,
+        penv=DCHIC_CONVERT_ENV,
         tsv_dir=DCHIC_TABLE_SOURCES,
         lymphoid_dir=DCHIC_LYMPHOID_TABLE_SOURCES
     resources: mem_mb=8000, runtime=30
     shell:
+        "mkdir -p $(dirname {output}) && "
+        "conda run --no-capture-output -n {params.penv} "
         "python {BIN}/build_compartment_supp_table.py "
         "--tsv-dir {params.tsv_dir} --lymphoid-dir {params.lymphoid_dir} "
         "--res {params.res} --out {output}"

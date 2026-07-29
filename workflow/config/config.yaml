@@ -71,6 +71,9 @@ hic:
 
 dchic:
   res: "100kb"
+  # Per-rule conda envs the dcHiC Snakemake rules enter via `conda run -n`:
+  convert_env: "bearing"   # has hicmatrix/HiCExplorer (h5->dcHiC convert) + the xlsx python
+  run_env:     "dchic"     # has Rscript + functionsdchic (the dcHiC R stages)
 
 # --- locations ------------------------------------------------------------
 outdir: "results"

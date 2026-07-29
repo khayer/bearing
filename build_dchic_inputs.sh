@@ -12,6 +12,11 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Parent dir for the dchic_in_<res> scratch (must match run_dchic_convert.sh).
+# Defaults to the repo root for a standalone run; the Snakemake rule points it
+# at the results outdir.
+WORK="${DCHIC_WORKDIR:-$PWD}"
+
 RESOLUTIONS="${RESOLUTIONS:-100kb 250kb}"
 MANUSCRIPT_SAMPLES="DN_rep1 DN_rep2 DP_rep1 DP_rep2 EBKO_rep1 EBKO_rep2 ProB_rep1 ProB_rep2 s3T3_rep1 s3T3_rep2"
 LYMPHOID_SAMPLES="DN_rep1 DN_rep2 DP_rep1 DP_rep2 EBKO_rep1 EBKO_rep2 ProB_rep1 ProB_rep2"
@@ -19,16 +24,16 @@ LYMPHOID_SAMPLES="DN_rep1 DN_rep2 DP_rep1 DP_rep2 EBKO_rep1 EBKO_rep2 ProB_rep1 
 # columns: matrix_path  bed_path  sample_label  experiment
 build_input() {
   local dir="$1"; shift
-  local reslabel="${dir#dchic_in_}"
+  local reslabel="${dir##*dchic_in_}"   # basename suffix, works for abs or rel dir
   for s in "$@"; do
     local exp="${s%_rep*}"
     printf "%s\t%s\t%s_%s\t%s\n" \
-      "$PWD/$dir/$s.matrix" "$PWD/$dir/$s.bed" "$s" "$reslabel" "$exp"
+      "$dir/$s.matrix" "$dir/$s.bed" "$s" "$reslabel" "$exp"
   done
 }
 
 for res in $RESOLUTIONS; do
-  dir="dchic_in_${res}"
+  dir="$WORK/dchic_in_${res}"
   if [ ! -d "$dir" ]; then
     echo "SKIP: $dir not present (run run_dchic_convert.sh first)"; continue
   fi

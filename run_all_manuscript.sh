@@ -13,8 +13,10 @@ source ./_dchic_run.sh
 
 dchic_run_all
 
-# region extracts: DN vs each condition over the Tcrb window
-export TABLE_OUT="$(pwd)/paper/table_sources"
+# region extracts: DN vs each condition over the Tcrb window.
+# Respect an incoming TABLE_OUT (the Snakemake rule points this at the results
+# outdir); fall back to the in-repo default for a standalone by-hand run.
+export TABLE_OUT="${TABLE_OUT:-$(pwd)/paper/table_sources}"
 mkdir -p "$TABLE_OUT"
 export RESOLUTIONS="100kb"
 dchic_region chr6:40400000-42400000 Tcrb DN S3T3
