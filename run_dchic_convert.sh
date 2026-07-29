@@ -41,7 +41,16 @@ mkdir -p "$WORK"
 # slipped in. Matched against the sample name, case-insensitively.
 # Matched anywhere in the sample name: an earlier version anchored on (^|_) and
 # silently skipped every "ArimaDN_rep1"-style name, which is most of them.
-INCLUDE='(DN|DP|EBKO|EbKO|ProB|S3T3|s3T3|dV1P|dV1CTCF|V1PRO|V1SCR|TKO)'
+# Anchored allowlist (^...$) for every sample any of our runs needs:
+#   DN/DP rep1-4   -- manuscript+lymphoid (rep1-2) AND the thesis n=4 runs
+#   EBKO/ProB/s3T3 rep1-2                    -- manuscript+lymphoid panel
+#   dV1P rep1-2                              -- the V1 deletion (run_all_v1*)
+# dV1CTCF is dropped (allele unconfirmed as Allyn's V1CScr). Anchoring keeps the
+# substring look-alikes OUT: ArimaDN, DNAr, ArimaR1_cont_DN, the *Ar duplicates,
+# and the Arima_{TKO,V1PRO,V1SCR}_Rag1KO set are a different experiment not used
+# by any run_all_*.sh, and cost most of the convert runtime.
+# (If you DO need the V1PRO/V1SCR/TKO Rag1KO maps, add them here.)
+INCLUDE='^(DN|DP)_rep[1-4]$|^(EBKO|ProB|s3T3|dV1P)_rep[12]$'
 # Non-Tcrb experiments in the same directory, plus the alternative Pro-B and DN
 # preps (BAA/BDA/BA...) that are NOT the ones behind merged_corrected_KR_ProB /
 # _DN. If a condition you need is missing from the DISCOVERY block, loosen this.
@@ -72,7 +81,7 @@ CONVERTED=0
 SKIPPED=0
 
 # ---------------------------------------------------------------- main loop
-for RES in 100000 50000 250000; do
+for RES in 100000 50000 250000; do   # 50 kb needed by the V1 runs; 100/250 kb by the compartment table + thesis
   LAB=${RES_LABEL[$RES]}
   OUTDIR="$WORK/dchic_in_${LAB}"
   mkdir -p "$OUTDIR"

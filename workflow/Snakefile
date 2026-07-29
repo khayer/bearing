@@ -203,7 +203,7 @@ def all_targets():
               out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf"),
               out("paper_figures", "suppS7b_compartment_50kb_core.compartment_landscape.pdf"),
               out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf"),
-              out("paper_figures", "suppS7b_compartment_100kb_all7.compartment_landscape.pdf"),
+              out("paper_figures", "suppS7b_compartment_100kb_v1p.compartment_landscape.pdf"),
               out("hic", "bes_hic_within.done")]
     return t
 
@@ -1159,7 +1159,9 @@ rule fig4b_compartment_100kb:
 
 # ---- Supp S7B: wide-view compartment robustness (compartment_analysis.py) --
 _S7B_CORE   = [c for c in ["DN", "DP", "ProB", "EbKO", "S3T3"] if c in HIC]
-_S7B_ALL7   = [c for c in ["DN", "DP", "ProB", "EbKO", "S3T3", "dV1P", "dV1CTCF"]
+# core five + dV1P only. dV1CTCF is dropped: its allele could not be confirmed
+# as Allyn's V1CScr, so it is excluded from the compartment analysis entirely.
+_S7B_V1P    = [c for c in ["DN", "DP", "ProB", "EbKO", "S3T3", "dV1P"]
                if c in HIC]
 _S7B_REGION = P["hic"].get("s7b_region", P["hic"].get("compartment_region", "chr6:39000000-55000000"))
 _S7B_FEATS  = os.path.join(BIN, P["hic"]["features_bed"])
@@ -1199,11 +1201,11 @@ rule suppS7b_compartment_250kb_core:
         "--highlight {params.highlight} "
         "--out-prefix {OUT}/paper_figures/suppS7b_compartment_250kb_core"
 
-rule suppS7b_compartment_100kb_all7:
+rule suppS7b_compartment_100kb_v1p:
     input: gtf=GTF, feats=_S7B_FEATS
-    output: out("paper_figures", "suppS7b_compartment_100kb_all7.compartment_landscape.pdf")
+    output: out("paper_figures", "suppS7b_compartment_100kb_v1p.compartment_landscape.pdf")
     params:
-        pc1=lambda wc: hic_arg("pca1", 100000, conds=_S7B_ALL7),
+        pc1=lambda wc: hic_arg("pca1", 100000, conds=_S7B_V1P),
         region=_S7B_REGION,
         tad_dir=_S7B_TADDIR,
         highlight=P["hic"].get("tcrb_highlight", "chr6:40872100-41558435")
@@ -1214,7 +1216,7 @@ rule suppS7b_compartment_100kb_all7:
         "--tad-dir {params.tad_dir} --tad-resolution 25000 "
         "--orient-with-gtf {input.gtf} "
         "--highlight {params.highlight} "
-        "--out-prefix {OUT}/paper_figures/suppS7b_compartment_100kb_all7"
+        "--out-prefix {OUT}/paper_figures/suppS7b_compartment_100kb_v1p"
 
 
 # ---- Additional manuscript-figure rules -----------------------------------
@@ -1372,7 +1374,7 @@ def _collect_fig_inputs():
                  out("paper_figures", "fig4_panelB_compartment_100kb.compartment_landscape.pdf"),
                  out("paper_figures", "suppS7b_compartment_50kb_core.compartment_landscape.pdf"),
                  out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf"),
-                 out("paper_figures", "suppS7b_compartment_100kb_all7.compartment_landscape.pdf"),
+                 out("paper_figures", "suppS7b_compartment_100kb_v1p.compartment_landscape.pdf"),
                  out("hic", "bes_hic_within.done")]
     return figs
 

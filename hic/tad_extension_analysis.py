@@ -14,12 +14,12 @@ v2 changes from v1:
 
 Tests the hypothesis that the Tcrb wide locus is part of an extended
 architectural domain reaching into Cntnap2 (chr6:45.06-47.30 Mb) and
-possibly Gpnmb (chr6:~49 Mb), and that V1 perturbations from Allyn 2024
-(dV1P, dV1CTCF) collapse this organization.
+possibly Gpnmb (chr6:~49 Mb), and that the V1 perturbation from Allyn 2024
+(dV1P) collapses this organization.
 
 Compares HiCExplorer TAD calls across conditions:
   - DN, DP, ProB, EbKO, S3T3   (cell-state contrasts)
-  - dV1P, dV1CTCF              (Allyn 2024 V1 perturbations)
+  - dV1P                       (Allyn 2024 V1 perturbation)
 
 For each condition, identifies:
   1. The "Tcrb-anchor TAD" containing chr6:41,550,000 (RC / Eb-Trbv31)
@@ -37,7 +37,7 @@ Usage:
   python tad_extension_analysis.py \\
       --tad-dir ../tads/ \\
       --resolution 25000 \\
-      --conditions DN DP ProB EbKO S3T3 dV1P dV1CTCF \\
+      --conditions DN DP ProB EbKO S3T3 dV1P \\
       --anchor chr6:41550000 \\
       --region chr6:39000000-50000000 \\
       --out-prefix tcrb_tad_extension
@@ -115,7 +115,7 @@ def main():
                     help="binsize used for TAD calls (default 25000)")
     ap.add_argument("--conditions", nargs="+", required=True,
                     help="condition names matching filename slot, e.g. "
-                         "DN DP ProB EbKO S3T3 dV1P dV1CTCF")
+                         "DN DP ProB EbKO S3T3 dV1P")
     ap.add_argument("--anchor", default="chr6:41550000",
                     help="anchor position in chrom:pos format (default "
                          "chr6:41550000 = Tcrb RC / Eb-Trbv31 region)")

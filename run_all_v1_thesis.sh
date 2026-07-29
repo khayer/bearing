@@ -13,7 +13,6 @@ source ./_dchic_run.sh
 
 dchic_run_all
 dchic_region "chr6:40872100-40908238" "V1" "DN" "dV1P"
-dchic_region "chr6:40872100-40908238" "V1" "DN" "dV1CTCF"
 
 echo ""
 echo "V1 THESIS run complete. Primary = run_all_v1.sh (n=2, matches manuscript);"

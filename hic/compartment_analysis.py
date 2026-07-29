@@ -50,7 +50,6 @@ Usage:
             EbKO=../comp/merged_EbKO_bs_100000_pca1.bw \\
             S3T3=../comp/merged_S3T3_bs_100000_pca1.bw \\
             dV1P=../comp/merged_dV1P_bs_100000_pca1.bw \\
-            dV1CTCF=../comp/merged_dV1CTCF_bs_100000_pca1.bw \\
       --region chr6:39000000-55000000 \\
       --features-bed tcrb_extension_features.bed \\
       --tad-dir ../tads/ --tad-resolution 100000 \\

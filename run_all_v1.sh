@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # V1 compartment question, manuscript-matched (n=2 per condition; DN is control).
 # Runs cis/select/analyze/viz at 100kb and 50kb, then extracts the V1 region for
-# both dV1P (promoter deletion) and dV1CTCF (CTCF-site deletion).
+# dV1P (promoter deletion). (dV1CTCF dropped: allele unconfirmed as V1CScr.)
 #
 # Run from the directory that CONTAINS dchic_in_100kb/ and dchic_in_50kb/,
 # with the dchic conda env active:
@@ -19,7 +19,6 @@ dchic_run_all
 
 # V1 region: chr6:40,872,100-40,908,238. DN is the control (config: control: DN).
 dchic_region "chr6:40872100-40908238" "V1" "DN" "dV1P"
-dchic_region "chr6:40872100-40908238" "V1" "DN" "dV1CTCF"
 
 echo ""
 echo "V1 run complete. Compare padj and sign-change across 100kb and 50kb:"

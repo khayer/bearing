@@ -48,7 +48,6 @@ Usage:
              EbKO=../hic_files/merged_corrected_KR_EBKO_bs_25000.cool \\
              S3T3=../hic_files/merged_corrected_KR_s3T3_bs_25000.cool \\
              dV1P=../hic_files/merged_corrected_KR_dV1P_bs_25000.cool \\
-             dV1CTCF=../hic_files/merged_corrected_KR_dV1CTCF_bs_25000.cool \\
       --target chr6:40850000-41600000 \\
       --window-size 750000 \\
       --max-distance 6000000 \\
@@ -432,7 +431,6 @@ def main():
         "EbKO": "#f4a261",
         "S3T3": "#9d4edd",
         "dV1P": "#e76f51",
-        "dV1CTCF": "#264653",
     }
     fallback = ["#0072B2", "#D55E00", "#009E73", "#F0E442",
                   "#56B4E9", "#CC79A7", "#E69F00"]
