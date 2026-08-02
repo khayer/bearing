@@ -161,5 +161,42 @@ class TotalSaliencySpearmanTests(unittest.TestCase):
         self.assertGreater(float(np.mean(within)), float(np.mean(cross)))
 
 
+class GeneHighlightBandsTest(unittest.TestCase):
+    """The region compare plots shade the region's target gene(s) grey. Symbols
+    come from the GTF; targets come from the region label/name."""
+
+    GENES = [
+        (101600427, 101611138, "Rag1", "+"),
+        (101616404, 101628479, "Rag2", "-"),
+        (101540000, 101545000, "Traf3ip1", "+"),   # in-region decoy
+        (142903114, 142906754, "Actb", "-"),
+    ]
+
+    def test_multi_gene_label(self):
+        bands = cq._gene_highlight_bands(self.GENES, "Rag1 and Rag2")
+        self.assertEqual({(s, e) for s, e, _ in bands},
+                         {(101600427, 101611138), (101616404, 101628479)})
+        self.assertTrue(all(c == "#808080" for *_, c in bands))
+
+    def test_bare_name_family_prefix(self):
+        # a bare "rag" must still catch Rag1 + Rag2 (prefix + digit)
+        bands = cq._gene_highlight_bands(self.GENES, "rag")
+        self.assertEqual({(s, e) for s, e, _ in bands},
+                         {(101600427, 101611138), (101616404, 101628479)})
+
+    def test_single_gene_and_no_false_positive(self):
+        bands = cq._gene_highlight_bands(self.GENES, "Actb for housekeeping")
+        self.assertEqual([(s, e) for s, e, _ in bands], [(142903114, 142906754)])
+
+    def test_locus_label_no_highlight(self):
+        # a locus name with no matching gene symbol shades nothing
+        self.assertEqual(cq._gene_highlight_bands(self.GENES, "TCRB locus wide"), [])
+        self.assertEqual(cq._gene_highlight_bands(self.GENES, "Recombination center"), [])
+
+    def test_empty_inputs(self):
+        self.assertEqual(cq._gene_highlight_bands([], "Rag1"), [])
+        self.assertEqual(cq._gene_highlight_bands(self.GENES, ""), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1535,9 +1535,48 @@ def clip_qcat_for_plot(src_bgz, dst_bgz, qcat_max=5.0, signed=False):
 # Per-region matplotlib comparison figure
 # ---------------------------------------------------------------------------
 
+def _gene_highlight_bands(symbol_genes, label, color="#808080"):
+    """Grey highlight bands for the region's target gene(s).
+
+    The display gene track is labelled by Ensembl transcript id, so we cannot
+    match a symbol against it. Instead the region label/name (which names the
+    gene, e.g. "Rag1 and Rag2", "Actb ...") is tokenised and matched against a
+    symbol-bearing gene list (loaded from the GTF, gene_name). A token matches a
+    gene by exact name, or as a gene-family prefix so a bare "rag" highlights
+    Rag1 and Rag2. `symbol_genes` is a list of (start, end, name, strand) tuples.
+    Returns [(start, end, color), ...], one band per matched gene.
+    """
+    if not symbol_genes or not label:
+        return []
+    import re as _re
+    tokens = {t.lower() for t in _re.split(r"[^A-Za-z0-9]+", str(label)) if t}
+    if not tokens:
+        return []
+    bands = []
+    seen = set()
+    for g in symbol_genes:
+        gname = str(g[2] or "").lower()
+        if not gname:
+            continue
+        hit = gname in tokens
+        if not hit:
+            for t in tokens:
+                if (len(t) >= 3 and gname.startswith(t)
+                        and len(gname) > len(t) and gname[len(t)].isdigit()):
+                    hit = True
+                    break
+        if hit:
+            key = (int(g[0]), int(g[1]))
+            if key not in seen:
+                seen.add(key)
+                bands.append((int(g[0]), int(g[1]), color))
+    return bands
+
+
 def plot_qcat_region(region_str, samples, qcat_paths, diff_pairs,
                      out_path, genes_path=None, highlights_path=None,
-                     qcat_max=5.0, categories=None, region_label=None):
+                     qcat_max=5.0, categories=None, region_label=None,
+                     gene_symbol_gtf=None):
     """
     Plot all sample qcat tracks and diff tracks for a single genomic region
     using matplotlib.
@@ -1605,6 +1644,24 @@ def plot_qcat_region(region_str, samples, qcat_paths, diff_pairs,
             genes = load_genes(genes_path, chrom, region_start, region_end)
     highlights = (load_highlights(highlights_path, chrom, region_start, region_end)
                   if highlights_path else None)
+    # Highlight the region's target gene(s) as a translucent grey band across all
+    # tracks. Symbols are resolved from the GTF (gene_name) restricted to this
+    # region, then matched to the region label/name (see _gene_highlight_bands).
+    if gene_symbol_gtf:
+        try:
+            symbol_genes = load_genes_gtf(gene_symbol_gtf, chrom,
+                                          region_start, region_end)
+        except Exception as exc:
+            print(f"    (gene highlight: could not read {gene_symbol_gtf}: {exc})")
+            symbol_genes = []
+        gene_bands = _gene_highlight_bands(symbol_genes,
+                                           region_label or region_str)
+        if gene_bands:
+            names = ", ".join(str(g[2]) for g in symbol_genes
+                              if (int(g[0]), int(g[1]))
+                              in {(b[0], b[1]) for b in gene_bands})
+            print(f"    gene highlight: {len(gene_bands)} gene(s) [{names}]")
+            highlights = (list(highlights) if highlights else []) + gene_bands
     has_genes = bool(genes)
 
     # --- Figure layout ---
@@ -2807,7 +2864,7 @@ def run(sheet_path, out_dir, chroms=None, skip_diff=False, skip_pca=False,
         bw_normalize=False, bw_min_signal=None,
         hic_a=None, hic_b=None, region=None, resolution=10000,
         hic_out=None, label_a=None, label_b=None,
-        loops=None, genes=None, highlights=None,
+        loops=None, genes=None, highlights=None, gtf=None,
     categories=None, qcat_max=5.0, regions_file=None, workers=1,
         clip_for_ini=True,
         consensus_q=False,
@@ -2889,6 +2946,7 @@ def run(sheet_path, out_dir, chroms=None, skip_diff=False, skip_pca=False,
                     qcat_max=qcat_max,
                     categories=_cats,
                     region_label=reg_label,
+                    gene_symbol_gtf=gtf,
                 )
                 print(f"    ✓ {out_fig.name}")
             except Exception as e:
@@ -3935,6 +3993,7 @@ def run(sheet_path, out_dir, chroms=None, skip_diff=False, skip_pca=False,
                 qcat_max=qcat_max,
                 categories=_cats,
                 region_label=reg_label,
+                gene_symbol_gtf=gtf,
             )
 
             plot_jsd_heatmap(
@@ -4377,6 +4436,12 @@ def main():
                         help="Loop anchors BEDPE for Hi-C figure.")
     parser.add_argument("--genes", metavar="FILE",
                         help="Gene annotation BED or GTF for Hi-C figure and optional INI BED track.")
+    parser.add_argument("--gtf", metavar="FILE", default=None,
+                        help="GTF with gene_name attributes, used ONLY to resolve "
+                             "each region's target gene(s) to coordinates and shade "
+                             "them (translucent grey) across the region compare "
+                             "plots. Target genes are taken from the region "
+                             "label/name (e.g. 'Rag1 and Rag2' -> Rag1, Rag2).")
     parser.add_argument(
         "--bed", "--beds", dest="beds", metavar="BED", action="append", default=None,
         help=(
@@ -4585,6 +4650,7 @@ def main():
         loops=args.loops,
         genes=args.genes,
         highlights=args.highlights,
+        gtf=args.gtf,
         categories=cli_categories,
         qcat_max=args.qcat_max,
         regions_file=args.regions_file,

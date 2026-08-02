@@ -39,6 +39,9 @@ CS      = wf(config["chrom_sizes"])
 REGIONS = wf(config["regions_file"])
 GENES   = wf(config["genes_bed"])
 GTF     = wf(config.get("gtf", "")) if config.get("gtf", "") else ""
+# "--gtf <path>" when a GTF is configured, else "" (so the flag is omitted and
+# does not swallow the following option). Used to shade region target genes.
+GTF_ARG = ("--gtf %s" % GTF) if GTF else ""
 # annotation beds live under the bearing dir (BIN), like cbe_point_query's
 # {BIN}/annotations/cbe_mm10.bed -- resolve relative to BIN, not workflow/.
 AGR     = os.path.normpath(os.path.join(BIN, config.get("agr_genes_bed", "annotations/AgRgenes_mm10_s.bed")))
@@ -414,7 +417,7 @@ rule compare:
     shell:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} --out {OUT}/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
-        "--no-clip --workers {threads}"
+        "{GTF_ARG} --no-clip --workers {threads}"
 
 # Supplementary Figure S1: per-track decomposition of the pairwise Q-vector JSD
 # (companion to Fig 2B, the scalar q_pair_jsd_heatmap from the compare step). Uses
@@ -1262,7 +1265,7 @@ rule compare_consensusq:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} "
         "--out {OUT}/consensusQ/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
-        "--no-clip --workers {threads} --consensus-q"
+        "{GTF_ARG} --no-clip --workers {threads} --consensus-q"
 
 rule pvalue_consensusq:
     input: compare=out("consensusQ", "compare.done"), perm_diff=out("perm_diff.done")
