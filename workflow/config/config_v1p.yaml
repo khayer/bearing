@@ -29,7 +29,7 @@ pvalue_min_signal: 0.5
 # FIX 2: per-track normalization ON so RNA/H3K27ac (small amplitude) count
 # comparably to CTCF/Cohesin instead of being drowned in the composition.
 # "zeros stay zero", so sparse peaky tracks stay sparse.
-normalize: "--normalize-method nonzero-quantile"
+normalize: "--normalize-tracks --normalize-method nonzero-quantile"
 n_perms: 10
 min_shift: 1500000
 seed: 42
