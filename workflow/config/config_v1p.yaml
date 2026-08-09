@@ -1,0 +1,59 @@
+# BEARING workflow configuration -- V1P-vs-DN targeted validation run.
+# Derived from config_v1.yaml. Differs in: samples_sheet, categories (6-track,
+# adds H3K27ac), outdir, and the two scoring fixes (min_signal, normalize).
+#
+# Purpose: RCTKO is DROPPED so H3K27ac can be added (RCTKO has no H3K27ac).
+# This is the positive-control / sensitivity run for the Trbv1 (V1P) phenotype:
+# DN vs V1P only, RNA + H3K27ac + CTCF/Cohesin/NIPBL, with per-track quantile
+# normalization on and the raw floor lowered so the on->off bins survive.
+# Separate outdir (results_v1p/) so it never collides with results_v1/.
+# --- inputs ---------------------------------------------------------------
+data_dir: "/mnt/isilon/bassing_lab/integration_paper/bearing"
+samples_sheet: "config/samples_v1p.tsv"
+categories:    "../categories/v1_6track_panel.yaml"   # copy of v1_5track + H3K27ac (see note)
+chrom_sizes:   "resources/mm10.chrom.sizes"
+regions_file:  "config/regions.tsv"
+genes_bed:     "resources/mm10_genes.bed"
+agr_genes_bed: "annotations/AgRgenes_mm10_s.bed"
+gtf:           "resources/gencode.vM23.annotation_modified_overlaps_removed_sorted.gtf"
+blacklist_external: "resources/mm10-blacklist.v2.bed"
+# --- parameters -----------------------------------------------------------
+# FIX 1: raw-signal floor 0.1 -> 0.01. 0.1 zeros whole bins where the KO
+# condition falls to ~0 -- i.e. exactly the on->off bins that carry the Trbv1
+# transcription/H3K27ac loss. 0.01 is the Methods M.4 default; keeps them.
+min_signal: 0.01
+# KL differential floor (bearing_pvalue.py --diff on |summed differential|).
+# 0.5 is the KL default; leave for now. If the 40.891.6-40.892.6 summit bins
+# still do not appear in diff_DN_vs_V1P.stats.tsv, lower this (e.g. 0.2).
+pvalue_min_signal: 0.5
+# FIX 2: per-track normalization ON so RNA/H3K27ac (small amplitude) count
+# comparably to CTCF/Cohesin instead of being drowned in the composition.
+# "zeros stay zero", so sparse peaky tracks stay sparse.
+normalize: "--normalize-method nonzero-quantile"
+n_perms: 10
+min_shift: 1500000
+seed: 42
+blacklist_merge_distance: 3003
+# --- comparisons ----------------------------------------------------------
+reference_condition: DN          # only differential is DN-vs-V1P
+# --- Hi-C parameters (unused: core-only run, no cool in the sheet) ---------
+hic:
+  resolutions: [10000, 25000, 100000, 250000, 500000]
+  contact_resolution: 10000
+  insulation_resolution: 25000
+  tad_dir: "../tads"
+  tad_resolutions: [25000, 100000, 250000, 500000]
+  compartment_resolutions: [100000, 250000, 500000]
+  tad_anchor: "chr6:41550000"
+  features_bed: "annotations/tcrb_extension_features.bed"
+  compartment_region: "chr6:39000000-55000000"
+  isolation_target: "chr6:40850000-41600000"
+  isolation_window: 750000
+  isolation_max_distance: 6000000
+  isolation_perm_n: 200
+  crosslocus_targets: "annotations/targets.tsv"
+# --- locations ------------------------------------------------------------
+outdir: "results_v1p"
+bearing_dir: ".."
+container: "bearing.sif"
+paper_figures: false

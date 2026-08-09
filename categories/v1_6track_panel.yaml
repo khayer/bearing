@@ -1,0 +1,28 @@
+# Bearing category configuration -- V1P-vs-DN six-track panel
+#
+# The V1-region five-track panel (v1_5track_panel.yaml) plus H3K27ac, for the
+# DN-vs-V1P targeted validation run (RCTKO dropped, since RCTKO has no H3K27ac).
+# H3K27ac is a second, independent channel that also carries the V1PKO Trbv1
+# phenotype (Allyn 2024: V1PKO abrogates Trbv1 transcription AND H3K27ac).
+# Order is FIXED and must match the bw column in samples_v1p.tsv:
+#   RNAseq +, RNAseq -, CTCF, Cohesin, NIPBL, H3K27ac
+# H3K27ac color matches the canonical mm10_6track_panel (#00e676).
+#
+# Fields: name, color, negative_strand (true => bigwig encodes - strand as
+# negative numbers; abs() before normalization).
+name: "V1 6-track panel"
+genome: mm10
+categories:
+  - name: "RNAseq +"
+    color: "#6495ed"
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+  - name: CTCF
+    color: "#ff2200"
+  - name: Cohesin
+    color: "#8b0000"
+  - name: NIPBL
+    color: "#00bcd4"
+  - name: H3K27ac
+    color: "#00e676"
