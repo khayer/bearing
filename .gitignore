@@ -197,3 +197,4 @@ paper/table_sources/*
 dchic*
 *.out
 *.tsv
+!workflow/config/samples_v1p.tsv
