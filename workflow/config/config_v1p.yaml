@@ -9,8 +9,12 @@
 # Separate outdir (results_v1p/) so it never collides with results_v1/.
 # --- inputs ---------------------------------------------------------------
 data_dir: "/mnt/isilon/bassing_lab/integration_paper/bearing"
-samples_sheet: "config/samples_v1p.tsv"
-categories:    "../categories/v1_6track_panel.yaml"   # copy of v1_5track + H3K27ac (see note)
+# in workflow/config/config_v1p.yaml
+samples_sheet: "config/samples_v1p_8track.tsv"
+categories:    "config/v1_8track_panel.yaml"
+
+#samples_sheet: "config/samples_v1p.tsv"
+#categories:    "../categories/v1_6track_panel.yaml"   # copy of v1_5track + H3K27ac (see note)
 chrom_sizes:   "resources/mm10.chrom.sizes"
 regions_file:  "config/regions.tsv"
 genes_bed:     "resources/mm10_genes.bed"
@@ -57,3 +61,5 @@ outdir: "results_v1p"
 bearing_dir: ".."
 container: "bearing.sif"
 paper_figures: false
+
+

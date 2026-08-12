@@ -1,0 +1,32 @@
+# Bearing category configuration -- V1P-vs-DN eight-track panel
+#
+# v1_6track_panel + TWO O/E virtual-4C contact channels (make_oe_4c.py):
+#   4C RC     : viewpoint on the whole RC anchor set (5'PC_CBE..CBE_3, ~41,500-41,560 kb).
+#               Its differential registers AT Trbv1 (the loop that collapses in V1PKO).
+#   4C Trbv1  : reciprocal viewpoint on Trbv1 + its 3'CBE (~40,888-40,894 kb).
+#               Its differential registers AT the RC. Same loop, read from both ends.
+# Order is FIXED and must match the bw column in samples_v1p_8track.tsv:
+#   RNAseq +, RNAseq -, CTCF, Cohesin, NIPBL, H3K27ac, 4C RC, 4C Trbv1
+#
+# Fields: name, color, negative_strand (true => bigwig encodes - strand as
+# negative numbers; abs() before normalization).
+name: "V1 8-track panel"
+genome: mm10
+categories:
+  - name: "RNAseq +"
+    color: "#6495ed"
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+  - name: CTCF
+    color: "#ff2200"
+  - name: Cohesin
+    color: "#8b0000"
+  - name: NIPBL
+    color: "#00bcd4"
+  - name: H3K27ac
+    color: "#00e676"
+  - name: "4C RC"
+    color: "#ffab00"
+  - name: "4C Trbv1"
+    color: "#d500f9"
