@@ -99,6 +99,16 @@ REGIONAL_PTHRESH = config.get("regional_p_thresh", 0.05)
 REGIONAL_LOCUS_RE = "|".join(REGIONAL_LOCI.keys())
 REGIONAL_CMP_RE = "|".join(COMPARISONS)
 
+# Regional-enrichment of Tcrb element classes (CBE / promoter / RSS /
+# functional-Vb / pseudogene-Vb / lncRNA / DjCb-RC). Each element is treated as
+# a REGION row; because element spans are sub-bin for CBEs/RSS, overlap assignment
+# is required to map bins to elements. The per-class enrichment family is then
+# jointly BH-corrected across the element x comparison tests.
+ELEMENT_CLASS_DIR = os.path.join(BIN, "annotations/tcrb_element_classes")
+ELEMENT_CLASSES = ["CBE", "promoter", "RSS", "Vbeta_functional",
+                   "Vbeta_pseudogene", "lncRNA", "DJC_recomb_center"]
+ELEMENT_CLASS_WINDOW = config.get("element_class_window", "chr6:40500000-41800000")
+
 # All pairwise comparisons, named exactly as compare_qcat.py emits them:
 # combinations(sorted(conditions), 2) -> diff_<A>_vs_<B>. COMPARISONS above is
 # only REF-vs-rest; the differential p-value step covers every pair, so the
@@ -113,7 +123,8 @@ PERM_INDICES = list(range(1, int(config["n_perms"]) + 1))
 wildcard_constraints:
     idx=r"\d+",
     sample=r"[A-Za-z0-9_.-]+",
-    cmp=r"[A-Za-z0-9_.-]+"
+    cmp=r"[A-Za-z0-9_.-]+",
+    cls="|".join(ELEMENT_CLASSES)
 
 # Hi-C conditions: first row per condition with a cool path (dedup).
 HIC = {}
@@ -593,6 +604,39 @@ rule regional_consolidate:
         "--joint-bh "
         "--out {output.tsv} --heatmap-out {output.pdf} "
         "--comparisons " + " ".join(COMPARISONS)
+
+# --- element classes (CBE / promoter / RSS / functional-Vb / pseudogene-Vb /
+# lncRNA / DJC_recomb_center) ------------------------------------------------
+# Each class is treated as a set of REGION rows; the per-class family is
+# jointly BH-corrected across the (element x comparison) tests.
+rule element_class_enrichment:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "elemclass_{cls}_{cmp}.tsv")
+    wildcard_constraints: cmp=REGIONAL_CMP_RE
+    params:
+        bed=lambda wc: os.path.join(ELEMENT_CLASS_DIR, "%s.bed" % wc.cls),
+        window=ELEMENT_CLASS_WINDOW,
+        pthresh=REGIONAL_PTHRESH,
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/regional_enrichment.py batch "
+        "--diff-table {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--regions {params.bed} --region-assign overlap --locus {params.window} "
+        "--p-thresh {params.pthresh} --bh-by none --out {output}"
+
+rule element_class_consolidate:
+    input: lambda wc: expand(out("regional", "elemclass_%s_{cmp}.tsv" % wc.cls), cmp=COMPARISONS)
+    output: tsv=out("regional", "elemclass_consolidated_{cls}.tsv"),
+            pdf=out("regional", "elemclass_heatmap_{cls}.pdf")
+    shell:
+        "python {BIN}/consolidate_regional_enrichment.py --tsvs {input} "
+        "--joint-bh --out {output.tsv} --heatmap-out {output.pdf} "
+        "--comparisons " + " ".join(COMPARISONS)
+
+rule element_classes_all:
+    input:
+        [out("regional", "elemclass_consolidated_%s.tsv" % c) for c in ELEMENT_CLASSES]
+    output: touch(out("element_classes.done"))
 
 # Manuscript Table S3: regional enrichment of the DN-vs-DP differential BEARING
 # signal over the CBE intervals at Tcrb. This treats the CBEs as REGIONS (a
