@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""
+bearing_extract_attribution.py  (v2 - tabix-aware, fast on .qcat.bgz)
+
+Return the per-track attribution numbers for the V1P/4C result WITHOUT uploading
+the big file. Runs locally against the DN-vs-dV1P DIFFERENTIAL qcat
+(compare_qcat.py --diff output) that INCLUDES the observed/expected virtual-4C
+contact channel as one of the tracks.
+
+Goal: show that inside the Trbv1 window the differential is carried by the
+CONTACT channel, not the linear chromatin assays -- the "invisible on linear
+tracks" claim in R3.
+
+SPEED FIX (v2): if the input is bgzip+tabix indexed (a .tbi sits next to it),
+the script fetches ONLY the Tcrb window via tabix instead of scanning the whole
+genome. It tries, in order: the `tabix` command line tool, then pysam, then a
+plain gzip stream (slow -- only used if neither is available).
+
+ASCII only. Standard library + (optional) tabix/pysam. No repo import required.
+
+USAGE
+  # see the track layout and a sample row first:
+  python3 bearing_extract_attribution.py diff_DN_vs_V1P.qcat.bgz --describe
+  # then run, naming the tracks in index order and the contact channel:
+  python3 bearing_extract_attribution.py diff_DN_vs_V1P.qcat.bgz \
+      --track-names ATAC,RNAplus,RNAminus,CTCF,RAD21,H3K27ac,Contact4C \
+      --contact-name Contact4C
+"""
+import argparse, gzip, io, json, os, re, shutil, subprocess, sys
+
+DEFAULT_REGIONS = [
+    ("chr6", 40880000, 40905000, "Trbv1"),
+    ("chr6", 41040000, 41290000, "Vbeta_cluster"),
+    ("chr6", 41313087, 41486888, "NEGCTL"),
+    ("chr6", 41500000, 41551500, "DJ_RC"),
+    ("chr6", 41552000, 41562000, "Ebeta_Trbv31_CBE3"),
+]
+
+
+# ---------------- fast region-restricted line iterator ----------------------
+def is_indexed(path):
+    return (path.endswith(".bgz") or path.endswith(".gz")) and (
+        os.path.exists(path + ".tbi") or os.path.exists(path + ".csi"))
+
+
+def iter_region_tabix(path, chrom, start, end):
+    """Yield lines for chrom:start-end using the `tabix` CLI (1-based inclusive)."""
+    reg = f"{chrom}:{start+1}-{end}"
+    proc = subprocess.Popen(["tabix", path, reg], stdout=subprocess.PIPE, text=True)
+    for line in proc.stdout:
+        yield line.rstrip("\n")
+    proc.stdout.close()
+    proc.wait()
+
+
+def iter_region_pysam(tbx, chrom, start, end):
+    for row in tbx.fetch(chrom, start, end):
+        yield row
+
+
+def iter_region_stream(path, chrom, start, end):
+    """Fallback: gzip stream, keep only rows in the region. Slow (full scan)."""
+    op = io.TextIOWrapper(gzip.open(path, "rb"), encoding="utf-8", errors="replace") \
+        if path.endswith((".gz", ".bgz")) else open(path, encoding="utf-8", errors="replace")
+    with op as fh:
+        for line in fh:
+            if not line or line[0] == "#":
+                continue
+            p = line.split("\t", 3)
+            if len(p) < 2:
+                continue
+            if p[0] != chrom:
+                continue
+            try:
+                s = int(p[1])
+            except ValueError:
+                continue
+            if start <= s < end:
+                yield line.rstrip("\n")
+
+
+def make_region_iter(path):
+    """Return a function(chrom,start,end)->iterable of lines, using the fastest path."""
+    if is_indexed(path) and shutil.which("tabix"):
+        return lambda c, s, e: iter_region_tabix(path, c, s, e), "tabix"
+    try:
+        import pysam  # noqa
+        if is_indexed(path):
+            tbx = pysam.TabixFile(path)
+            return lambda c, s, e: iter_region_pysam(tbx, c, s, e), "pysam"
+    except Exception:
+        pass
+    return lambda c, s, e: iter_region_stream(path, c, s, e), "gzip-stream(SLOW)"
+
+
+# ---------------- qcat payload parsing --------------------------------------
+def parse_qcat_payload(payload):
+    """From 'id:N,qcat:[[s,t],...],raw:[...]' return list of (track_id:int, score:float)."""
+    m = payload.find("qcat:")
+    if m < 0:
+        return None
+    rest = payload[m + len("qcat:"):]
+    cut = rest.find(",raw:")
+    arr = rest[:cut] if cut >= 0 else rest
+    arr = arr.strip().rstrip(",")
+    try:
+        pairs = json.loads(arr)
+    except Exception:
+        return None
+    out = []
+    for p in pairs:
+        try:
+            out.append((int(p[1]), float(p[0])))
+        except Exception:
+            continue
+    return out
+
+
+def row_to_pairs(line, layout, ncol_names=None):
+    parts = line.split("\t")
+    if len(parts) < 2:
+        return None, None, None
+    chrom = parts[0]
+    try:
+        start = int(parts[1])
+    except ValueError:
+        return None, None, None
+    if layout == "qcat":
+        pairs = parse_qcat_payload(parts[3] if len(parts) > 3 else "")
+    else:
+        pairs = []
+        for j in range(3, len(parts)):
+            try:
+                pairs.append((j - 3, float(parts[j])))
+            except ValueError:
+                pass
+    return chrom, start, pairs
+
+
+def sniff_layout(region_iter):
+    """Grab one row from the Trbv1 window to decide qcat vs tsv and show a sample."""
+    for line in region_iter("chr6", 40880000, 40905000):
+        return ("qcat" if "qcat:" in line else "tsv"), line
+    # nothing in Trbv1: try the whole focal locus
+    for line in region_iter("chr6", 40790000, 41690000):
+        return ("qcat" if "qcat:" in line else "tsv"), line
+    return None, None
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Per-track (contact-channel) attribution for V1P/4C.")
+    ap.add_argument("diffqcat")
+    ap.add_argument("--track-names", help="comma list in index order (e.g. ATAC,RNAplus,RNAminus,CTCF,RAD21,H3K27ac,Contact4C)")
+    ap.add_argument("--contact-name", help="name (or substring) of the contact channel track")
+    ap.add_argument("--regions", help="BED override: chrom start end name")
+    ap.add_argument("--describe", action="store_true", help="print access path, layout, a sample row, track ids/means in Trbv1, then exit")
+    args = ap.parse_args()
+
+    region_iter, access = make_region_iter(args.diffqcat)
+    layout, sample = sniff_layout(region_iter)
+    if layout is None:
+        sys.exit("ERROR: no rows returned for chr6 Tcrb window. Check the chrom name (chr6 vs 6) and that the file is indexed.")
+
+    names = args.track_names.split(",") if args.track_names else None
+
+    # ---- detect 0-based vs 1-based track ids by pre-scanning the Trbv1 window ----
+    prescan_ids = set()
+    for line in region_iter("chr6", 40790000, 41690000):
+        if not line or line[0] == "#":
+            continue
+        _c, _s, _pairs = row_to_pairs(line, layout)
+        if _pairs:
+            for tid, _ in _pairs:
+                prescan_ids.add(tid)
+        if len(prescan_ids) >= 8:
+            break
+    base = 0 if (0 in prescan_ids or not prescan_ids) else 1  # 1-based qcat ids -> shift into names
+
+    regions = DEFAULT_REGIONS
+    if args.regions:
+        regions = []
+        with open(args.regions) as fh:
+            for line in fh:
+                if line.strip() and not line.startswith("#"):
+                    p = line.split()
+                    regions.append((p[0], int(p[1]), int(p[2]), p[3] if len(p) > 3 else f"{p[0]}:{p[1]}"))
+
+    acc = {r[3]: {} for r in regions}
+    nbins = {r[3]: 0 for r in regions}
+    top_contact = {r[3]: 0 for r in regions}
+    seen_tracks = set()
+
+    def track_name(tid):
+        j = tid - base
+        if names and 0 <= j < len(names):
+            return names[j].strip()
+        return f"track{tid}"
+
+    # process each region with its own fast fetch
+    for (rc, rs, re_, name) in regions:
+        for line in region_iter(rc, rs, re_):
+            if not line or line[0] == "#":
+                continue
+            chrom, start, pairs = row_to_pairs(line, layout)
+            if chrom is None or pairs is None:
+                continue
+            if not (chrom == rc and rs <= start < re_):
+                continue
+            nbins[name] += 1
+            best_tid, best_abs = None, -1.0
+            for tid, sc in pairs:
+                seen_tracks.add(tid)
+                acc[name][tid] = acc[name].get(tid, 0.0) + abs(sc)
+                if abs(sc) > best_abs:
+                    best_abs, best_tid = abs(sc), tid
+            cid = contact_id(names, args.contact_name, seen_tracks, track_name)
+            if best_tid is not None and cid is not None and best_tid == cid:
+                top_contact[name] += 1
+
+    if args.describe:
+        print(f"# access path: {access}")
+        print(f"# layout: {layout}")
+        print(f"# sample row (first Tcrb row):\n   {sample[:240]}")
+        print(f"# track ids observed in Tcrb: {sorted(seen_tracks)}")
+        print("# id -> name (as resolved):")
+        for tid in sorted(seen_tracks):
+            print(f"   {tid} -> {track_name(tid)}")
+        print("\n# Trbv1 per-track summed |contribution|:")
+        for tid in sorted(acc.get('Trbv1', {}), key=lambda t: -acc['Trbv1'][t]):
+            print(f"   {track_name(tid):14s} {acc['Trbv1'][tid]:.4f}")
+        print("\nNow re-run with --track-names ... --contact-name NAME (the 4C/contact track).")
+        return
+
+    cid = contact_id(names, args.contact_name, seen_tracks, track_name)
+    print(f"# bearing_extract_attribution.py  file={args.diffqcat}  access={access}  layout={layout}")
+    print(f"# contact channel resolved to: "
+          f"{track_name(cid) if cid is not None else 'UNRESOLVED (pass --contact-name)'}")
+    print()
+    for (rc, rs, re_, name) in regions:
+        tot = sum(acc[name].values())
+        print(f"== {name} ==  bins={nbins[name]}  total|diff|={tot:.4f}")
+        if tot == 0:
+            print("   (no scored signal in region)\n")
+            continue
+        for tid in sorted(acc[name], key=lambda t: -acc[name][t]):
+            frac = 100.0 * acc[name][tid] / tot
+            star = "  <== CONTACT" if (cid is not None and tid == cid) else ""
+            print(f"   {track_name(tid):14s} {acc[name][tid]:9.4f}  {frac:5.1f}%{star}")
+        if cid is not None and cid in acc[name]:
+            cfrac = 100.0 * acc[name][cid] / tot
+            print(f"   -> contact channel = {cfrac:.1f}% of |diff|; "
+                  f"top contributor in {top_contact[name]}/{nbins[name]} bins")
+        print()
+
+    tr = acc.get("Trbv1", {})
+    if cid is not None and tr and cid in tr:
+        cfrac = 100.0 * tr[cid] / sum(tr.values())
+        print("# READY-TO-PASTE for R3 (verify against numbers above):")
+        print(f'   "At Trbv1 the differential is carried predominantly by the contact channel '
+              f'({cfrac:.0f}% of the summed per-track differential; top contributor in '
+              f'{top_contact["Trbv1"]}/{nbins["Trbv1"]} bins), with the linear chromatin assays low -- '
+              f'the loop loss is largely invisible on linear tracks and surfaces once the contact '
+              f'channel is added to the panel."')
+
+
+def contact_id(names, contact_name, seen_tracks, track_name):
+    # Resolve purely in track-ID space (track_name already applies the 0/1 base).
+    key = (contact_name or "").lower()
+    if key:
+        for tid in sorted(seen_tracks):
+            if key in track_name(tid).lower():
+                return tid
+        return None
+    for tid in sorted(seen_tracks):
+        if any(k in track_name(tid).lower() for k in ("4c", "contact", "oe", "hic")):
+            return tid
+    return max(seen_tracks) if seen_tracks else None
+
+
+if __name__ == "__main__":
+    main()
