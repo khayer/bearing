@@ -1,0 +1,12 @@
+# V1P/4C control regions - DN-vs-V1P is thymocyte-vs-thymocyte, so everything except the Trbv1 lesion should be biologically null.
+# anchors (expect real loop signal):
+chr6	40880000	40905000	Trbv1_anchor
+chr6	41500000	41551500	DJ_RC_anchor
+# the region Nina flagged - trypsinogen cluster, INSIDE the TAD -> NOT a valid negative:
+chr6	41313087	41486888	trypsinogen_INVALIDneg
+# proper negatives OUTSIDE the ~2 Mb Tcrb domain (chr6:40.4-42.4), still within partial 4C reach:
+chr6	39300000	40300000	upstream_flank_outTAD
+chr6	42500000	43500000	downstream_flank_outTAD
+# far negatives, OUT of 4C viewpoint reach (tests whether contact channel is dead here = linear-only floor):
+chr6	44000000	45000000	downstream_far_out4C
+chr6	36000000	37000000	upstream_far_out4C
