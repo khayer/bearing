@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 """
-bearing_extract_attribution.py  (v2 - tabix-aware, fast on .qcat.bgz)
+bearing_extract_attribution.py  (v3 - adds --per-bin normalized concentration)
 
 Return the per-track attribution numbers for the V1P/4C result WITHOUT uploading
 the big file. Runs locally against the DN-vs-dV1P DIFFERENTIAL qcat
 (compare_qcat.py --diff output) that INCLUDES the observed/expected virtual-4C
-contact channel as one of the tracks.
+contact channel(s) as tracks.
 
-Goal: show that inside the Trbv1 window the differential is carried by the
-CONTACT channel, not the linear chromatin assays -- the "invisible on linear
-tracks" claim in R3.
+v3 adds --per-bin: report each track's |diff| PER BIN (summed |contribution| /
+bin count) so regions of very different sizes are comparable, plus a
+concentration summary for each viewpoint/contact channel: its per-bin peak
+region vs the out-of-TAD floor, and the ratio. Use it to watch a reciprocal
+viewpoint (e.g. 4C Trbv13 at DJ_RC) pull away from its genome-wide floor as you
+fix normalization. A clean loop-specific channel (e.g. 4C RC at Trbv1) shows a
+large ratio; a noisy one shows a ratio near 1.
 
-SPEED FIX (v2): if the input is bgzip+tabix indexed (a .tbi sits next to it),
-the script fetches ONLY the Tcrb window via tabix instead of scanning the whole
-genome. It tries, in order: the `tabix` command line tool, then pysam, then a
-plain gzip stream (slow -- only used if neither is available).
+v2 (kept): if the input is bgzip+tabix indexed (a .tbi/.csi sits next to it),
+only the requested windows are fetched via tabix (CLI), then pysam, then a plain
+gzip stream (slow) as a last resort.
 
 ASCII only. Standard library + (optional) tabix/pysam. No repo import required.
 
 USAGE
-  # see the track layout and a sample row first:
   python3 bearing_extract_attribution.py diff_DN_vs_V1P.qcat.bgz --describe
-  # then run, naming the tracks in index order and the contact channel:
   python3 bearing_extract_attribution.py diff_DN_vs_V1P.qcat.bgz \
-      --track-names ATAC,RNAplus,RNAminus,CTCF,RAD21,H3K27ac,Contact4C \
-      --contact-name Contact4C
+      --track-names "RNAseq +,RNAseq -,CTCF,Cohesin,NIPBL,H3K27ac,4C RC,4C Trbv13" \
+      --contact-name "4C" --regions v1p_controls.bed --per-bin
 """
 import argparse, gzip, io, json, os, re, shutil, subprocess, sys
 
@@ -141,7 +142,6 @@ def sniff_layout(region_iter):
     """Grab one row from the Trbv1 window to decide qcat vs tsv and show a sample."""
     for line in region_iter("chr6", 40880000, 40905000):
         return ("qcat" if "qcat:" in line else "tsv"), line
-    # nothing in Trbv1: try the whole focal locus
     for line in region_iter("chr6", 40790000, 41690000):
         return ("qcat" if "qcat:" in line else "tsv"), line
     return None, None
@@ -150,10 +150,16 @@ def sniff_layout(region_iter):
 def main():
     ap = argparse.ArgumentParser(description="Per-track (contact-channel) attribution for V1P/4C.")
     ap.add_argument("diffqcat")
-    ap.add_argument("--track-names", help="comma list in index order (e.g. ATAC,RNAplus,RNAminus,CTCF,RAD21,H3K27ac,Contact4C)")
+    ap.add_argument("--track-names", help="comma list in index order")
     ap.add_argument("--contact-name", help="name (or substring) of the contact channel track")
     ap.add_argument("--regions", help="BED override: chrom start end name")
     ap.add_argument("--describe", action="store_true", help="print access path, layout, a sample row, track ids/means in Trbv1, then exit")
+    ap.add_argument("--per-bin", action="store_true",
+                    help="also print |diff|-per-bin matrix and a per-viewpoint concentration summary (peak region vs out-of-TAD floor)")
+    ap.add_argument("--floor-substr", default="out",
+                    help="regions whose NAME contains this substring form the out-of-TAD floor set for --per-bin (default: 'out', matches outTAD/out4C)")
+    ap.add_argument("--viewpoint-names",
+                    help="comma list of track names (or substrings) to treat as viewpoint/contact channels in the --per-bin summary; default: auto-detect (4c/contact/oe/hic)")
     args = ap.parse_args()
 
     region_iter, access = make_region_iter(args.diffqcat)
@@ -174,7 +180,7 @@ def main():
                 prescan_ids.add(tid)
         if len(prescan_ids) >= 8:
             break
-    base = 0 if (0 in prescan_ids or not prescan_ids) else 1  # 1-based qcat ids -> shift into names
+    base = 0 if (0 in prescan_ids or not prescan_ids) else 1
 
     regions = DEFAULT_REGIONS
     if args.regions:
@@ -196,7 +202,6 @@ def main():
             return names[j].strip()
         return f"track{tid}"
 
-    # process each region with its own fast fetch
     for (rc, rs, re_, name) in regions:
         for line in region_iter(rc, rs, re_):
             if not line or line[0] == "#":
@@ -252,6 +257,10 @@ def main():
                   f"top contributor in {top_contact[name]}/{nbins[name]} bins")
         print()
 
+    if args.per_bin:
+        print_per_bin(regions, acc, nbins, seen_tracks, track_name,
+                      names, args.viewpoint_names, args.contact_name, args.floor_substr)
+
     tr = acc.get("Trbv1", {})
     if cid is not None and tr and cid in tr:
         cfrac = 100.0 * tr[cid] / sum(tr.values())
@@ -263,8 +272,85 @@ def main():
               f'channel is added to the panel."')
 
 
+def per_bin_value(acc_region, nbins_region, tid):
+    if nbins_region <= 0:
+        return 0.0
+    return acc_region.get(tid, 0.0) / nbins_region
+
+
+def viewpoint_ids(names, viewpoint_names, contact_name, seen_tracks, track_name):
+    """Return sorted track ids to summarize as viewpoint/contact channels."""
+    subs = []
+    if viewpoint_names:
+        subs = [s.strip().lower() for s in viewpoint_names.split(",") if s.strip()]
+    elif contact_name:
+        subs = [contact_name.strip().lower()]
+    ids = []
+    if subs:
+        for tid in sorted(seen_tracks):
+            nm = track_name(tid).lower()
+            if any(s in nm for s in subs):
+                ids.append(tid)
+    if not ids:  # auto-detect
+        for tid in sorted(seen_tracks):
+            if any(k in track_name(tid).lower() for k in ("4c", "contact", "oe", "hic")):
+                ids.append(tid)
+    return ids
+
+
+def print_per_bin(regions, acc, nbins, seen_tracks, track_name,
+                  names, viewpoint_names, contact_name, floor_substr):
+    order = [r[3] for r in regions]
+    # rank tracks by total |diff| across all regions for row order
+    tot_by_tid = {}
+    for tid in seen_tracks:
+        tot_by_tid[tid] = sum(acc[n].get(tid, 0.0) for n in order)
+    tracks_sorted = sorted(seen_tracks, key=lambda t: -tot_by_tid[t])
+
+    print("# ---- per-bin normalized attribution: |diff| per bin (summed |contrib| / bins) ----")
+    colw = 11
+    header = "  ".join(f"{n[:colw]:>{colw}s}" for n in order)
+    print(f"{'track':14s}  {header}")
+    print(f"{'bins ->':14s}  " + "  ".join(f"{nbins[n]:>{colw}d}" for n in order))
+    for tid in tracks_sorted:
+        row = "  ".join(f"{per_bin_value(acc[n], nbins[n], tid):>{colw}.3f}" for n in order)
+        print(f"{track_name(tid):14s}  {row}")
+    print()
+
+    floor_key = (floor_substr or "").lower()
+    floor_regions = [n for n in order if floor_key and floor_key in n.lower()]
+    vids = viewpoint_ids(names, viewpoint_names, contact_name, seen_tracks, track_name)
+
+    print("# ---- viewpoint-channel concentration (per-bin peak vs out-of-TAD floor) ----")
+    if floor_regions:
+        print(f"# floor set (name contains '{floor_substr}'): {', '.join(floor_regions)}")
+    else:
+        print(f"# floor set: NONE matched '{floor_substr}'. Pass --floor-substr or name your out-of-TAD "
+              f"regions with that substring; ratio uses the max non-peak region instead.")
+    print("# target for a clean loop-specific channel: ratio >> 5x (RC/Trbv1 is the reference).")
+    print()
+    for tid in vids:
+        pb = {n: per_bin_value(acc[n], nbins[n], tid) for n in order}
+        peak_region = max(order, key=lambda n: pb[n])
+        peak_val = pb[peak_region]
+        if floor_regions:
+            floor_pairs = [(n, pb[n]) for n in floor_regions]
+        else:
+            floor_pairs = [(n, pb[n]) for n in order if n != peak_region]
+        floor_max_region, floor_max = (max(floor_pairs, key=lambda x: x[1])
+                                       if floor_pairs else ("-", 0.0))
+        floor_mean = (sum(v for _, v in floor_pairs) / len(floor_pairs)) if floor_pairs else 0.0
+        ratio = (peak_val / floor_max) if floor_max > 0 else float("inf")
+        ratio_s = f"{ratio:.2f}x" if ratio != float("inf") else "inf (floor=0)"
+        print(f"{track_name(tid)}")
+        print("   per-bin by region: " + "  ".join(f"{n}={pb[n]:.3f}" for n in order))
+        print(f"   peak (per-bin):    {peak_region} = {peak_val:.3f}")
+        print(f"   out-of-TAD floor:  max={floor_max:.3f} ({floor_max_region}), mean={floor_mean:.3f}")
+        print(f"   concentration:     peak/floor_max = {ratio_s}")
+        print()
+
+
 def contact_id(names, contact_name, seen_tracks, track_name):
-    # Resolve purely in track-ID space (track_name already applies the 0/1 base).
     key = (contact_name or "").lower()
     if key:
         for tid in sorted(seen_tracks):
