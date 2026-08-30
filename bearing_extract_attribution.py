@@ -160,6 +160,11 @@ def main():
                     help="regions whose NAME contains this substring form the out-of-TAD floor set for --per-bin (default: 'out', matches outTAD/out4C)")
     ap.add_argument("--viewpoint-names",
                     help="comma list of track names (or substrings) to treat as viewpoint/contact channels in the --per-bin summary; default: auto-detect (4c/contact/oe/hic)")
+    ap.add_argument("--anchor-map",
+                    help="pin the concentration anchor per channel: 'CHAN:REGION,CHAN:REGION' "
+                         "(e.g. '4C RC:Trbv1_anchor,4C Trbv13:DJ_RC_anchor'). CHAN and REGION "
+                         "match by substring. For mapped channels the ratio is anchor/floor at the "
+                         "named region instead of the auto per-bin peak; unmapped channels still use auto-peak.")
     args = ap.parse_args()
 
     region_iter, access = make_region_iter(args.diffqcat)
@@ -259,7 +264,8 @@ def main():
 
     if args.per_bin:
         print_per_bin(regions, acc, nbins, seen_tracks, track_name,
-                      names, args.viewpoint_names, args.contact_name, args.floor_substr)
+                      names, args.viewpoint_names, args.contact_name, args.floor_substr,
+                      args.anchor_map)
 
     tr = acc.get("Trbv1", {})
     if cid is not None and tr and cid in tr:
@@ -298,8 +304,40 @@ def viewpoint_ids(names, viewpoint_names, contact_name, seen_tracks, track_name)
     return ids
 
 
+def parse_anchor_map(anchor_map, order, track_name, seen_tracks):
+    """Return {tid: region_name} from 'CHAN:REGION,...' (substring match on both)."""
+    out = {}
+    if not anchor_map:
+        return out
+    for item in anchor_map.split(","):
+        if ":" not in item:
+            continue
+        chan_key, reg_key = item.split(":", 1)
+        chan_key = chan_key.strip().lower()
+        reg_key = reg_key.strip().lower()
+        if not chan_key or not reg_key:
+            continue
+        reg = None
+        for n in order:                       # exact (case-insensitive) first
+            if n.lower() == reg_key:
+                reg = n
+                break
+        if reg is None:                        # then substring
+            for n in order:
+                if reg_key in n.lower():
+                    reg = n
+                    break
+        if reg is None:
+            sys.stderr.write(f"# --anchor-map: no region matches '{reg_key}'; known: {order}\n")
+            continue
+        for tid in sorted(seen_tracks):        # map every channel matching the substring
+            if chan_key in track_name(tid).lower():
+                out[tid] = reg
+    return out
+
+
 def print_per_bin(regions, acc, nbins, seen_tracks, track_name,
-                  names, viewpoint_names, contact_name, floor_substr):
+                  names, viewpoint_names, contact_name, floor_substr, anchor_map=None):
     order = [r[3] for r in regions]
     # rank tracks by total |diff| across all regions for row order
     tot_by_tid = {}
@@ -320,33 +358,48 @@ def print_per_bin(regions, acc, nbins, seen_tracks, track_name,
     floor_key = (floor_substr or "").lower()
     floor_regions = [n for n in order if floor_key and floor_key in n.lower()]
     vids = viewpoint_ids(names, viewpoint_names, contact_name, seen_tracks, track_name)
+    pinned = parse_anchor_map(anchor_map, order, track_name, seen_tracks)
 
-    print("# ---- viewpoint-channel concentration (per-bin peak vs out-of-TAD floor) ----")
+    print("# ---- viewpoint-channel concentration (per-bin anchor vs out-of-TAD floor) ----")
     if floor_regions:
         print(f"# floor set (name contains '{floor_substr}'): {', '.join(floor_regions)}")
     else:
         print(f"# floor set: NONE matched '{floor_substr}'. Pass --floor-substr or name your out-of-TAD "
-              f"regions with that substring; ratio uses the max non-peak region instead.")
+              f"regions with that substring; ratio uses the max non-anchor region instead.")
+    if pinned:
+        print("# anchors pinned via --anchor-map: "
+              + ", ".join(f"{track_name(t)}->{pinned[t]}" for t in sorted(pinned)))
     print("# target for a clean loop-specific channel: ratio >> 5x (RC/Trbv1 is the reference).")
     print()
     for tid in vids:
         pb = {n: per_bin_value(acc[n], nbins[n], tid) for n in order}
-        peak_region = max(order, key=lambda n: pb[n])
-        peak_val = pb[peak_region]
-        if floor_regions:
-            floor_pairs = [(n, pb[n]) for n in floor_regions]
+        auto_region = max(order, key=lambda n: pb[n])
+        if tid in pinned:
+            anchor_region = pinned[tid]
+            pinned_note = "" if anchor_region == auto_region else \
+                f"   (auto per-bin peak is elsewhere: {auto_region} = {pb[auto_region]:.3f})"
         else:
-            floor_pairs = [(n, pb[n]) for n in order if n != peak_region]
+            anchor_region = auto_region
+            pinned_note = ""
+        anchor_val = pb[anchor_region]
+        # floor excludes the anchor region so a pinned anchor inside the floor set is not its own floor
+        if floor_regions:
+            floor_pairs = [(n, pb[n]) for n in floor_regions if n != anchor_region]
+        else:
+            floor_pairs = [(n, pb[n]) for n in order if n != anchor_region]
         floor_max_region, floor_max = (max(floor_pairs, key=lambda x: x[1])
                                        if floor_pairs else ("-", 0.0))
         floor_mean = (sum(v for _, v in floor_pairs) / len(floor_pairs)) if floor_pairs else 0.0
-        ratio = (peak_val / floor_max) if floor_max > 0 else float("inf")
+        ratio = (anchor_val / floor_max) if floor_max > 0 else float("inf")
         ratio_s = f"{ratio:.2f}x" if ratio != float("inf") else "inf (floor=0)"
+        label = "anchor (pinned)" if tid in pinned else "anchor (auto-peak)"
         print(f"{track_name(tid)}")
         print("   per-bin by region: " + "  ".join(f"{n}={pb[n]:.3f}" for n in order))
-        print(f"   peak (per-bin):    {peak_region} = {peak_val:.3f}")
+        print(f"   {label}: {anchor_region} = {anchor_val:.3f}")
+        if pinned_note:
+            print(pinned_note)
         print(f"   out-of-TAD floor:  max={floor_max:.3f} ({floor_max_region}), mean={floor_mean:.3f}")
-        print(f"   concentration:     peak/floor_max = {ratio_s}")
+        print(f"   concentration:     anchor/floor_max = {ratio_s}")
         print()
 
 
