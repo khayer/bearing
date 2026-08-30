@@ -45,6 +45,11 @@ echo
 echo "== Snakemake dry run (validate DAG) =="
 # core path only: p-values + per-region QC PNGs (no Hi-C targets)
 SM_TARGETS=("$REPO/workflow/$OUT/pvalue.done"
+	    "$REPO/workflow/$OUT/regional/cbe_point_query.tsv"
+	    "$REPO/workflow/$OUT/regional/cbe_track_changes.tsv"
+	    "$REPO/workflow/$OUT/regional/agr_track_changes.tsv"
+	    "$REPO/workflow/$OUT/figures_combined.done"
+	    "$REPO/workflow/$OUT/figures.done"
             "$REPO/workflow/$OUT/region_qc.done")
 snakemake -s "$REPO/workflow/Snakefile" --configfile "$CONFIG" -n "${SM_TARGETS[@]}"
 if [ "$DRY" = "1" ]; then

@@ -198,3 +198,4 @@ dchic*
 *.out
 *.tsv
 !workflow/config/samples_v1p.tsv
+workflow/config/samples_v1p_8track.tsv_BU

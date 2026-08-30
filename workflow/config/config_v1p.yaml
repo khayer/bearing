@@ -60,6 +60,6 @@ hic:
 outdir: "results_v1p"
 bearing_dir: ".."
 container: "bearing.sif"
-paper_figures: false
+paper_figures: True
 
 

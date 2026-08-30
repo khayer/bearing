@@ -15,7 +15,7 @@ rerun-incomplete: true
 # the shared filesystem can make the pyBigWig C reader fail or abort). Such
 # failures pass on a retry; deterministic errors still fail after exhausting
 # retries. 3 retries comfortably covers transient filesystem hiccups.
-retries: 3
+retries: 1
 # Re-run a job only when its INPUTS are newer than its outputs (mtime), not
 # when the rule's code/params change. Without this, editing the Snakefile
 # re-triggers completed data steps. Set this once you trust the code is final;

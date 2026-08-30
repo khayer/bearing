@@ -23,3 +23,6 @@ tcrb_v7_v21	chr6:41071900-41195147	3000	Tcrb_v7_to_v21
 rag1_rag2_zoom	chr2:101617089-101660152	3000	Rag1 and Rag2 (zoom in)
 tcrb_v11_v15	chr6:41102455-41148965	3000	V11_to_v15
 igh_wide	chr12:111000000-120000000	100000	Igh (wide)
+Tbp	chr17:15450000-15575000	5000	Tbp for housekeeping
+Sdha	chr13:74275000-74400000	5000	Sdha for housekeeping
+Ppia	chr11:6415867-6419817	5000	Ppia for housekeeping
