@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : bes_hic_crosslocus.py
-# Version  : 2.0.0
+# Version  : 2.0.1
 # Date     : 2026-09-26
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
@@ -10,6 +10,14 @@
 #            on the SAME paired control panels as the summed BES, with
 #            Holm correction across the pre-registered sets. Default
 #            behaviour (no --score-sets) is unchanged from v1.
+#            v2.0.1 BUG FIX: the pooled target OR now uses only targets
+#            that have usable controls, so target and null panels are
+#            built from the same targets (v1 pooled ALL targets but drew
+#            null panels only for targets with controls). The all-target
+#            OR is still reported (pooled_target_OR_all_targets) for
+#            comparison with v1. Control-generation rejection counts are
+#            printed per target, and --max-blacklist-frac (default 0 =
+#            v1 behaviour) lets wide targets find controls.
 # ----------------------------------------------------------------------
 """
 bes_hic_crosslocus.py
@@ -415,13 +423,40 @@ def overlaps_any(chrom, start, end, exclude_df):
     return bool(((sub["start"] < end) & (sub["end"] > start)).any())
 
 
+def blacklist_frac(chrom, start, end, bl_df):
+    """Fraction of [start, end) covered by (merged) blacklist intervals."""
+    if bl_df is None or len(bl_df) == 0:
+        return 0.0
+    sub = bl_df[(bl_df["chrom"] == chrom) & (bl_df["start"] < end)
+                & (bl_df["end"] > start)]
+    if len(sub) == 0:
+        return 0.0
+    cov = (np.minimum(sub["end"].to_numpy(), end)
+           - np.maximum(sub["start"].to_numpy(), start)).clip(min=0).sum()
+    return float(cov) / float(max(1, end - start))
+
+
 def generate_controls(width, contrast_chrom_sizes, exclude_df,
                         n_controls, rng,
                         gene_starts=None, target_density=None,
-                        density_tol=0.5, autosomes_only=True):
+                        density_tol=0.5, autosomes_only=True,
+                        targets_df=None, blacklist_df=None,
+                        max_blacklist_frac=0.0, stats=None):
     """Generate n_controls random regions of the given width, on
     autosomes, not overlapping exclude_df, optionally matched on gene
-    density to within density_tol (relative) of target_density."""
+    density to within density_tol (relative) of target_density.
+
+    v2.0.1: if targets_df / blacklist_df are given they replace
+    exclude_df: target overlap is always rejected, blacklist overlap is
+    rejected when the covered fraction exceeds max_blacklist_frac
+    (0.0 = any overlap rejected = v1 behaviour, identical RNG draws).
+    stats (dict) collects rejection counts."""
+    if stats is None:
+        stats = {}
+    for k in ("tries", "short_chrom", "target_overlap", "blacklist",
+              "density", "accepted"):
+        stats.setdefault(k, 0)
+    split = targets_df is not None or blacklist_df is not None
     controls = []
     chroms = list(contrast_chrom_sizes.keys())
     if autosomes_only:
@@ -435,25 +470,42 @@ def generate_controls(width, contrast_chrom_sizes, exclude_df,
     tries = 0
     while len(controls) < n_controls and tries < max_tries:
         tries += 1
+        stats["tries"] += 1
         c = rng.choice(chroms, p=weights)
         clen = contrast_chrom_sizes[c]
         if clen <= width:
+            stats["short_chrom"] += 1
             continue
         s = int(rng.integers(0, clen - width))
         e = s + width
-        if overlaps_any(c, s, e, exclude_df):
+        if split:
+            if overlaps_any(c, s, e, targets_df):
+                stats["target_overlap"] += 1
+                continue
+            if max_blacklist_frac <= 0.0:
+                if overlaps_any(c, s, e, blacklist_df):
+                    stats["blacklist"] += 1
+                    continue
+            elif blacklist_frac(c, s, e, blacklist_df) > max_blacklist_frac:
+                stats["blacklist"] += 1
+                continue
+        elif overlaps_any(c, s, e, exclude_df):
+            stats["blacklist"] += 1
             continue
         if gene_starts is not None and target_density is not None:
             d = gene_density(gene_starts, c, s, e)
             if target_density <= 0:
                 # match low-density target: accept only low-density ctrl
                 if d > 0.5:
+                    stats["density"] += 1
                     continue
             else:
                 rel = abs(d - target_density) / target_density
                 if rel > density_tol:
+                    stats["density"] += 1
                     continue
         controls.append((c, s, e))
+        stats["accepted"] += 1
     return controls
 
 
@@ -535,6 +587,10 @@ def main():
     ap.add_argument("--match-gene-density", action="store_true")
     ap.add_argument("--density-tol", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--max-blacklist-frac", type=float, default=0.0,
+                    help="v2.0.1: accept a control whose blacklist coverage "
+                         "is <= this fraction (default 0 = any overlap "
+                         "rejected, v1 behaviour)")
     ap.add_argument("--score-sets", nargs="+", default=None,
                     help="v2: NAME=tok,tok ... pre-registered track "
                          "combinations (track name suffix or 1-based "
@@ -612,6 +668,8 @@ def main():
     set_rows = []                         # long format, every score
     pooled = {lab: np.zeros(4, dtype=float) for lab, _, _ in scores}
     target_controls = {}                  # name -> list of {label: 2x2}
+    control_stats = {}                    # name -> rejection counts
+    per_target_tab = {}                   # name -> {label: 2x2 tuple}
     for _, t in targets.iterrows():
         ct = t["contrast"]; chrom = t["chrom"]
         s = int(t["start"]); e = int(t["end"]); name = t["name"]
@@ -642,17 +700,20 @@ def main():
             srow = {"score_set": lab}
             srow.update(row)
             set_rows.append(srow)
-            pooled[lab] += np.array([both, xo, yo, ne], dtype=float)
+            per_target_tab.setdefault(name, {})[lab] = (both, xo, yo, ne)
 
         # Matched controls for this target; every score is computed on
         # the same control region so the null panels are paired.
         tgt_density = None
         if gene_starts is not None:
             tgt_density = gene_density(gene_starts, chrom, s, e)
+        gstats = {}
         ctrl_regions = generate_controls(
             width, chrom_sizes_a, exclude_df, args.n_controls, rng,
             gene_starts=gene_starts, target_density=tgt_density,
-            density_tol=args.density_tol)
+            density_tol=args.density_tol,
+            targets_df=target_regions_df, blacklist_df=blacklist,
+            max_blacklist_frac=args.max_blacklist_frac, stats=gstats)
         ctrl_tabs = []
         for (cc, cs, ce) in ctrl_regions:
             cbin = bin_region(bes_df, cool_a, cool_b, insul_a, insul_b,
@@ -666,18 +727,54 @@ def main():
             if all(v is not None for v in ctab.values()):
                 ctrl_tabs.append({k: v[:4] for k, v in ctab.items()})
         target_controls[name] = ctrl_tabs
+        gstats["region_unusable"] = len(ctrl_regions) - len(ctrl_tabs)
+        control_stats[name] = gstats
         print("    generated {} usable controls".format(len(ctrl_tabs)))
+        print("      control search: tries={tries} accepted={accepted} "
+              "rejected: blacklist={blacklist} density={density} "
+              "target_overlap={target_overlap} short_chrom={short_chrom}; "
+              "accepted but unusable (too few valid Hi-C bins)="
+              "{region_unusable}".format(**gstats))
+        if not ctrl_tabs:
+            print("    WARNING: {} has NO usable controls; it is excluded "
+                  "from the pooled target OR and from the null".format(name))
 
     if not target_rows:
         sys.exit("no usable target regions")
 
+    # Pool ONLY targets that have usable controls, so target and null are
+    # built from the same targets (v2.0.1 fix). Keep the all-target OR as
+    # a descriptive number for comparison with v1.
+    with_ctrl = set(nm for nm, t in target_controls.items() if t)
+    pooled_all = {lab: np.zeros(4, dtype=float) for lab, _, _ in scores}
+    for nm, tabs_by in per_target_tab.items():
+        for lab, tab in tabs_by.items():
+            pooled_all[lab] += np.array(tab, dtype=float)
+            if nm in with_ctrl:
+                pooled[lab] += np.array(tab, dtype=float)
+    for r in target_rows:
+        r["has_controls"] = r["name"] in with_ctrl
+        r["n_controls_usable"] = len(target_controls.get(r["name"], []))
+    for r in set_rows:
+        r["has_controls"] = r["name"] in with_ctrl
+    if not with_ctrl:
+        sys.exit("no target has usable controls; see control search counts "
+                 "above (try --max-blacklist-frac 0.05)")
+    excluded = [r["name"] for r in target_rows if r["name"] not in with_ctrl]
+    if excluded:
+        print("\nWARNING: {} target(s) without controls excluded from the "
+              "pooled OR: {}".format(len(excluded), ", ".join(excluded)))
     target_df = pd.DataFrame(target_rows)
     pooled_or = {lab: odds_ratio(*pooled[lab].astype(int))
                  for lab, _, _ in scores}
+    pooled_or_all = {lab: odds_ratio(*pooled_all[lab].astype(int))
+                     for lab, _, _ in scores}
     for lab, _, _ in scores:
         print("\nPooled target 2x2 [{}]: both={:.0f} bes_only={:.0f} "
               "contact_only={:.0f} neither={:.0f}".format(lab, *pooled[lab]))
-        print("Pooled target OR [{}] = {:.3f}".format(lab, pooled_or[lab]))
+        print("Pooled target OR [{}] = {:.3f}   (all targets incl. those "
+              "without controls, v1-style: {:.3f})".format(
+                  lab, pooled_or[lab], pooled_or_all[lab]))
 
     # ---- Null: one control per target, pooled, paired across scores ----
     print("\n=== NULL: {} control panels ===".format(args.n_panels))
@@ -712,6 +809,7 @@ def main():
             "empirical_p": float((np.sum(arr >= pooled_or[lab]) + 1)
                                  / (len(arr) + 1)),
             "pooled_2x2": [int(x) for x in pooled[lab]],
+            "pooled_OR_all_targets": pooled_or_all[lab],
         }
         print("[{}] null OR median={:.3f} 95th={:.3f}  empirical p={:.4f}"
               .format(lab, stats[lab]["null_OR_median"],
@@ -735,7 +833,7 @@ def main():
                       sep="\t", index=False, float_format="%.4f")
     b = stats["BES"]
     summary = {
-        "script_version": "2.0.0",
+        "script_version": "2.0.1",
         "aggregation": args.aggregation,
         "contact_metric": args.contact_metric,
         "hic_bin": args.hic_bin,
@@ -754,6 +852,11 @@ def main():
         "empirical_p": b["empirical_p"],
         "match_gene_density": bool(args.match_gene_density),
         "n_controls_per_target": args.n_controls,
+        "script_fix": "2.0.1 pooled OR over targets with controls only",
+        "pooled_target_OR_all_targets": b["pooled_OR_all_targets"],
+        "targets_without_controls": excluded,
+        "max_blacklist_frac": args.max_blacklist_frac,
+        "control_search": control_stats,
     }
     if set_labels:
         summary["score_sets"] = {
@@ -780,6 +883,7 @@ def main():
                 "contact_only": st["pooled_2x2"][2],
                 "neither": st["pooled_2x2"][3],
                 "pooled_OR": st["pooled_OR"],
+                "pooled_OR_all_targets": st["pooled_OR_all_targets"],
                 "null_OR_median": st["null_OR_median"],
                 "null_OR_p95": st["null_OR_p95"],
                 "empirical_p": st["empirical_p"],

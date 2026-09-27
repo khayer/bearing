@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : dev/replicate_swap_null.py
-# Version  : 1.0.1
+# Version  : 1.0.2
 # Date     : 2026-09-26
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # Status   : dev/ prototype (category B until a manuscript number uses it)
 # Changes  : 1.0.1 --regions also reads regions_manuscript.tsv (name, chr:start-end);
 #            relative qcat paths resolve from cwd (workflow/) or sheet dir
+#            1.0.2 perbin adds the four per-sample summed scores (a1 a2 b1 b2)
+#            so replicate-driven bins can be inspected
 # ----------------------------------------------------------------------
 """
 replicate_swap_null.py
@@ -521,14 +523,16 @@ def main():
             fh.write("\t".join(str(r[c]) if c in ("distribution", "n")
                                else "%.6g" % r[c] for c in cols) + "\n")
     with gzip.open(P + ".perbin.tsv.gz", "wt") as fh:
-        cols = ["chrom", "start", "end", "d", "cov", "stratum", "p_swap", "q_swap"]
+        cols = ["chrom", "start", "end", "d", "cov", "stratum", "p_swap", "q_swap",
+                "a1", "a2", "b1", "b2"]
         if prod_p is not None:
             cols += ["p_prod", "q_prod"]
         fh.write("\t".join(cols) + "\n")
         for j, i in enumerate(ti):
             c, s, e = common[i]
             row = [c, str(s), str(e), "%.6g" % d[i], "%.6g" % cov[i],
-                   str(int(stratum[i])), "%.4g" % p[j], "%.4g" % q[j]]
+                   str(int(stratum[i])), "%.4g" % p[j], "%.4g" % q[j],
+                   "%.4g" % a1[i], "%.4g" % a2[i], "%.4g" % b1[i], "%.4g" % b2[i]]
             if prod_p is not None:
                 row += ["%.4g" % prod_p[i], "%.4g" % prod_q[i]]
             fh.write("\t".join(row) + "\n")
