@@ -1049,6 +1049,38 @@ rule hic_crosslocus:
               "--out-prefix {OUT}/hic/crosslocus_p95_dcontact"
               % (diffs, cool_a, cool_b, insul_a, insul_b, res))
 
+# Same arguments as hic_crosslocus plus the three pre-registered track
+# combinations (bes_hic_crosslocus.py v2 --score-sets; 6-track panel order
+# 1 ATAC, 2 RNA+, 3 RNA-, 4 CTCF, 5 Cohesin, 6 H3K27ac). Separate output
+# prefix so the production crosslocus_p95_dcontact files are not touched;
+# its BES row reproduces crosslocus_p95_dcontact (same seed, same panels).
+rule hic_crosslocus_sets:
+    input: pvalue=out("pvalue.done"), blacklist=BL
+    output: done=touch(out("hic", "crosslocus_sets.done"))
+    params:
+        res=P["hic"]["contact_resolution"],
+        targets=os.path.join(BIN, P["hic"]["crosslocus_targets"])
+    resources: mem_mb=100000, runtime=1440
+    run:
+        res = params.res
+        diffs = " ".join("%s_vs_%s=%s/pvalue/diff_%s.stats.tsv" % (REF, c, OUT, "%s_vs_%s" % (REF, c))
+                         for c in HIC if c in CONDS and c != REF)
+        cool_a = _abs_hic(HIC[REF]["cool"].replace("{res}", str(res)))
+        cool_b = " ".join("%s_vs_%s=%s" % (REF, c, _abs_hic(HIC[c]["cool"].replace("{res}", str(res))))
+                          for c in HIC if c in CONDS and c != REF)
+        ires = P["hic"].get("insulation_resolution", 25000)
+        insul_a = _abs_hic(HIC[REF]["insul"].replace("{res}", str(ires)))
+        insul_b = " ".join("%s_vs_%s=%s" % (REF, c, _abs_hic(HIC[c]["insul"].replace("{res}", str(ires))))
+                           for c in HIC if c in CONDS and c != REF)
+        shell("python {BIN}/hic/bes_hic_crosslocus.py --diffs %s --cool-a %s --cool-b %s "
+              "--insul-a %s --insul-b %s "
+              "--targets {params.targets} --hic-bin %d --aggregation p95 "
+              "--contact-metric delta_contact --n-controls 200 --n-panels 1000 "
+              "--blacklist {input.blacklist} --gtf {GTF} --match-gene-density "
+              "--score-sets architectural=4,5 transcriptional=2,3,6 accessible_enhancer=1,6 "
+              "--out-prefix {OUT}/hic/crosslocus_sets_v2"
+              % (diffs, cool_a, cool_b, insul_a, insul_b, res))
+
 
 # ---- dcHiC compartment table and manuscript/lymphoid extracts ------------
 # Each rule enters its own conda env via `conda run -n <env>` (convert/python in

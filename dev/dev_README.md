@@ -93,6 +93,15 @@ One-off diagnostics (never produced a manuscript number):
     run_bes_hic_matrix.py, bearing_tad_decomposition.py, make_bearing_bins_bed.py,
     extract_track_diff_bed.py, bearing_diff_concordance.py, regen_fig7_panelB.py
 
+replicate_swap_null.py   (PROTOTYPE, 2026-09-26 -- not yet used by the paper)
+    Replicate-aware differential test for n = 2: replaces the circular-shift
+    null with the two replicate label-swap relabelings (effect cancels
+    exactly), optionally stratified on the swap-invariant mean score.
+    Verifies its reconstruction against the production diff qcat
+    (--check-diff-qcat) and reports production p / q on the same bins
+    (--prod-stats). Output: <prefix>.summary.tsv / .quantiles.tsv /
+    .perbin.tsv.gz / .regions.tsv / .pdf. Promote to section A before quoting.
+
 If you promote any B-script to produce a paper number, MOVE it up to section A
 with its output path, or the mapping stops being trustworthy.
 
