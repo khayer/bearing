@@ -217,6 +217,7 @@ def all_targets():
               out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf"),
               out("paper_figures", "suppS7b_compartment_100kb_v1p.compartment_landscape.pdf"),
               out("hic", "bes_hic_within.done")]
+    t.append(out("benchmarks_summary.tsv"))
     return t
 
 rule all:
@@ -368,6 +369,7 @@ rule score_sample:
         minsig=P["min_signal"], norm=_score_norm_flag
     threads: 8
     resources: mem_mb=96000, runtime=720, cpus_per_task=8
+    benchmark: out("benchmarks", "score_sample.{sample}.tsv")
     shell:
         "python {BIN}/bigwig_to_qcat.py --bw {params.bw} "
         "--sample-name {wildcards.sample} --out {output.qcat} "
@@ -423,6 +425,7 @@ rule compare:
     output: done=touch(out("compare.done"))
     threads: 10
     resources: mem_mb=200000, runtime=1440, cpus_per_task=10
+    benchmark: out("benchmarks", "compare.tsv")
     shell:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} --out {OUT}/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
@@ -475,6 +478,7 @@ rule perm_sample_one:
         norm=_score_norm_flag
     threads: 8
     resources: mem_mb=96000, runtime=720, cpus_per_task=8
+    benchmark: out("benchmarks", "perm_sample_one.perm{idx}.{sample}.tsv")
     shell:
         "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --out-dir {OUT}/perm "
         "--chrom-sizes {CS} --n-perms {params.n} --perm-index {wildcards.idx} "
@@ -498,6 +502,7 @@ rule perm_diff_one:
     params: n=P["n_perms"]
     threads: 8
     resources: mem_mb=120000, runtime=720, cpus_per_task=8
+    benchmark: out("benchmarks", "perm_diff_one.perm{idx}.tsv")
     shell:
         "python {BIN}/generate_perm_nulls.py --sheet {input.sheet} --diff-sheet {input.sheet} "
         "--chrom-sizes {CS} --n-perms {params.n} --perm-index {wildcards.idx} "
@@ -526,6 +531,7 @@ rule pvalue_diff_one:
     params: n=P["n_perms"]
     threads: 4
     resources: mem_mb=256000, runtime=600, cpus_per_task=4
+    benchmark: out("benchmarks", "pvalue_diff_one.{comp}.tsv")
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "bash {BIN}/slurm/run_pvalue_one.sh {OUT}/compare {wildcards.comp} {params.n} "
@@ -535,6 +541,49 @@ rule pvalue_diff_one:
 rule pvalue_diff:
     input: expand(out("pvalue", "diff_{comp}.stats.tsv"), comp=ALL_PAIRWISE)
     output: done=touch(out("pvalue.done"))
+
+# Collate per-job benchmark TSVs (from the benchmark: directives on the heavy
+# rules) into one table for implementation/reproducibility reporting. The
+# individual benchmark files are side-effect outputs of the benchmarked rules
+# (not declared inputs anywhere), so this rule gates on the phase sentinels
+# that imply those rules ran, then globs OUT/benchmarks/*.tsv. Re-touching any
+# sentinel (perms / pvalues / hic refresh) re-runs the collation. The Hi-C
+# sentinels are included only when Hi-C is configured, so a BEARING-only run
+# still builds.
+def _benchmark_gate():
+    g = [out("pvalue.done"), out("consensusQ", "pvalue.done")]
+    if HIC:
+        g += [out("figures.done"),
+              out("hic", "contact_isolation.done"),
+              out("hic", "crosslocus.done")]
+    return g
+
+rule benchmarks_summary:
+    input: _benchmark_gate()
+    output: out("benchmarks_summary.tsv")
+    resources: mem_mb=8000, runtime=30
+    run:
+        import glob
+        import csv
+        bdir = out("benchmarks")
+        files = sorted(glob.glob(os.path.join(bdir, "*.tsv")))
+        hdr = None
+        rows = []
+        for f in files:
+            with open(f) as fh:
+                r = list(csv.reader(fh, delimiter="\t"))
+            if len(r) < 2:
+                continue
+            hdr = r[0]
+            job = os.path.basename(f)[:-4]
+            for row in r[1:]:
+                rows.append([job] + row)
+        os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+        with open(output[0], "w", newline="") as fh:
+            w = csv.writer(fh, delimiter="\t")
+            w.writerow((["rule_job"] + hdr) if hdr else ["rule_job"])
+            w.writerows(rows)
+        print("benchmarks_summary: %d rows from %d files" % (len(rows), len(files)))
 
 # Per-sample (non-diff) p-values: run bearing_pvalue.py for each sample against
 # its OWN permutation nulls (perm/perm{idx}/{sample}/{sample}_perm{idx}.qcat.bgz,
@@ -809,6 +858,7 @@ rule bearing_hic_triangle_one:
         loops_b=lambda wc: ("--loops-b %s" % _abs_hic(HIC[wc.cmp.split("_vs_")[-1]]["loops"])) if HIC.get(wc.cmp.split("_vs_")[-1], {}).get("loops") else "",
         res=P["hic"]["contact_resolution"]
     resources: mem_mb=100000, runtime=1440
+    benchmark: out("benchmarks", "bearing_hic_triangle_one.{cmp}.tsv")
     shell:
         "python {BIN}/bearing_hic_plot_triangle.py "
         "--contact-a {params.cool_a} --contact-b {params.cool_b} "
@@ -966,6 +1016,7 @@ rule hic_contact_isolation:
         target=P["hic"]["isolation_target"], win=P["hic"]["isolation_window"],
         maxd=P["hic"]["isolation_max_distance"], permn=P["hic"]["isolation_perm_n"]
     resources: mem_mb=100000, runtime=1440
+    benchmark: out("benchmarks", "hic_contact_isolation.tsv")
     shell:
         "python {BIN}/hic/tcrb_contact_isolation.py --cool {params.cools} --target {params.target} "
         "--window-size {params.win} --max-distance {params.maxd} --perm-n {params.permn} "
@@ -978,6 +1029,7 @@ rule hic_crosslocus:
         res=P["hic"]["contact_resolution"],
         targets=os.path.join(BIN, P["hic"]["crosslocus_targets"])
     resources: mem_mb=100000, runtime=1440
+    benchmark: out("benchmarks", "hic_crosslocus.tsv")
     run:
         res = params.res
         diffs = " ".join("%s_vs_%s=%s/pvalue/diff_%s.stats.tsv" % (REF, c, OUT, "%s_vs_%s" % (REF, c))
@@ -1303,6 +1355,7 @@ rule compare_consensusq:
     output: done=touch(out("consensusQ", "compare.done"))
     threads: 10
     resources: mem_mb=200000, runtime=1440, cpus_per_task=10
+    benchmark: out("benchmarks", "compare_consensusq.tsv")
     shell:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} "
         "--out {OUT}/consensusQ/compare "
@@ -1315,6 +1368,7 @@ rule pvalue_consensusq:
     params: n=P["n_perms"]
     threads: 4
     resources: mem_mb=256000, runtime=1440, cpus_per_task=4
+    benchmark: out("benchmarks", "pvalue_consensusq.tsv")
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/consensusQ/compare {params.n} "
