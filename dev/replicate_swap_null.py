@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : dev/replicate_swap_null.py
-# Version  : 1.0.0
+# Version  : 1.0.1
 # Date     : 2026-09-26
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # Status   : dev/ prototype (category B until a manuscript number uses it)
+# Changes  : 1.0.1 --regions also reads regions_manuscript.tsv (name, chr:start-end);
+#            relative qcat paths resolve from cwd (workflow/) or sheet dir
 # ----------------------------------------------------------------------
 """
 replicate_swap_null.py
@@ -173,10 +175,21 @@ def read_sheet(path):
     need = {"sample", "condition", "qcat"}
     if not rows or not need.issubset(rows[0].keys()):
         sys.exit("sheet %s needs columns %s" % (path, sorted(need)))
+    # Relative qcat paths: Snakemake writes them relative to workflow/ (the
+    # cwd it runs in), not to the sheet's folder. Try cwd first, then the
+    # sheet's folder; fail loudly if neither exists.
     base = os.path.dirname(os.path.abspath(path))
     for r in rows:
-        if not os.path.isabs(r["qcat"]):
-            r["qcat"] = os.path.join(base, r["qcat"])
+        q = r["qcat"]
+        if os.path.isabs(q):
+            cands = [q]
+        else:
+            cands = [os.path.abspath(q), os.path.join(base, q)]
+        hit = next((c for c in cands if os.path.exists(c)), None)
+        if hit is None:
+            sys.exit("qcat for %s not found; tried: %s (run from workflow/)"
+                     % (r["sample"], " , ".join(cands)))
+        r["qcat"] = hit
     return rows
 
 
@@ -301,6 +314,16 @@ def read_regions(path):
             if not ln.strip() or ln.startswith("#") or ln.startswith("track"):
                 continue
             f = ln.rstrip("\n").split("\t")
+            # Format 2: regions_manuscript.tsv  (name, chrom:start-end, ...)
+            if len(f) >= 2 and ":" in f[1] and "-" in f[1]:
+                try:
+                    c, se = f[1].split(":", 1)
+                    s, e = [int(x.replace(",", "")) for x in se.split("-", 1)]
+                except ValueError:
+                    continue
+                regs.append((c, s, e, f[0]))
+                continue
+            # Format 1: BED (chrom, start, end, [name])
             if len(f) < 3:
                 continue
             try:
@@ -308,6 +331,9 @@ def read_regions(path):
             except ValueError:
                 continue          # header line
             regs.append((f[0], s, e, f[3] if len(f) > 3 else "%s:%d-%d" % (f[0], s, e)))
+    if not regs:
+        sys.exit("no regions parsed from %s (need BED or name<TAB>chr:start-end)"
+                 % path)
     return regs
 
 
