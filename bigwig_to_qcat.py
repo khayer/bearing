@@ -1420,7 +1420,8 @@ def _compute_chrom_cache(chrom, chrom_len, bw_paths, normalize_tracks,
 
 
 def _score_chrom_from_cache(chrom, q, npz_path, min_signal, normalize_score,
-                            start_id, out_tmp_path, score_method="kl"):
+                            start_id, out_tmp_path, score_method="kl",
+                            prior_strength=0.0):
     """Score a chromosome (from cached npz) and write qcat rows."""
     import numpy as np
 
@@ -1442,6 +1443,8 @@ def _score_chrom_from_cache(chrom, q, npz_path, min_signal, normalize_score,
         min_signal=min_signal,
         normalize_score=normalize_score,
         score_method=score_method,
+        prior_strength=prior_strength,
+        prior_source=raw_clipped,
     )
 
     chrom_sum = float(scores.sum())
@@ -1687,8 +1690,29 @@ def signals_to_prob(signal_matrix):
     return mat / row_sums
 
 
+def shrink_composition(signal_matrix, Q, prior_strength):
+    """
+    Composition prior (Dirichlet-style shrinkage toward the background Q).
+
+        P_shrunk[b, i] = (x[b, i] + alpha * Q[i]) / (sum_i x[b, i] + alpha)
+
+    x is the per-bin signal the observed P was built from (post-normalization,
+    clipped at 0), alpha = prior_strength in the same units as the summed
+    signal. A bin with total signal much larger than alpha keeps its
+    composition; a bin with total signal comparable to or below alpha is pulled
+    toward Q, so its score goes smoothly to 0 instead of jumping between 0
+    (below a hard floor) and the single-track ceiling log2(1/Q_i) (just above
+    it). A bin with no signal gets P = Q exactly and scores 0.
+    """
+    x = np.clip(np.asarray(signal_matrix, dtype=np.float64), 0.0, None)
+    a = float(prior_strength)
+    Qb = np.asarray(Q, dtype=np.float64)[np.newaxis, :]
+    return (x + a * Qb) / (x.sum(axis=1, keepdims=True) + a)
+
+
 def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
-                      normalize_score=False, score_method="kl"):
+                      normalize_score=False, score_method="kl",
+                      prior_strength=0.0, prior_source=None):
     """
     Compute per-state per-bin BEARING scores.
 
@@ -1722,11 +1746,21 @@ def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
     normalize_score  : bool  -- divide KL by log2(num_states) (KL only; JSD is
                        already bounded, so this is ignored for JSD).
     score_method     : "kl" | "jsd"
+    prior_strength   : float -- composition prior alpha (0 = off, default).
+                       When > 0, P is replaced by shrink_composition(
+                       prior_source, Q, alpha) before scoring.
+    prior_source     : (num_bins, num_states) signal matrix P was built from
+                       (raw_clipped). Required when prior_strength > 0.
 
     Returns
     -------
     scores : (num_bins, num_states) float array
     """
+    if prior_strength and float(prior_strength) > 0.0:
+        if prior_source is None:
+            raise ValueError("prior_strength > 0 requires prior_source "
+                             "(the signal matrix P was built from)")
+        P = shrink_composition(prior_source, Q, prior_strength)
     Qb = Q[np.newaxis, :]
     if score_method == "jsd":
         M = 0.5 * (P + Qb)
@@ -1765,7 +1799,8 @@ def kl_scores_per_bin(P, Q, raw_signal_matrix=None, min_signal=MIN_SIGNAL,
 
 
 def compute_score_statistics(prob_cache, categories, metrics=["mean", "median", "p90"],
-                             normalize_score=False, score_method="kl"):
+                             normalize_score=False, score_method="kl",
+                             prior_strength=0.0):
     """
     Compute per-category quality statistics from the scored data in prob_cache.
     
@@ -1802,6 +1837,8 @@ def compute_score_statistics(prob_cache, categories, metrics=["mean", "median", 
             raw_signal_matrix=raw_clipped,
             normalize_score=normalize_score,
             score_method=score_method,
+            prior_strength=prior_strength,
+            prior_source=raw_clipped,
         )
         
         # Accumulate scores for each category
@@ -2175,7 +2212,8 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
     jobs=1, summary_chrom=None, skip_preflight=False,
     normalize_score=False, blacklist=None, min_signal_per_track=None,
     min_signal_percentile=None, floors_tsv=None, write_floors_tsv=None,
-    sample_name=None, cohort_ref=None, score_method="kl", bins_bed=None):
+    sample_name=None, cohort_ref=None, score_method="kl", bins_bed=None,
+    prior_strength=0.0):
     try:
         import pyBigWig
     except ImportError:
@@ -2448,6 +2486,8 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     min_signal=min_signal,
                     normalize_score=normalize_score,
                     score_method=score_method,
+                    prior_strength=prior_strength,
+                    prior_source=raw_clipped,
                 )
                 total_masked += n_masked
                 # accumulate chromosome-level and global KL sums
@@ -2533,6 +2573,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
                     start_id,
                     out_tmp,
                     score_method,
+                    prior_strength,
                 ))
                 start_id += n_bins
 
@@ -2640,6 +2681,7 @@ def run(bw_paths, out_path, chrom_sizes, chroms=None, regions=None,
             metrics=stats_metrics,
             normalize_score=normalize_score,
             score_method=score_method,
+            prior_strength=prior_strength,
         )
         
         # Write TSV (includes q_background column automatically)
@@ -3256,6 +3298,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--prior-strength", type=float, default=0.0, metavar="ALPHA",
+        help=(
+            "Composition prior (default 0 = off, identical to earlier output). "
+            "When > 0, each bin's composition is shrunk toward the background "
+            "Q: P = (x + ALPHA*Q) / (sum(x) + ALPHA), ALPHA in the units of the "
+            "summed per-bin signal. Removes the hard min-signal cliff and the "
+            "single-track score ceiling log2(1/Q_i) at barely-detectable bins. "
+            "Usually combined with --min-signal 0."
+        ),
+    )
+    parser.add_argument(
         "--pseudocount", type=float, default=PSEUDOCOUNT, metavar="FLOAT",
         help=(
             f"Zero-clamp epsilon added to the raw signal vector before "
@@ -3426,6 +3479,11 @@ def main():
     if args.pseudocount != PSEUDOCOUNT:
         globals()["PSEUDOCOUNT"] = args.pseudocount
         print(f"  Pseudocount (zero-clamp epsilon): {args.pseudocount}")
+    if args.prior_strength < 0:
+        sys.exit("ERROR: --prior-strength must be >= 0.")
+    if args.prior_strength > 0:
+        print(f"  Composition prior: alpha = {args.prior_strength} "
+              f"(min-signal floor = {args.min_signal})")
 
     if not (0.0 < args.unmappable_zero_frac <= 1.0):
         sys.exit("ERROR: --unmappable-zero-frac must be in (0, 1].")
@@ -3684,6 +3742,7 @@ def main():
                 normalize_method=args.normalize_method,
                 cohort_ref=cohort_ref,
                 score_method=args.score_method,
+                prior_strength=args.prior_strength,
                 normalize_score=args.normalize_score,
                 min_signal=args.min_signal,
                 min_signal_per_track=args.min_signal_per_track,
@@ -3828,6 +3887,7 @@ def main():
                               normalize_method=args.normalize_method,
                               cohort_ref=cohort_ref,
                               score_method=args.score_method,
+                              prior_strength=args.prior_strength,
                               normalize_score=args.normalize_score,
                               min_signal=args.min_signal,
                               min_signal_per_track=args.min_signal_per_track,
@@ -3854,7 +3914,7 @@ def main():
         _sig_digest, _sig_payload = score_provenance_signature(
             args.normalize_tracks, args.normalize_method, args.score_method,
             args.min_signal, args.categories, args.bins_bed,
-            args.cohort_reference)
+            args.cohort_reference, prior_strength=args.prior_strength)
         _sig_path = str(out_path) + ".sig"
         with open(_sig_path, "w") as _sf:
             _sf.write(_sig_digest + "\n")

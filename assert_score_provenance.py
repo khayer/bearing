@@ -77,6 +77,9 @@ def main():
                          "(e.g. '--normalize-tracks --normalize-method nonzero-quantile').")
     ap.add_argument("--score-method", default="kl")
     ap.add_argument("--min-signal", type=float, required=True)
+    ap.add_argument("--prior-strength", type=float, default=0.0,
+                    help="composition prior alpha the qcats must have been "
+                         "scored with (0 = off)")
     ap.add_argument("--categories", required=True)
     ap.add_argument("--bins-bed", default="",
                     help="Adaptive-binning bed path, or empty for fixed binning.")
@@ -89,7 +92,8 @@ def main():
     ntr, meth, cref = parse_norm_flags(args.norm_flags)
     expected, payload = score_provenance_signature(
         ntr, meth, args.score_method, args.min_signal,
-        args.categories, (args.bins_bed or None), cref)
+        args.categories, (args.bins_bed or None), cref,
+        prior_strength=args.prior_strength)
 
     if args.stamp:
         for s in args.samples:

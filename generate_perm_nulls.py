@@ -397,6 +397,9 @@ def main():
     ap.add_argument("--cohort-reference", default=None, metavar="NPZ",
                     help="Pass through to bigwig_to_qcat.py --cohort-reference "
                          "during perm scoring (required for cohort-quantile).")
+    ap.add_argument("--prior-strength", type=float, default=None, metavar="ALPHA",
+                    help="Pass through to bigwig_to_qcat.py --prior-strength during "
+                         "perm scoring (composition prior; must match observed scoring).")
     ap.add_argument("--score-method", default=None, choices=["kl", "jsd"],
                     help="Pass through to bigwig_to_qcat.py --score-method during "
                          "perm scoring, so the null matches the observed scoring.")
@@ -771,6 +774,8 @@ def main():
                     score_cmd += ["--cohort-reference", args.cohort_reference]
                 if args.score_method:
                     score_cmd += ["--score-method", args.score_method]
+                if args.prior_strength is not None:
+                    score_cmd += ["--prior-strength", str(args.prior_strength)]
                 if args.bins_bed:
                     score_cmd += ["--bins-bed", args.bins_bed]
                 if args.no_extras:

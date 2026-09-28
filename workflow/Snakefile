@@ -304,6 +304,11 @@ COHORT_REF  = out("cohort_quantile_reference.npz")
 # observed scores AND the permutation null so the null matches the observed
 # scale; the differential null inherits it via compare_qcat on the perm qcats.
 SCORE_METHOD = config.get("score_method", "kl")
+# Composition prior (bigwig_to_qcat.py --prior-strength; 2026-09-28). 0 / unset =
+# off, identical to earlier scoring and provenance digests. Applied identically to
+# observed scoring AND permutation scoring, and checked by score_provenance.
+PRIOR_STRENGTH = float(config.get("prior_strength", 0) or 0)
+PRIOR_FLAG = ("--prior-strength %s" % PRIOR_STRENGTH) if PRIOR_STRENGTH > 0 else ""
 # Optional explicit override for the p-value-stage score floor. If unset,
 # bearing_pvalue.py picks it from --score-method (0.5 KL, 0.05 JSD).
 _PV_MINSIG = config.get("pvalue_min_signal", None)
@@ -374,8 +379,8 @@ rule score_sample:
         "python {BIN}/bigwig_to_qcat.py --bw {params.bw} "
         "--sample-name {wildcards.sample} --out {output.qcat} "
         "--categories {CATS} --chrom-sizes {CS} --blacklist {input.blacklist} "
-        "--min-signal {params.minsig} {params.norm} --score-method %s %s --jobs {threads} --signal-plots"
-        % (SCORE_METHOD, _BINS_BED_FLAG)
+        "--min-signal {params.minsig} {params.norm} --score-method %s %s %s --jobs {threads} --signal-plots"
+        % (SCORE_METHOD, _BINS_BED_FLAG, PRIOR_FLAG)
 
 # Aggregator: depends on every per-sample qcat; downstream rules wait on this.
 rule score:
@@ -401,7 +406,8 @@ rule score_provenance:
         "python {BIN}/assert_score_provenance.py --outdir {OUT} "
         "--samples {params.samples} --norm-flags '{params.norm}' "
         "--score-method {params.smeth} --min-signal {params.minsig} "
-        "--categories {params.cats} --bins-bed '{params.binsbed}'"
+        "--prior-strength %s "
+        "--categories {params.cats} --bins-bed '{params.binsbed}'" % PRIOR_STRENGTH
 
 # One-time TRUSTED backfill for trees scored before this guard existed. Writes the
 # expected signature to each .sig WITHOUT re-scoring. Run manually, and ONLY on a
@@ -416,7 +422,8 @@ rule stamp_provenance:
         "python {BIN}/assert_score_provenance.py --stamp --outdir {OUT} "
         "--samples {params.samples} --norm-flags '{params.norm}' "
         "--score-method {params.smeth} --min-signal {params.minsig} "
-        "--categories {params.cats} --bins-bed '{params.binsbed}'"
+        "--prior-strength %s "
+        "--categories {params.cats} --bins-bed '{params.binsbed}'" % PRIOR_STRENGTH
 
 
 # ---- Phase 2: compare (all conditions, region set) ------------------------
@@ -485,10 +492,10 @@ rule perm_sample_one:
         "--only-sample {wildcards.sample} "
         "--blacklist {input.blacklist} --min-signal {params.minsig} "
         "--min-shift {params.shift} --seed {params.seed} "
-        "{params.norm} --score-method %s %s "
+        "{params.norm} --score-method %s %s %s "
         "--shift-workers {threads} --jobs {threads} && "
         "python {BIN}/assert_qcat_nonempty.py {output} "
-        "--min-signal {params.minsig} --min-bins 1000" % (SCORE_METHOD, _BINS_BED_FLAG)
+        "--min-signal {params.minsig} --min-bins 1000" % (SCORE_METHOD, _BINS_BED_FLAG, PRIOR_FLAG)
 
 # Per-index aggregator: all samples' observed nulls for this permutation exist.
 rule perm_null_one:

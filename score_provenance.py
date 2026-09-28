@@ -34,7 +34,7 @@ def _base(path):
 
 def score_provenance_signature(normalize_tracks, normalize_method, score_method,
                                min_signal, categories_path, bins_bed_path,
-                               cohort_reference_path=None):
+                               cohort_reference_path=None, prior_strength=0.0):
     """Return (digest, payload) for the scoring-determining settings.
 
     digest  -- sha256 hex of the canonical payload (written as the .sig first line)
@@ -54,6 +54,10 @@ def score_provenance_signature(normalize_tracks, normalize_method, score_method,
         "bins_bed=%s" % _base(bins_bed_path),
         "cohort_ref=%s" % _base(cohort_reference_path),
     ]
+    # Composition prior (2026-09-28). Added ONLY when active so every tree
+    # scored without it keeps its existing digest (no mass re-stamping).
+    if prior_strength and float(prior_strength) > 0.0:
+        fields.append("prior_strength=%s" % ("%.6g" % float(prior_strength)))
     payload = "\n".join(fields)
     digest = hashlib.sha256(payload.encode("ascii")).hexdigest()
     return digest, payload
