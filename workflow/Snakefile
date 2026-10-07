@@ -224,7 +224,9 @@ def all_targets():
               out("paper_figures", "suppS7b_compartment_50kb_core.compartment_landscape.pdf"),
               out("paper_figures", "suppS7b_compartment_250kb_core.compartment_landscape.pdf"),
               out("paper_figures", "suppS7b_compartment_100kb_v1p.compartment_landscape.pdf"),
-              out("hic", "bes_hic_within.done")]
+              out("hic", "bes_hic_within.done"),
+              *expand(out("hic", "insulation_specificity", "specificity_{norm}.tsv"),
+                      norm=config.get("insulation_specificity_norms", ["quantile"]))]
     t.append(out("benchmarks_summary.tsv"))
     return t
 
@@ -1628,6 +1630,39 @@ rule suppS4_tracks:
         "python {BIN}/batch_pygenometracks.py --sheet {input.sheet} "
         "--region tcrb_domain={params.region} --outdir {params.outdir} "
         "--pval-dir {OUT}/pvalue --threads {threads} --run"
+
+
+# ===========================================================================
+# Insulation-specificity controls (controls supplement; *_<norm>_hl.pdf panels)
+# ===========================================================================
+# hic/insulation_specificity.py (v2 REBUILD of the lost v1, see its header):
+# per control element and condition, DN-vs-condition insulation delta on the
+# gene-centered 125 kb core, scored as a percentile rank within the condition's
+# own genome-wide |delta|. Hi-C insulation only -> independent of BEARING scoring
+# and of prior_strength. --expect compares with the published v1 table
+# (paper/expected/); read expect_check_quantile.tsv before trusting the rebuild.
+INSUL_SPEC_NORMS = config.get("insulation_specificity_norms", ["quantile"])
+
+def _insul_expect(norm):
+    f = os.path.join(BIN, "paper", "expected", "insulation_specificity_%s.tsv" % norm)
+    return ("--expect %s" % f) if os.path.exists(f) else ""
+
+rule hic_insulation_specificity:
+    output:
+        tsv=out("hic", "insulation_specificity", "specificity_{norm}.tsv"),
+        md=out("hic", "insulation_specificity", "specificity_{norm}.md")
+    wildcard_constraints: norm="raw|quantile|detrend"
+    params:
+        insul=hic_arg("insul", P["hic"].get("insulation_resolution", 25000)) if HAS_HIC else "",
+        conds=",".join(c for c in HIC if c != REF),
+        elements=os.path.join(BIN, "annotations", "insulation_controls.tsv"),
+        expect=lambda wc: _insul_expect(wc.norm),
+        outdir=out("hic", "insulation_specificity")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/hic/insulation_specificity.py --insul {params.insul} "
+        "--reference {REF} --conditions {params.conds} --elements {params.elements} "
+        "--norm {wildcards.norm} {params.expect} --out-dir {params.outdir}"
 
 
 # ===========================================================================

@@ -1,0 +1,16 @@
+# Insulation-specificity control elements (mm10). Gene-centered 125 kb cores
+# (5 x 25 kb bins) from project doc normalization_benchmark.md (2026-08-24).
+# role: positive (target = the condition that should change) / negative /
+# excluded (Gapdh: regional chr6:125 Mb offset, see fig67 doc sec 8).
+# Condition names follow workflow/config/samples.tsv (V1P = dV1P).
+name	core	role	target
+Trbv1	chr6:40825000-40950000	positive	dV1P
+RC_Eb	chr6:41450000-41575000	positive	EbKO
+Cd4	chr6:124825000-124950000	positive	DP
+Cd8a	chr6:71325000-71450000	positive	DP
+Col1a1	chr11:94875000-95000000	positive	S3T3
+Actb	chr5:142850000-142975000	negative	
+Sdha	chr13:74275000-74400000	negative	
+Tbp	chr17:15450000-15575000	negative	
+Emc7	chr2:112400000-112525000	negative	
+Gapdh	chr6:125100000-125225000	excluded	
