@@ -76,7 +76,7 @@ dchic:
   run_env:     "dchic"     # has Rscript + functionsdchic (the dcHiC R stages)
 
 # --- locations ------------------------------------------------------------
-outdir: "results"
+#outdir: "results"
 bearing_dir: ".."
 container: "bearing.sif"
 
@@ -101,3 +101,6 @@ combined_agr_genes:    []
 #   python3 workflow/stage_inputs.py --sheet workflow/config/samples.tsv \
 #       --out-sheet workflow/config/samples.local.tsv --cache-dir resources/staged
 #   snakemake ... --config samples_sheet=workflow/config/samples.local.tsv
+prior_strength: 1
+n_perms: 100
+outdir: "results_prior1_n100"
