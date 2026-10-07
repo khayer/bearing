@@ -147,6 +147,21 @@ def load_matrix(bw_paths, chrom_sizes, data_dir):
     return R, index
 
 
+# Composition prior (bigwig_to_qcat.py --prior-strength), set from --prior-strength
+# in main(). 0 = off (identical to the pre-2026-10 behaviour). Applied to the
+# BEARING statistics only (bearing_kl / bearing_jsd, i.e. the production scorer);
+# the comparator baselines below are computed from the unshrunk composition, as
+# a typical analyst would. Q stays the production Q (mean of the UNSHRUNK P).
+PRIOR_STRENGTH = 0.0
+
+
+def _prior_kwargs(R):
+    if PRIOR_STRENGTH and PRIOR_STRENGTH > 0:
+        return {"prior_strength": float(PRIOR_STRENGTH),
+                "prior_source": np.clip(np.asarray(R, dtype=np.float64), 0.0, None)}
+    return {}
+
+
 def compute_Q_all_bins(R, prob_fn, chunk=2_000_000):
     """Production Q: mean of P over ALL bins, INCLUDING low-signal ones.
 
@@ -176,7 +191,7 @@ def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
         # kl_scores_per_bin returns (scores, n_masked) -- the docstring says
         # otherwise, but line ~1755 of bigwig_to_qcat.py returns a tuple.
         res = kl_fn(P, Q, raw_signal_matrix=R, min_signal=min_signal,
-                    score_method=method)
+                    score_method=method, **_prior_kwargs(R))
         arr = res[0] if isinstance(res, tuple) else res
         return np.asarray(arr)
 
@@ -349,8 +364,8 @@ def _write_out(a, sink):
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     with open(a.out, "w") as fh:
         fh.write("# baseline_comparison.py -- Table S10 source\n")
-        fh.write("# sample=%s vs=%s min_signal=%s top_frac=%s Q=genome-wide\n"
-                 % (a.sample_name, a.vs, a.min_signal, a.top_frac))
+        fh.write("# sample=%s vs=%s min_signal=%s prior_strength=%s top_frac=%s Q=genome-wide\n"
+                 % (a.sample_name, a.vs, a.min_signal, a.prior_strength, a.top_frac))
         fh.write("section\tcontrast\tkey\tmetric\tvalue\n")
         for r in sink:
             fh.write("\t".join(r) + "\n")
@@ -368,6 +383,9 @@ def main():
                     help="directory the sheet's relative bw paths resolve against")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--min-signal", type=float, default=0.1)
+    ap.add_argument("--prior-strength", type=float, default=0.0,
+                    help="composition prior alpha for the BEARING statistics; must "
+                         "match the production scoring (config prior_strength)")
     ap.add_argument("--stride", type=int, default=1,
                     help="use every Nth passing bin for the correlations (Q uses all)")
     ap.add_argument("--top-frac", type=float, default=0.01)
@@ -382,6 +400,10 @@ def main():
                          "Q must be genome-wide to match production, or the numbers "
                          "are not quotable.")
     a = ap.parse_args()
+    global PRIOR_STRENGTH
+    PRIOR_STRENGTH = float(a.prior_strength)
+    if PRIOR_STRENGTH > 0:
+        print("  composition prior: alpha = %g (BEARING statistics only)" % PRIOR_STRENGTH)
     _sink = [] if a.out else None
 
     kl_fn, prob_fn = import_production_scorer(os.path.abspath(a.repo))

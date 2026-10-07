@@ -252,6 +252,10 @@ def build_s9(ws, config, repo, prov):
          "Bins whose |summed differential| falls below this are NOT TESTED and are "
          "absent from the differential stats table. DISTINCT from min_signal above. "
          "Sensitivity: Table S14, Supplementary Figure S11."],
+        ["prior_strength (composition prior alpha)", config.get("prior_strength", 0) or 0,
+         "config.yaml: prior_strength (0 / unset = off)",
+         "Per-bin composition shrunk toward Q: P = (x + alpha*Q)/(sum x + alpha). "
+         "Selection and sweep: Methods M.x, Supplementary Table S[x]."],
         ["n_perms", config.get("n_perms"), "config.yaml: n_perms", ""],
         ["min_shift", config.get("min_shift"), "config.yaml: min_shift", ""],
         ["seed", config.get("seed"), "config.yaml: seed", ""],

@@ -194,6 +194,12 @@ def all_targets():
             out("paper_figures", "fig7b", "fig7b.done"),
             out("paper_figures", "suppS4_tracks", "suppS4.done"),
         ]
+    # Manuscript workbook: only for configs that carry the manuscript conditions
+    # (application configs such as V1P lack Pro-B/DP/EbKO). Override with
+    # paper_tables: true/false in the config.
+    if config.get("paper_tables",
+                  all(c in CONDS for c in ("DP", "EbKO", "ProB", "S3T3"))):
+        t.append(out("paper_tables", "BEARING_tables.xlsx"))
     # Manuscript Table S3: CBE regional enrichment for DN vs DP (Tcrb window).
     # Guarded so application configs without both DN and DP are unaffected.
     if "DN_vs_DP" in ALL_PAIRWISE:
@@ -1622,6 +1628,178 @@ rule suppS4_tracks:
         "python {BIN}/batch_pygenometracks.py --sheet {input.sheet} "
         "--region tcrb_domain={params.region} --outdir {params.outdir} "
         "--pval-dir {OUT}/pvalue --threads {threads} --run"
+
+
+# ===========================================================================
+# Manuscript tables: Phase 2 sources + the workbook (was paper/reproduce_all.sh)
+# ===========================================================================
+# Every hand-run table script is a rule here, writing into ONE per-run sources
+# directory, TS = <outdir>/table_sources/, laid out exactly like
+# paper/table_sources/ (what build_tables.py --sources-dir expects). The workbook
+# is then built from <outdir> + TS, so each results tree carries its own tables
+# and nothing is mixed across runs. To refresh the git-tracked copy for a fresh
+# clone, copy TS over paper/table_sources/ by hand after review.
+#
+# Scripts that RECONSTRUCT scores from the bigWigs (baseline_comparison,
+# replicate_stability) get --prior-strength so they score exactly like
+# production. Scripts that read pipeline outputs (track_ablation,
+# regional_null_calibration) inherit the prior through those outputs.
+#
+# Table S8 (RNA edgeR, rna_concordance_stranded.R) needs BAMs + featureCounts and
+# is NOT a rule; the workbook is built with --allow-missing so S8 shows an
+# explicit MISSING-SOURCE banner until its source TSVs are dropped into TS.
+TS = out("table_sources")
+
+def _cond_samples(cond):
+    rows = BEARING_ROWS[BEARING_ROWS["condition"] == cond]
+    return sorted(rows["sample"].tolist())
+
+# Table S10: baseline comparison. Contrast pairs (sample-level) from config.
+_ALL_SAMPLES = set(BEARING_ROWS["sample"].tolist())
+BASELINE_PAIRS = [pr for pr in config.get("baseline_pairs", [["%s_rep1" % REF, "ProB_rep1"]])
+                  if pr[0] in _ALL_SAMPLES and pr[1] in _ALL_SAMPLES]
+BASELINE_TAGS = ["%s_vs_%s" % (a, b) for a, b in BASELINE_PAIRS]
+_BASELINE = {"%s_vs_%s" % (a, b): (a, b) for a, b in BASELINE_PAIRS}
+
+rule table_s10_baseline:
+    input: sheet=out("samples.bearing.tsv"), score=out("score.done")
+    output: os.path.join(TS, "baseline_comparison_{pair}.tsv")
+    wildcard_constraints: pair="|".join(BASELINE_TAGS) if BASELINE_TAGS else "NONE"
+    params:
+        a=lambda wc: _BASELINE[wc.pair][0], b=lambda wc: _BASELINE[wc.pair][1],
+        minsig=P["min_signal"], prior=PRIOR_STRENGTH
+    resources: mem_mb=200000, runtime=1440
+    shell:
+        "python {BIN}/dev/baseline_comparison.py --sheet {input.sheet} "
+        "--data-dir {DATA_DIR} --sample-name {params.a} --vs {params.b} "
+        "--chrom-sizes {CS} --repo {BIN} --regions {BIN}/regions_manuscript.tsv "
+        "--min-signal {params.minsig} --prior-strength {params.prior} --out {output}"
+
+# Table S11: regional null calibration (background mode, n=500, seed 42), one
+# per regional locus, on the REFERENCE condition's replicate differential.
+rule table_s11_regional_null:
+    input: calib=out("calibration.done")
+    output: os.path.join(TS, "regional_null_calibration_{locus}_DNrep_bg.tsv")
+    wildcard_constraints: locus=REGIONAL_LOCUS_RE
+    params:
+        stats=out("calibration", REF, REF, "%s_perbin.tsv.gz" % REF),
+        bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[wc.locus]["bed"]),
+        window=lambda wc: REGIONAL_LOCI[wc.locus]["window"],
+        nrand=config.get("regional_null_n_random", 500)
+    resources: mem_mb=64000, runtime=720
+    shell:
+        "python {BIN}/dev/regional_null_calibration.py --stats {params.stats} "
+        "--regions {params.bed} --locus {params.window} --chrom-sizes {CS} "
+        "--mode background --n-random {params.nrand} --p-thresh {REGIONAL_PTHRESH} "
+        "--seed 42 --verify 5 --null-contrast --repo {BIN} --out {output}"
+
+# Table S12: track ablation (reduced panel), runs from config.
+TRACK_ABLATION_RUNS = config.get("track_ablation_runs", [
+    {"locus": "tcrb", "cmp": "%s_vs_S3T3" % REF},
+    {"locus": "igh",  "cmp": "%s_vs_ProB" % REF}])
+TRACK_ABLATION_TAGS = ["%s_%s" % (r["locus"], r["cmp"]) for r in TRACK_ABLATION_RUNS
+                       if r["cmp"] in ALL_PAIRWISE and r["locus"] in REGIONAL_LOCI]
+_ABL = {"%s_%s" % (r["locus"], r["cmp"]): r for r in TRACK_ABLATION_RUNS}
+
+rule table_s12_track_ablation:
+    input: pvalue=out("pvalue.done"), perm_diff=out("perm_diff.done")
+    output: os.path.join(TS, "track_ablation_{tag}.tsv")
+    wildcard_constraints: tag="|".join(TRACK_ABLATION_TAGS) if TRACK_ABLATION_TAGS else "NONE"
+    params:
+        cmp=lambda wc: _ABL[wc.tag]["cmp"],
+        window=lambda wc: REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["window"],
+        keep=lambda wc: _ABL[wc.tag].get("keep", "1,2,3"),
+        stats=lambda wc: out("track_ablation", "track_ablation_%s.stats.tsv" % wc.tag)
+    resources: mem_mb=64000, runtime=720
+    shell:
+        "mkdir -p {OUT}/track_ablation && "
+        "python {BIN}/dev/track_ablation.py "
+        "--diff-qcat {OUT}/compare/diff_{params.cmp}.qcat.bgz "
+        "--perm-glob '{OUT}/perm/perm*/diff_comparison/diff_{params.cmp}.qcat.bgz' "
+        "--repo {BIN} --regions {BIN}/regions_manuscript.tsv --locus {params.window} "
+        "--keep {params.keep} --p-thresh {REGIONAL_PTHRESH} "
+        "--emit-stats {params.stats} --out {output}"
+
+# Table S13: leave-one-replicate-out stability (EbKO is NOT a contrast here).
+REPSTAB_CONDS = [c for c in config.get("replicate_stability_conditions",
+                                       ["DP", "ProB", "S3T3"]) if c in CONDS]
+
+rule table_s13_replicate_stability:
+    input: sheet=out("samples.bearing.tsv"), score=out("score.done")
+    output: os.path.join(TS, "replicate_stability_%s_vs_{cond}.tsv" % REF)
+    wildcard_constraints: cond="|".join(REPSTAB_CONDS) if REPSTAB_CONDS else "NONE"
+    params:
+        a=lambda wc: "%s:%s" % (REF, ",".join(_cond_samples(REF))),
+        b=lambda wc: "%s:%s" % (wc.cond, ",".join(_cond_samples(wc.cond))),
+        minsig=P["min_signal"], prior=PRIOR_STRENGTH
+    resources: mem_mb=128000, runtime=720
+    shell:
+        "python {BIN}/dev/replicate_stability.py --sheet {input.sheet} "
+        "--data-dir {DATA_DIR} --chrom-sizes {CS} --regions {BIN}/regions_manuscript.tsv "
+        "--cond-a '{params.a}' --cond-b '{params.b}' --repo {BIN} "
+        "--min-signal {params.minsig} --prior-strength {params.prior} --out {output}"
+
+# Table S3: CBE regional enrichment, DN-vs-DP (existing rule) + DN-vs-EbKO.
+rule regional_enrichment_cbe_ebko:
+    input: pvalue=out("pvalue.done")
+    output: out("regional", "enrich_%s_vs_EbKO_cbe.tsv" % REF)
+    params:
+        bed=os.path.join(BIN, "annotations/cbe_mm10.bed"),
+        window="chr6:40790000-41690000"
+    resources: mem_mb=100000, runtime=1440
+    shell:
+        "python {BIN}/regional_enrichment.py batch "
+        "--diff-table {OUT}/pvalue/diff_%s_vs_EbKO.stats.tsv "
+        "--regions {params.bed} --region-assign overlap --locus {params.window} "
+        "--out {output}" % REF
+
+# Copy pipeline outputs that build_tables.py expects under the sources dir.
+rule table_sources_copy:
+    input:
+        cbe_dp=out("regional", "enrich_%s_vs_DP_cbe.tsv" % REF),
+        cbe_ebko=out("regional", "enrich_%s_vs_EbKO_cbe.tsv" % REF),
+        floor=out("sens", "floor_sweep.tsv")
+    output:
+        cbe_dp=os.path.join(TS, "enrich_%s_vs_DP_cbe.tsv" % REF),
+        cbe_ebko=os.path.join(TS, "enrich_%s_vs_EbKO_cbe.tsv" % REF),
+        floor=os.path.join(TS, "sens", "floor_sweep.tsv")
+    shell:
+        "cp {input.cbe_dp} {output.cbe_dp} && cp {input.cbe_ebko} {output.cbe_ebko} "
+        "&& cp {input.floor} {output.floor}"
+
+def _table_source_targets():
+    t = [os.path.join(TS, "baseline_comparison_%s.tsv" % p) for p in BASELINE_TAGS]
+    t += [os.path.join(TS, "regional_null_calibration_%s_DNrep_bg.tsv" % l)
+          for l in REGIONAL_LOCI]
+    t += [os.path.join(TS, "track_ablation_%s.tsv" % g) for g in TRACK_ABLATION_TAGS]
+    t += [os.path.join(TS, "replicate_stability_%s_vs_%s.tsv" % (REF, c))
+          for c in REPSTAB_CONDS]
+    if "DP" in CONDS and "EbKO" in CONDS:
+        t += [os.path.join(TS, "enrich_%s_vs_DP_cbe.tsv" % REF),
+              os.path.join(TS, "enrich_%s_vs_EbKO_cbe.tsv" % REF),
+              os.path.join(TS, "sens", "floor_sweep.tsv")]
+    return t
+
+# The workbook. --config gets the config file this run was launched with.
+_RUN_CONFIG = (os.path.abspath(workflow.configfiles[-1])
+               if getattr(workflow, "configfiles", None) else
+               os.path.join(BIN, "workflow", "config", "config.yaml"))
+
+rule paper_tables:
+    input:
+        sources=_table_source_targets(),
+        pvalue=out("pvalue.done"), calib=out("calibration.done"),
+        regional=expand(out("regional", "consolidated_enrichment_{locus}.tsv"),
+                        locus=list(REGIONAL_LOCI.keys())),
+        sigbins=out("regional", "significant_bins_summary.tsv"),
+        bench=out("benchmark", "recovery.done")
+    output: out("paper_tables", "BEARING_tables.xlsx")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/paper/build_tables.py --results-dir {OUT} --sources-dir {TS} "
+        "--config {_RUN_CONFIG} --sheet {SHEET} "
+        "--curated {BIN}/paper/tables_curated.yaml --repo {BIN} "
+        "--allow-missing --out {output}"
 
 
 # ===========================================================================

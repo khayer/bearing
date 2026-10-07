@@ -117,7 +117,15 @@ echo
 # their outputs are stale relative to $OUT/pvalue.done. Re-run them after any
 # change to the p-value layer, and check with staleness_audit.sh.
 #
-# TODO: promote these to rules so the DAG covers them.
+# UPDATE 2026-10-07: S10, S11, S12, S13, S14 (copy) and S3 (DN-EbKO CBE) are now
+# Snakemake rules (table_s10_baseline, table_s11_regional_null,
+# table_s12_track_ablation, table_s13_replicate_stability, table_sources_copy,
+# regional_enrichment_cbe_ebko), and the workbook is rule paper_tables ->
+# <outdir>/paper_tables/BEARING_tables.xlsx, built from <outdir>/table_sources/.
+# `snakemake all` builds them. The commands below are kept as documentation.
+# Still manual: Table S8 (rna_concordance_stranded.R; needs BAMs) and the
+# score-autocorrelation number. Fig 7B and Supp S4 are rules too (fig7b_all,
+# suppS4_tracks).
 
 # --- Table S10: baseline comparison ---------------------------------------
 # python3 dev/baseline_comparison.py --sheet $SHEET --repo . \

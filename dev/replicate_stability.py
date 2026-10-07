@@ -70,11 +70,19 @@ def load_baseline(repo_dir):
     return bc
 
 
+# Composition prior (bigwig_to_qcat.py --prior-strength); set from --prior-strength.
+PRIOR_STRENGTH = 0.0
+
+
 def per_track_kl(R, kl_fn, prob_fn, Q):
     """bins x tracks production per-track KL (unsummed). Same call as
     baseline_comparison.statistics uses, minus the .sum(axis=1)."""
     P = prob_fn(R.astype(np.float64))
-    res = kl_fn(P, Q, raw_signal_matrix=R, min_signal=0.0, score_method="kl")
+    kw = {}
+    if PRIOR_STRENGTH and PRIOR_STRENGTH > 0:
+        kw = {"prior_strength": float(PRIOR_STRENGTH),
+              "prior_source": np.clip(R.astype(np.float64), 0.0, None)}
+    res = kl_fn(P, Q, raw_signal_matrix=R, min_signal=0.0, score_method="kl", **kw)
     arr = res[0] if isinstance(res, tuple) else res
     return np.asarray(arr, dtype=np.float64)
 
@@ -96,9 +104,16 @@ def main():
     ap.add_argument("--data-dir", default=".")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--min-signal", type=float, default=0.1)
+    ap.add_argument("--prior-strength", type=float, default=0.0,
+                    help="composition prior alpha; must match the production "
+                         "scoring (config prior_strength)")
     ap.add_argument("--top-frac", type=float, default=0.01)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    global PRIOR_STRENGTH
+    PRIOR_STRENGTH = float(a.prior_strength)
+    if PRIOR_STRENGTH > 0:
+        print("composition prior: alpha = %g" % PRIOR_STRENGTH)
 
     bc = load_baseline(os.path.abspath(a.repo))
     kl_fn, prob_fn = bc.import_production_scorer(os.path.abspath(a.repo))
