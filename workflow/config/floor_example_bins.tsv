@@ -1,0 +1,9 @@
+# Bins highlighted in Supplementary Figure S11, Panel C.
+# WHY these bins: they are cited in Results (the Vbeta RNA- bins). Their
+# behaviour across the floor sweep -- non-significant at every floor tested --
+# is the evidence that the Vb non-significance is a real result, not an
+# artefact of the 0.5 differential floor. Read from the production
+# pvalue/diff_DN_vs_DP.stats.tsv at plot time; do not hard-code their p-values.
+chrom	start	label
+chr6	41198200	Vbeta RNA- (score 3.00)
+chr6	41200800	Vbeta RNA- (score 2.60)
