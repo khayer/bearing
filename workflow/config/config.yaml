@@ -102,5 +102,4 @@ combined_agr_genes:    []
 #       --out-sheet workflow/config/samples.local.tsv --cache-dir resources/staged
 #   snakemake ... --config samples_sheet=workflow/config/samples.local.tsv
 prior_strength: 1
-n_perms: 100
 outdir: "results_prior1_n100"
