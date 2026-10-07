@@ -191,6 +191,8 @@ def all_targets():
             out("paper_figures", "suppS1_jsd_decomposition.pdf"),
             out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
             out("paper_figures", "collect.done"),
+            out("paper_figures", "fig7b", "fig7b.done"),
+            out("paper_figures", "suppS4_tracks", "suppS4.done"),
         ]
     # Manuscript Table S3: CBE regional enrichment for DN vs DP (Tcrb window).
     # Guarded so application configs without both DN and DP are unaffected.
@@ -1563,6 +1565,63 @@ rule collect_figures:
                     link(f, os.path.basename(f))
 
         print("[collect_figures] linked %d figures into %s" % (count[0], pf))
+
+
+# ===========================================================================
+# Figure 7B (+ Table S14 legend numbers): pooled permutation null per comparison
+# ===========================================================================
+# make_fig7b.py streams the N permuted diff qcats of one comparison, histograms
+# |diff| above the production testing floor, overlays the Gamma-mixture fit and
+# marks the observed FDR threshold; the legend numbers go to the .json. Was run by
+# hand (dev); now a rule so it is rebuilt whenever the p-value layer changes.
+# One job per DN-referenced comparison; ~memory-light (streams), I/O heavy.
+_FIG7B_MINSIG = _PV_MINSIG if _PV_MINSIG is not None else 0.5
+
+rule fig7b_null_one:
+    input: pvalue=out("pvalue.done"), perm_diff=out("perm_diff.done")
+    output:
+        pdf=out("paper_figures", "fig7b", "Fig7B_{cmp}.pdf"),
+        png=out("paper_figures", "fig7b", "Fig7B_{cmp}.png"),
+        js=out("paper_figures", "fig7b", "Fig7B_{cmp}.json")
+    wildcard_constraints: cmp=r"[A-Za-z0-9]+_vs_[A-Za-z0-9]+"
+    params:
+        nulls=lambda wc: " ".join(
+            out("perm", "perm%d" % i, "diff_comparison", "diff_%s.qcat.bgz" % wc.cmp)
+            for i in PERM_INDICES),
+        label=lambda wc: wc.cmp.replace("_vs_", " - "),
+        prefix=lambda wc: out("paper_figures", "fig7b", "Fig7B_%s" % wc.cmp),
+        minsig=_FIG7B_MINSIG
+    resources: mem_mb=32000, runtime=720
+    shell:
+        "python {BIN}/make_fig7b.py --null-qcat {params.nulls} "
+        "--observed-stats {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--label '{params.label}' --min-signal {params.minsig} "
+        "--out-prefix {params.prefix}"
+
+rule fig7b_all:
+    input: expand(out("paper_figures", "fig7b", "Fig7B_{cmp}.pdf"), cmp=COMPARISONS)
+    output: touch(out("paper_figures", "fig7b", "fig7b.done"))
+
+
+# ===========================================================================
+# Supplementary Figure S4: per-sample BEARING tracks over the Tcrb domain
+# ===========================================================================
+# pyGenomeTracks render of each sample's qcat (the <sample>_tracks.ini written at
+# scoring time) with its per-sample -log10 p track. Was rendered by hand; now a
+# rule. Region from config `s4_region` (default = the Tcrb domain used in the
+# legend). All samples are rendered; the figure uses DN and 3T3 replicates.
+rule suppS4_tracks:
+    input: sheet=out("samples.qcat.tsv"), psample=out("pvalue_samples.done")
+    output: touch(out("paper_figures", "suppS4_tracks", "suppS4.done"))
+    params:
+        region=config.get("s4_region", "chr6:40400000-42400000"),
+        outdir=out("paper_figures", "suppS4_tracks")
+    resources: mem_mb=16000, runtime=240
+    threads: 4
+    shell:
+        "python {BIN}/batch_pygenometracks.py --sheet {input.sheet} "
+        "--region tcrb_domain={params.region} --outdir {params.outdir} "
+        "--pval-dir {OUT}/pvalue --threads {threads} --run"
 
 
 # ===========================================================================

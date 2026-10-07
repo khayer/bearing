@@ -65,6 +65,51 @@ latter is set explicitly (`0.5` for the KL configs, `0.05` for the JSD config)
 so the historical implicit default is recorded and stays reproducible if the
 library default ever changes.
 
+### Composition prior for weak bins
+
+The score stage also supports an optional composition prior via
+`bigwig_to_qcat.py --prior-strength` / `config prior_strength`. The default is
+`0.0` (off, identical to the legacy scoring path). When `prior_strength > 0`,
+ each bin is shrunk toward the background composition `Q` before scoring:
+
+```text
+P = (x + alpha * Q) / (sum(x) + alpha)
+```
+
+This smooths the hard cliff created by the raw-signal floor for barely-detectable
+bins while preserving bins with real signal; it is intended for sensitivity
+scans rather than the default production run. The workflow checks this setting via
+`score_provenance` and the permutation workflows pass it through to the null
+scoring so the observed and null score scales stay aligned.
+
+Example config:
+
+```yaml
+min_signal: 0.1
+prior_strength: 1.0
+```
+
+Example command:
+
+```bash
+python bigwig_to_qcat.py \
+  --bw sample1.bw sample2.bw \
+  --sample-name sample \
+  --categories categories/mm10_6track_panel.yaml \
+  --chrom-sizes chrom.sizes --out sample.qcat.bgz \
+  --min-signal 0 --prior-strength 1.0
+```
+
+A dedicated workflow helper is included for a focused prior sweep:
+
+```bash
+bash workflow/run_cluster_prior.sh --alpha 1 --n-perms 10
+```
+
+This generates a derived config under `workflow/config/` and reruns the default
+p-value path with the composition prior on, keeping the observed and permutation
+scores in lockstep.
+
 ## Plotting entry points
 
 - `bearing_hic_combined_plot.py` -- **two-condition** comparison figure
