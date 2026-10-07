@@ -1,0 +1,5 @@
+# Ground-truth targets for the ranking benchmark: cis-deletions on chr6, so these
+# bins are real and every other autosomal bin is a guaranteed technical null.
+condition	region
+dV1P	Trbv1
+EbKO	RC_Eb

@@ -200,6 +200,8 @@ dchic*
 !workflow/config/samples_v1p.tsv
 # inputs of hic/insulation_specificity.py (tracked on purpose)
 !annotations/insulation_controls.tsv
+!annotations/insulation_benchmark_regions.tsv
+!annotations/insulation_benchmark_targets.tsv
 !paper/expected/
 !paper/expected/*.tsv
 workflow/config/samples_v1p_8track.tsv_BU

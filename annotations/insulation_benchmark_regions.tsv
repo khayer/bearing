@@ -1,0 +1,12 @@
+# Regions for hic/bench_normalization.py (mm10, 25 kb bins).
+# Tcrb windows are fixed by the documented bin counts (fig67 sec 6):
+#   Trbv1 6 bins, Vbeta 12, RC/Eb 11, Tcrb_whole 33.
+# Gapdh_core (6 bins) and Igh_VH_distal (60 bins) were NOT recorded in v1;
+# these coordinates are a GUESS and the --expect check tells whether they match.
+name	region
+Trbv1	chr6:40800000-40950000
+Vbeta	chr6:41050000-41350000
+RC_Eb	chr6:41350000-41625000
+Tcrb_whole	chr6:40800000-41625000
+Gapdh_core	chr6:125100000-125250000
+Igh_VH_distal	chr12:114600000-116100000

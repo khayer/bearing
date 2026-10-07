@@ -1,0 +1,93 @@
+# Published v1 numbers for hic/bench_normalization.py --expect.
+# Sources: fig67_crosscheck_and_v1p_supplement.md sec 6 (raw) and sec 9 (raw/detrend/quantile);
+# normalization_benchmark.md Benchmark 1 (approximate: AUROC ~0.85 aggregate, ~0.99 target; AP ~0.005).
+# Condition V1P is named dV1P as in workflow/config/samples.tsv.
+metric	norm	condition	region	expected	tol	note
+threshold	raw	dV1P		0.31	0.01	fig67 sec6
+sig	raw	dV1P	Trbv1	6	0	fig67 sec6
+max_absd	raw	dV1P	Trbv1	0.81	0.02	fig67 sec6
+sig	raw	dV1P	Vbeta	3	0	fig67 sec6
+max_absd	raw	dV1P	Vbeta	0.44	0.02	fig67 sec6
+sig	raw	dV1P	RC_Eb	0	0	fig67 sec6
+max_absd	raw	dV1P	RC_Eb	0.19	0.02	fig67 sec6
+sig	raw	dV1P	Tcrb_whole	13	0	fig67 sec6
+max_absd	raw	dV1P	Tcrb_whole	0.99	0.02	fig67 sec6
+threshold	raw	EbKO		0.273	0.01	fig67 sec6
+sig	raw	EbKO	Trbv1	0	0	fig67 sec6
+max_absd	raw	EbKO	Trbv1	0.18	0.02	fig67 sec6
+sig	raw	EbKO	Vbeta	0	0	fig67 sec6
+max_absd	raw	EbKO	Vbeta	0.26	0.02	fig67 sec6
+sig	raw	EbKO	RC_Eb	4	0	fig67 sec6
+max_absd	raw	EbKO	RC_Eb	0.48	0.02	fig67 sec6
+sig	raw	EbKO	Tcrb_whole	4	0	fig67 sec6
+max_absd	raw	EbKO	Tcrb_whole	0.48	0.02	fig67 sec6
+threshold	raw	DP		0.654	0.01	fig67 sec6
+sig	raw	DP	Trbv1	1	0	fig67 sec6
+max_absd	raw	DP	Trbv1	0.84	0.02	fig67 sec6
+sig	raw	DP	Vbeta	3	0	fig67 sec6
+max_absd	raw	DP	Vbeta	0.81	0.02	fig67 sec6
+sig	raw	DP	RC_Eb	5	0	fig67 sec6
+max_absd	raw	DP	RC_Eb	0.82	0.02	fig67 sec6
+sig	raw	DP	Tcrb_whole	12	0	fig67 sec6
+max_absd	raw	DP	Tcrb_whole	1.11	0.02	fig67 sec6
+threshold	raw	ProB		0.708	0.01	fig67 sec6
+sig	raw	ProB	Trbv1	0	0	fig67 sec6
+max_absd	raw	ProB	Trbv1	0.38	0.02	fig67 sec6
+sig	raw	ProB	Vbeta	10	0	fig67 sec6
+max_absd	raw	ProB	Vbeta	1.59	0.02	fig67 sec6
+sig	raw	ProB	RC_Eb	5	0	fig67 sec6
+max_absd	raw	ProB	RC_Eb	1.36	0.02	fig67 sec6
+sig	raw	ProB	Tcrb_whole	15	0	fig67 sec6
+max_absd	raw	ProB	Tcrb_whole	1.59	0.02	fig67 sec6
+threshold	raw	S3T3		0.961	0.01	fig67 sec6
+sig	raw	S3T3	Trbv1	0	0	fig67 sec6
+max_absd	raw	S3T3	Trbv1	0.62	0.02	fig67 sec6
+sig	raw	S3T3	Vbeta	5	0	fig67 sec6
+max_absd	raw	S3T3	Vbeta	1.81	0.02	fig67 sec6
+sig	raw	S3T3	RC_Eb	4	0	fig67 sec6
+max_absd	raw	S3T3	RC_Eb	1.61	0.02	fig67 sec6
+sig	raw	S3T3	Tcrb_whole	9	0	fig67 sec6
+max_absd	raw	S3T3	Tcrb_whole	1.81	0.02	fig67 sec6
+total	raw	dV1P	Trbv1	6	0	bin count
+total	raw	dV1P	Vbeta	12	0	bin count
+total	raw	dV1P	RC_Eb	11	0	bin count
+total	raw	dV1P	Tcrb_whole	33	0	bin count
+sig	raw	dV1P	Trbv1	6	0	fig67 sec9
+sig	raw	EbKO	RC_Eb	4	0	fig67 sec9
+blocks_autosomal	raw	dV1P		81	2	fig67 sec9 (genome blocks>=10; chrom set undocumented)
+blocks_autosomal	raw	EbKO		34	2	fig67 sec9
+sig	raw	dV1P	Gapdh_core	6	0	fig67 sec9; region coords GUESSED
+sig	raw	EbKO	Gapdh_core	4	0	fig67 sec9; region coords GUESSED
+sig	raw	dV1P	Igh_VH_distal	45	1	fig67 sec9; region coords GUESSED (60 bins)
+sig	raw	S3T3	Igh_VH_distal	39	1	fig67 sec9; region coords GUESSED (60 bins)
+total	raw	dV1P	Gapdh_core	6	0	bin count
+total	raw	dV1P	Igh_VH_distal	60	0	bin count
+auroc	raw	aggregate		0.85	0.05	Benchmark 1: aggregate ~0.85, normalizations tied
+ap	raw	aggregate		0.005	0.005	Benchmark 1: AP ~0.005 under all methods
+auroc	raw	dV1P	Trbv1	0.99	0.02	Benchmark 1: target AUROC ~0.99
+sig	detrend	dV1P	Trbv1	6	0	fig67 sec9
+sig	detrend	EbKO	RC_Eb	4	0	fig67 sec9
+blocks_autosomal	detrend	dV1P		63	2	fig67 sec9 (genome blocks>=10; chrom set undocumented)
+blocks_autosomal	detrend	EbKO		33	2	fig67 sec9
+sig	detrend	dV1P	Gapdh_core	4	0	fig67 sec9; region coords GUESSED
+sig	detrend	EbKO	Gapdh_core	3	0	fig67 sec9; region coords GUESSED
+sig	detrend	dV1P	Igh_VH_distal	25	1	fig67 sec9; region coords GUESSED (60 bins)
+sig	detrend	S3T3	Igh_VH_distal	10	1	fig67 sec9; region coords GUESSED (60 bins)
+total	detrend	dV1P	Gapdh_core	6	0	bin count
+total	detrend	dV1P	Igh_VH_distal	60	0	bin count
+auroc	detrend	aggregate		0.85	0.05	Benchmark 1: aggregate ~0.85, normalizations tied
+ap	detrend	aggregate		0.005	0.005	Benchmark 1: AP ~0.005 under all methods
+auroc	detrend	dV1P	Trbv1	0.99	0.02	Benchmark 1: target AUROC ~0.99
+sig	quantile	dV1P	Trbv1	6	0	fig67 sec9
+sig	quantile	EbKO	RC_Eb	5	0	fig67 sec9
+blocks_autosomal	quantile	dV1P		43	2	fig67 sec9 (genome blocks>=10; chrom set undocumented)
+blocks_autosomal	quantile	EbKO		23	2	fig67 sec9
+sig	quantile	dV1P	Gapdh_core	3	0	fig67 sec9; region coords GUESSED
+sig	quantile	EbKO	Gapdh_core	0	0	fig67 sec9; region coords GUESSED
+sig	quantile	dV1P	Igh_VH_distal	38	1	fig67 sec9; region coords GUESSED (60 bins)
+sig	quantile	S3T3	Igh_VH_distal	40	1	fig67 sec9; region coords GUESSED (60 bins)
+total	quantile	dV1P	Gapdh_core	6	0	bin count
+total	quantile	dV1P	Igh_VH_distal	60	0	bin count
+auroc	quantile	aggregate		0.85	0.05	Benchmark 1: aggregate ~0.85, normalizations tied
+ap	quantile	aggregate		0.005	0.005	Benchmark 1: AP ~0.005 under all methods
+auroc	quantile	dV1P	Trbv1	0.99	0.02	Benchmark 1: target AUROC ~0.99

@@ -226,7 +226,8 @@ def all_targets():
               out("paper_figures", "suppS7b_compartment_100kb_v1p.compartment_landscape.pdf"),
               out("hic", "bes_hic_within.done"),
               *expand(out("hic", "insulation_specificity", "specificity_{norm}.tsv"),
-                      norm=config.get("insulation_specificity_norms", ["quantile"]))]
+                      norm=config.get("insulation_specificity_norms", ["quantile"])),
+              out("hic", "insulation_specificity", "bench_summary.md")]
     t.append(out("benchmarks_summary.tsv"))
     return t
 
@@ -1663,6 +1664,30 @@ rule hic_insulation_specificity:
         "python {BIN}/hic/insulation_specificity.py --insul {params.insul} "
         "--reference {REF} --conditions {params.conds} --elements {params.elements} "
         "--norm {wildcards.norm} {params.expect} --out-dir {params.outdir}"
+
+
+# Normalization benchmark (hic/bench_normalization.py, v2 rebuild of the lost v1):
+# raw vs detrend vs quantile -- ground-truth AUROC/AP for the chr6 cis-deletions
+# (V1P->Trbv1, EbKO->RC/Eb), flagged-bin counts in the Tcrb / Gapdh / Igh
+# diagnostic regions, and genome-wide blocks. --expect compares with every v1
+# number recorded in the project docs (paper/expected/).
+rule hic_bench_normalization:
+    output:
+        md=out("hic", "insulation_specificity", "bench_summary.md"),
+        rank=out("hic", "insulation_specificity", "bench_ranking.tsv")
+    params:
+        insul=hic_arg("insul", P["hic"].get("insulation_resolution", 25000)) if HAS_HIC else "",
+        conds=",".join(c for c in HIC if c != REF),
+        regions=os.path.join(BIN, "annotations", "insulation_benchmark_regions.tsv"),
+        targets=os.path.join(BIN, "annotations", "insulation_benchmark_targets.tsv"),
+        expect=os.path.join(BIN, "paper", "expected", "insulation_bench_normalization.tsv"),
+        outdir=out("hic", "insulation_specificity")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/hic/bench_normalization.py --insul {params.insul} "
+        "--reference {REF} --conditions {params.conds} --norms raw,detrend,quantile "
+        "--regions {params.regions} --targets {params.targets} "
+        "--expect {params.expect} --out-dir {params.outdir}"
 
 
 # ===========================================================================
