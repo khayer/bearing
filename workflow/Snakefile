@@ -1755,6 +1755,43 @@ rule table_s11_regional_null:
         "--mode background --n-random {params.nrand} --p-thresh {REGIONAL_PTHRESH} "
         "--seed 42 --verify 5 --null-contrast --repo {BIN} --out {output}"
 
+# Table S2/S11 at prior_strength 1: contrast-matched empirical null for the
+# regional test. Background loci of the same span and tested-bin count (+/-25%)
+# are drawn from the SAME contrast's stats.tsv (same bins, floor, g_dir), AgR
+# loci excluded; empirical p = (count(null p_combined <= real) + 1)/(n + 1).
+# Tcrb 2000 draws (900 kb span, ~2,900 non-overlapping placements); Igh 500
+# (3.1 Mb span, ~800). BH over testable regions (>= 5 tested bins) is primary,
+# BH over all regions reported alongside (agreed 2026-10-09).
+REGIONAL_CM_NRAND = config.get("regional_null_cm_n_random", {"tcrb": 2000, "igh": 500})
+
+rule regional_null_contrast_matched:
+    input: pvalue=out("pvalue.done")
+    output: os.path.join(TS, "regional_null_contrast_matched", "cmnull_{locus}_{cmp}.tsv")
+    wildcard_constraints: locus=REGIONAL_LOCUS_RE, cmp=REGIONAL_CMP_RE
+    params:
+        bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[wc.locus]["bed"]),
+        window=lambda wc: REGIONAL_LOCI[wc.locus]["window"],
+        nrand=lambda wc: REGIONAL_CM_NRAND.get(wc.locus, 500)
+    resources: mem_mb=32000, runtime=600
+    shell:
+        "python {BIN}/dev/regional_null_calibration.py "
+        "--stats {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
+        "--regions {params.bed} --locus {params.window} --chrom-sizes {CS} "
+        "--mode background --n-random {params.nrand} --p-thresh {REGIONAL_PTHRESH} "
+        "--seed 42 --verify 5 --repo {BIN} --out {output}"
+
+rule regional_empirical_table:
+    input:
+        nominal=out("regional", "consolidated_enrichment_{locus}.tsv"),
+        nulls=lambda wc: expand(os.path.join(TS, "regional_null_contrast_matched",
+                                             "cmnull_%s_{cmp}.tsv" % wc.locus),
+                                cmp=COMPARISONS)
+    output: os.path.join(TS, "regional_empirical_{locus}.tsv")
+    wildcard_constraints: locus=REGIONAL_LOCUS_RE
+    shell:
+        "python {BIN}/dev/regional_empirical_table.py --nominal {input.nominal} "
+        "--nulls {input.nulls} --locus {wildcards.locus} --min-bins 5 --out {output}"
+
 # Table S12: track ablation (reduced panel), runs from config.
 TRACK_ABLATION_RUNS = config.get("track_ablation_runs", [
     {"locus": "tcrb", "cmp": "%s_vs_S3T3" % REF},
@@ -1833,6 +1870,7 @@ def _table_source_targets():
     t = [os.path.join(TS, "baseline_comparison_%s.tsv" % p) for p in BASELINE_TAGS]
     t += [os.path.join(TS, "regional_null_calibration_%s_DNrep_bg.tsv" % l)
           for l in REGIONAL_LOCI]
+    t += [os.path.join(TS, "regional_empirical_%s.tsv" % l) for l in REGIONAL_LOCI]
     t += [os.path.join(TS, "track_ablation_%s.tsv" % g) for g in TRACK_ABLATION_TAGS]
     t += [os.path.join(TS, "replicate_stability_%s_vs_%s.tsv" % (REF, c))
           for c in REPSTAB_CONDS]
