@@ -478,9 +478,14 @@ def table_registry(results, sources):
               (s("rna_concordance_DN_vs_DP_mc3_summary.tsv"), "min.count=3")],
              expect="many", label_col="Expression filter",
              note="rna_concordance_stranded.R; DN-vs-DP at two expression filters"),
+        # EXPLICIT pairs (2026-10-09): a strong contrast, a subtle contrast and
+        # the true null (DN replicate vs replicate), as in the published table.
         Spec("Table S10 - baselines",
-             [s("baseline_comparison*.tsv")],
-             note="dev/baseline_comparison.py (NOT a workflow rule)"),
+             [(s("baseline_comparison_DN_rep1_vs_ProB_rep1.tsv"), "DN_rep1 vs ProB_rep1 (strong)"),
+              (s("baseline_comparison_DN_rep2_vs_DP_rep2.tsv"), "DN_rep2 vs DP_rep2 (subtle)"),
+              (s("baseline_comparison_DN_rep1_vs_DN_rep2.tsv"), "DN_rep1 vs DN_rep2 (TRUE NULL)")],
+             expect="many", label_col="pair",
+             note="rule table_s10_baseline (dev/baseline_comparison.py), three pairs"),
         # EXPLICIT, not a glob: several regional_null_calibration_* files exist
         # (tcrb/igh x within/background x different --n-random). They are
         # DIFFERENT ANALYSES and must not be concatenated. Table S11's own note

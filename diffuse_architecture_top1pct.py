@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# Version  : 1.1.0  (2026-10-09: --diff may be a diff qcat.bgz (all bins in
+#            the region, read by tabix); a zero threshold no longer marks
+#            every zero-valued bin as top)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 diffuse_architecture_top1pct.py
 
@@ -76,6 +83,50 @@ def load_diff(path):
     return df
 
 
+def load_diff_qcat(path, chrom, start, end):
+    """Every bin of a diff qcat.bgz inside chrom:start-end -> DataFrame with
+    chrom,start,end,kl_1..kl_6 (tracks absent from a bin's qcat list are 0).
+
+    Use this rather than the pvalue stats.tsv: the stats table holds only the
+    bins tested at the differential floor (|BES| >= 0.5), which under the
+    composition prior is a few hundred bins per locus, too few for a
+    percentile-based focal-vs-flank test.
+    """
+    import json
+    rows = []
+    try:
+        import pysam
+        tb = pysam.TabixFile(path)
+        lines = tb.fetch(chrom, max(0, start), end)
+    except Exception:
+        import gzip
+        lines = (l for l in gzip.open(path, "rt")
+                 if l.startswith(chrom + "\t"))
+    for line in lines:
+        f = line.rstrip("\n").split("\t")
+        if len(f) < 4 or f[0] != chrom:
+            continue
+        b0, b1 = int(f[1]), int(f[2])
+        if b1 <= start or b0 >= end:
+            continue
+        col = f[3]
+        if col.startswith("{"):
+            pairs = json.loads(col).get("qcat", [])
+        else:
+            i = col.find("qcat:")
+            if i < 0:
+                continue
+            j = col.find(",raw:", i)
+            pairs = json.loads(col[i + 5:j] if j >= 0 else col[i + 5:])
+        kl = [0.0] * len(KL_COLS)
+        for score, tid in pairs:
+            t = int(tid)
+            if 1 <= t <= len(KL_COLS):
+                kl[t - 1] = float(score)
+        rows.append([chrom, b0, b1] + kl)
+    return pd.DataFrame(rows, columns=["chrom", "start", "end"] + KL_COLS)
+
+
 def subset_window(df, chrom, start, end):
     """Restrict df to the genomic window."""
     m = (df["chrom"] == chrom) & (df["start"] < end) & (df["end"] > start)
@@ -105,7 +156,10 @@ def per_track_top_mask(df, thresholds, use_abs):
         v = df[col].to_numpy()
         if use_abs:
             v = np.abs(v)
-        masks[name] = v >= thresholds[name]
+        thr = thresholds[name]
+        # A zero threshold (more than 99% of bins at 0 for this track) must
+        # not mark every zero bin as "top": require a strictly positive value.
+        masks[name] = (v > 0) if (thr is not None and thr <= 0) else (v >= thr)
     return masks
 
 
@@ -328,8 +382,13 @@ def main():
     args = ap.parse_args()
 
     # Load and subset
-    df_all = load_diff(args.diff)
     region_chrom, region_start, region_end = parse_locus(args.region)
+    if args.diff.endswith(".qcat.bgz"):
+        if args.threshold_scope == "genome":
+            raise SystemExit("ERROR: --threshold-scope genome needs a TSV diff table")
+        df_all = load_diff_qcat(args.diff, region_chrom, region_start, region_end)
+    else:
+        df_all = load_diff(args.diff)
     focal_chrom, focal_start, focal_end = parse_locus(args.focal)
     if focal_chrom != region_chrom:
         raise SystemExit("ERROR: focal chrom (%s) != region chrom (%s)" % (focal_chrom, region_chrom))

@@ -1400,7 +1400,9 @@ rule focal_flank_top1pct:
     output: out("table_sources", "focal_flank", "{tag}.focal_vs_flank.tsv")
     wildcard_constraints: tag="|".join(FOCAL_FLANK_TAGS) if FOCAL_FLANK_TAGS else "NONE"
     params:
-        diff=lambda wc: out("pvalue", "diff_%s.stats.tsv" % FOCAL_FLANK_RUNS[wc.tag]["cmp"]),
+        # all bins in the region from the compare diff qcat (the pvalue
+        # stats.tsv holds only bins tested at |BES| >= 0.5)
+        diff=lambda wc: out("compare", "diff_%s.qcat.bgz" % FOCAL_FLANK_RUNS[wc.tag]["cmp"]),
         region=lambda wc: FOCAL_FLANK_RUNS[wc.tag]["region"],
         focal=lambda wc: FOCAL_FLANK_RUNS[wc.tag]["focal"],
         prefix=lambda wc: out("table_sources", "focal_flank", wc.tag)
