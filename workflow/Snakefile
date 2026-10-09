@@ -1380,8 +1380,35 @@ rule graphical_abstract_panel3:
     shell:
         "python {BIN}/diffuse_architecture_top1pct.py "
         "--diff {params.diff} --region chr6:40400000-42400000 "
-        "--focal chr6:41450000-41600000 --window 10 --pct 1 "
+        "--focal chr6:41450000-41600000 --window 100000 --pct 99 "
         "--figure {output} --out-prefix {OUT}/paper_figures/ga_panel3"
+
+# Methods M.10 / Results focal-versus-flank test (top 1% of |delta s| per track,
+# window-scope threshold, 100 kb tiles, two-sided Fisher). Until 2026-10-09 the
+# only rule calling diffuse_architecture_top1pct.py was the graphical-abstract
+# panel, with --window 10 --pct 1 (10 bp tiles; every bin "top"), so the
+# manuscript odds ratios had no rule. Windows as in Methods M.10.
+FOCAL_FLANK_RUNS = config.get("focal_flank_runs", {
+    "tcrb_DN_vs_DP":   {"cmp": "%s_vs_DP" % REF,   "region": "chr6:40400000-42400000",   "focal": "chr6:40850000-41700000"},
+    "tcrb_DN_vs_ProB": {"cmp": "%s_vs_ProB" % REF, "region": "chr6:40400000-42400000",   "focal": "chr6:40850000-41700000"},
+    "igh_DN_vs_ProB":  {"cmp": "%s_vs_ProB" % REF, "region": "chr12:113000000-116000000", "focal": "chr12:113200000-113500000"},
+})
+FOCAL_FLANK_TAGS = [t for t, r in FOCAL_FLANK_RUNS.items() if r["cmp"] in COMPARISONS]
+
+rule focal_flank_top1pct:
+    input: pvalue=out("pvalue.done")
+    output: out("table_sources", "focal_flank", "{tag}.focal_vs_flank.tsv")
+    wildcard_constraints: tag="|".join(FOCAL_FLANK_TAGS) if FOCAL_FLANK_TAGS else "NONE"
+    params:
+        diff=lambda wc: out("pvalue", "diff_%s.stats.tsv" % FOCAL_FLANK_RUNS[wc.tag]["cmp"]),
+        region=lambda wc: FOCAL_FLANK_RUNS[wc.tag]["region"],
+        focal=lambda wc: FOCAL_FLANK_RUNS[wc.tag]["focal"],
+        prefix=lambda wc: out("table_sources", "focal_flank", wc.tag)
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/diffuse_architecture_top1pct.py --diff {params.diff} "
+        "--region {params.region} --focal {params.focal} --window 100000 --pct 99 "
+        "--threshold-scope window --out-prefix {params.prefix}"
 
 rule fig6b_igh_decomp:
     input: pvalue=out("pvalue.done")
@@ -1718,7 +1745,12 @@ def _cond_samples(cond):
 
 # Table S10: baseline comparison. Contrast pairs (sample-level) from config.
 _ALL_SAMPLES = set(BEARING_ROWS["sample"].tolist())
-BASELINE_PAIRS = [pr for pr in config.get("baseline_pairs", [["%s_rep1" % REF, "ProB_rep1"]])
+# Table S10 uses three pairs: a strong contrast (DN vs Pro-B), a subtle one
+# (DN vs DP, Panel B locus recovery) and a TRUE NULL (DN rep1 vs rep2, Panel C).
+# Until 2026-10-09 only the first was the default, so Panels B and C were not built.
+BASELINE_PAIRS = [pr for pr in config.get("baseline_pairs", [["%s_rep1" % REF, "ProB_rep1"],
+                                                             ["%s_rep2" % REF, "DP_rep2"],
+                                                             ["%s_rep1" % REF, "%s_rep2" % REF]])
                   if pr[0] in _ALL_SAMPLES and pr[1] in _ALL_SAMPLES]
 BASELINE_TAGS = ["%s_vs_%s" % (a, b) for a, b in BASELINE_PAIRS]
 _BASELINE = {"%s_vs_%s" % (a, b): (a, b) for a, b in BASELINE_PAIRS}
@@ -1766,7 +1798,8 @@ REGIONAL_CM_NRAND = config.get("regional_null_cm_n_random", {"tcrb": 2000, "igh"
 
 rule regional_null_contrast_matched:
     input: pvalue=out("pvalue.done")
-    output: os.path.join(TS, "regional_null_contrast_matched", "cmnull_{locus}_{cmp}.tsv")
+    output: draws=os.path.join(TS, "regional_null_contrast_matched", "cmnull_{locus}_{cmp}.tsv"),
+            summary=os.path.join(TS, "regional_null_contrast_matched", "cmnull_{locus}_{cmp}_summary.tsv")
     wildcard_constraints: locus=REGIONAL_LOCUS_RE, cmp=REGIONAL_CMP_RE
     params:
         bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[wc.locus]["bed"]),
@@ -1778,7 +1811,8 @@ rule regional_null_contrast_matched:
         "--stats {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
         "--regions {params.bed} --locus {params.window} --chrom-sizes {CS} "
         "--mode background --n-random {params.nrand} --p-thresh {REGIONAL_PTHRESH} "
-        "--seed 42 --verify 5 --repo {BIN} --out {output}"
+        "--seed 42 --verify 5 --repo {BIN} --out {output.draws} "
+        "--summary-out {output.summary}"
 
 rule regional_empirical_table:
     input:
@@ -1808,6 +1842,7 @@ rule table_s12_track_ablation:
         cmp=lambda wc: _ABL[wc.tag]["cmp"],
         window=lambda wc: REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["window"],
         keep=lambda wc: _ABL[wc.tag].get("keep", "1,2,3"),
+        bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["bed"]),
         stats=lambda wc: out("track_ablation", "track_ablation_%s.stats.tsv" % wc.tag)
     resources: mem_mb=64000, runtime=720
     shell:
@@ -1815,9 +1850,29 @@ rule table_s12_track_ablation:
         "python {BIN}/dev/track_ablation.py "
         "--diff-qcat {OUT}/compare/diff_{params.cmp}.qcat.bgz "
         "--perm-glob '{OUT}/perm/perm*/diff_comparison/diff_{params.cmp}.qcat.bgz' "
-        "--repo {BIN} --regions {BIN}/regions_manuscript.tsv --locus {params.window} "
+        "--repo {BIN} --regions {params.bed} --locus {params.window} "
         "--keep {params.keep} --p-thresh {REGIONAL_PTHRESH} "
         "--emit-stats {params.stats} --out {output}"
+
+# Table S12 significance: the same contrast-matched null as Table S11, on the
+# reduced-panel genome-wide stats that table_s12_track_ablation emits.
+rule table_s12_ablation_null:
+    input: os.path.join(TS, "track_ablation_{tag}.tsv")
+    output: draws=os.path.join(TS, "regional_null_contrast_matched", "ablation_{tag}.tsv"),
+            summary=os.path.join(TS, "regional_null_contrast_matched", "ablation_{tag}_summary.tsv")
+    wildcard_constraints: tag="|".join(TRACK_ABLATION_TAGS) if TRACK_ABLATION_TAGS else "NONE"
+    params:
+        stats=lambda wc: out("track_ablation", "track_ablation_%s.stats.tsv" % wc.tag),
+        bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["bed"]),
+        window=lambda wc: REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["window"],
+        nrand=lambda wc: REGIONAL_CM_NRAND.get(_ABL[wc.tag]["locus"], 500)
+    resources: mem_mb=64000, runtime=600
+    shell:
+        "python {BIN}/dev/regional_null_calibration.py --stats {params.stats} "
+        "--regions {params.bed} --locus {params.window} --chrom-sizes {CS} "
+        "--mode background --n-random {params.nrand} --p-thresh {REGIONAL_PTHRESH} "
+        "--seed 42 --verify 0 --repo {BIN} --out {output.draws} "
+        "--summary-out {output.summary}"
 
 # Table S13: leave-one-replicate-out stability (EbKO is NOT a contrast here).
 REPSTAB_CONDS = [c for c in config.get("replicate_stability_conditions",
@@ -1871,6 +1926,11 @@ def _table_source_targets():
     t += [os.path.join(TS, "regional_null_calibration_%s_DNrep_bg.tsv" % l)
           for l in REGIONAL_LOCI]
     t += [os.path.join(TS, "regional_empirical_%s.tsv" % l) for l in REGIONAL_LOCI]
+    t += [os.path.join(TS, "focal_flank", "%s.focal_vs_flank.tsv" % g) for g in FOCAL_FLANK_TAGS]
+    t += [os.path.join(TS, "regional_null_contrast_matched", "cmnull_%s_%s_summary.tsv" % (l, c))
+          for l in REGIONAL_LOCI for c in COMPARISONS]
+    t += [os.path.join(TS, "regional_null_contrast_matched", "ablation_%s_summary.tsv" % g)
+          for g in TRACK_ABLATION_TAGS]
     t += [os.path.join(TS, "track_ablation_%s.tsv" % g) for g in TRACK_ABLATION_TAGS]
     t += [os.path.join(TS, "replicate_stability_%s_vs_%s.tsv" % (REF, c))
           for c in REPSTAB_CONDS]
@@ -1892,7 +1952,11 @@ rule paper_tables:
         regional=expand(out("regional", "consolidated_enrichment_{locus}.tsv"),
                         locus=list(REGIONAL_LOCI.keys())),
         sigbins=out("regional", "significant_bins_summary.tsv"),
-        bench=out("benchmark", "recovery.done")
+        bench=out("benchmark", "recovery.done"),
+        # the curated content and the builder itself: editing either must
+        # rebuild the workbook (the 2026-10-09 build kept the old Table S5).
+        curated=os.path.join(BIN, "paper", "tables_curated.yaml"),
+        builder=os.path.join(BIN, "paper", "build_tables.py")
     output: out("paper_tables", "BEARING_tables.xlsx")
     resources: mem_mb=16000, runtime=120
     shell:

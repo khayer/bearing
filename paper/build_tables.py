@@ -447,9 +447,12 @@ def table_registry(results, sources):
              [j("compare", "*q_pair_jsd.tsv")],
              note="compare_qcat.py write_q_pair_jsd_tsv"),
         Spec("Table S2 - regional q-values",
-             [j("regional", "consolidated_enrichment_tcrb.tsv"),
-              j("regional", "consolidated_enrichment_igh.tsv")],
-             expect="many", note="rule regional_consolidate (one file per locus)"),
+             [s("regional_empirical_tcrb.tsv"),
+              s("regional_empirical_igh.tsv")],
+             expect="many",
+             note="rule regional_empirical_table: nominal regional test + contrast-matched "
+                  "empirical p; q_testable (BH over regions with >= 5 tested bins, primary) "
+                  "and q_all (BH over all 20 per locus)"),
         # EXPLICIT, not a glob. enrich_*_cbe.tsv also matches enrich_DN_vs_TKO_cbe
         # and enrich_DN_vs_V1P_cbe -- TKO is not in this manuscript and V1P is
         # MCC/thesis material. Table S3 is DN-vs-DP and DN-vs-EbKO only.
@@ -483,15 +486,21 @@ def table_registry(results, sources):
         # DIFFERENT ANALYSES and must not be concatenated. Table S11's own note
         # records the published run as background mode, n=500, seed=42 -- i.e.
         # the *_bg files. Confirm before trusting this.
+        # Contrast-matched null (2026-10-09): background loci drawn from the
+        # SAME contrast's stats (same tested bins, floor, g_dir). The earlier
+        # DN-replicate null (regional_null_calibration_*_DNrep_bg.tsv) scored
+        # every bin, almost none at p < 0.05, and degenerated at prior 1; it is
+        # no longer a table source.
         Spec("Table S11 - regional null",
-             [s("regional_null_calibration_tcrb_DNrep_bg.tsv"),
-              s("regional_null_calibration_igh_DNrep_bg.tsv")],
+             [s("regional_null_contrast_matched", "cmnull_*_summary.tsv")],
              expect="many",
-             note="dev/regional_null_calibration.py --mode background --n-random 500 "
-                  "--seed 42. See the ref_bins matching issue in reproduce_all.sh."),
+             note="rule regional_null_contrast_matched (dev/regional_null_calibration.py "
+                  "--mode background, seed 42; Tcrb 2000 / Igh 500 loci)"),
         Spec("Table S12 - track ablation",
-             [s("track_ablation_*.tsv")],
-             expect="many", note="dev/track_ablation.py (NOT a workflow rule)"),
+             [s("regional_null_contrast_matched", "ablation_*_summary.tsv")],
+             expect="many",
+             note="rules table_s12_track_ablation + table_s12_ablation_null: in-house "
+                  "tracks only (ATAC, RNA+, RNA-), contrast-matched empirical p"),
         Spec("Table S13 - replicate stability",
              [s("replicate_stability_DN_vs_*.tsv")],
              expect="many", note="dev/replicate_stability.py (NOT a workflow rule)"),

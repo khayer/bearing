@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# Version  : 1.1.0  (2026-10-09: --regions accepts BED or
+#            regions_manuscript.tsv (name, chrom:start-end); v1.0 matched no
+#            rows of regions_manuscript.tsv and wrote header-only tables)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 track_ablation.py
 =================
@@ -308,11 +315,22 @@ def main():
     real = []
     with open(a.regions) as fh:
         for line in fh:
-            if line.startswith("#"):
+            if line.startswith("#") or not line.strip():
                 continue
             f = line.rstrip("\n").split("\t")
-            if len(f) >= 4 and f[0] == lc:
-                real.append((f[0], int(f[1]), int(f[2]), f[3]))
+            # Format 1: BED (chrom, start, end, name)
+            if len(f) >= 4 and f[1].isdigit() and f[2].isdigit():
+                if f[0] == lc:
+                    real.append((f[0], int(f[1]), int(f[2]), f[3]))
+                continue
+            # Format 2: regions_manuscript.tsv (name, chrom:start-end, ...)
+            if len(f) >= 2 and ":" in f[1] and "-" in f[1]:
+                rc, rr = f[1].split(":", 1)
+                rs, re_ = rr.replace(",", "").split("-", 1)
+                if rc == lc and rs.isdigit() and re_.isdigit():
+                    real.append((rc, int(rs), int(re_), f[0]))
+    if not real:
+        sys.exit("no regions on %s parsed from %s" % (lc, a.regions))
 
     print("%-26s %6s %5s %14s %14s"
           % ("region", "k", "dir", "p_spatial", "p_combined"))

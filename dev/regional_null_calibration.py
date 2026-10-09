@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# Version  : 1.1.0  (2026-10-09: --summary-out per-region table with the
+#            real call, null FPR and add-one empirical p)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 regional_null_calibration.py
 ============================
@@ -246,6 +252,10 @@ def main():
                     help="check the fast path against production on N real regions (0 to skip)")
     ap.add_argument("--null-contrast", action="store_true")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--summary-out", default=None,
+                    help="also write one row per tested region: real call (k, k_pos, "
+                         "k_neg, p_spatial, p_directional, p_combined), null FPR and "
+                         "the add-one empirical p = (count(null <= real) + 1)/(n + 1)")
     a = ap.parse_args()
 
     if not a.null_contrast:
@@ -297,6 +307,7 @@ def main():
             sys.exit("too few background loci matched; loosen --tol or reduce --n-random")
 
     rows = []
+    summary = []
     print("%-28s %7s %7s %10s %10s %10s %10s"
           % ("region (size class)", "n_bins", "n_null", "FPR@0.05", "FPR@0.01", "real p", "<=real_p"))
     for (c, s, e, name) in real:
@@ -335,12 +346,29 @@ def main():
         print("%-28s %7d %7d %10.4f %10.4f %10.4g %10.4f"
               % (name[:28], nb, p.size, float((p < 0.05).mean()), float((p < 0.01).mean()),
                  rp, float((p <= rp).mean())))
+        if a.summary_out:
+            ps_, pd_, pc_, k_, nl_ = regional_test(sl, i0, i1, a.p_thresh, g_dir)
+            rsig = sl[1][i0:i1] < a.p_thresh
+            kpos = int((sl[2][i0:i1][rsig] > 0).sum())
+            cnt = int((p <= rp).sum())
+            summary.append((name, c, s, e, nb, k_, kpos, k_ - kpos, nl_, ps_, pd_, rp,
+                            g_dir, p.size, float((p < 0.05).mean()),
+                            float((p < 0.01).mean()), cnt, (cnt + 1.0) / (p.size + 1.0)))
 
     with open(a.out, "w") as fh:
         fh.write("real_region\tn_bins\tnull_chrom\tnull_start\tp_combined\n")
         for r in rows:
             fh.write("%s\t%d\t%s\t%d\t%.6g\n" % r)
     print("\nwrote %d null-region tests -> %s" % (len(rows), a.out))
+    if a.summary_out:
+        with open(a.summary_out, "w") as fh:
+            fh.write("region\tchrom\tstart\tend\ttested_bins\tk\tk_pos\tk_neg\tn_locus\t"
+                     "p_spatial\tp_directional\tp_combined\tg_dir\tn_null\tnull_fpr05\t"
+                     "null_fpr01\temp_count\temp_p\n")
+            for r in summary:
+                fh.write("%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.6g\t%.6g\t%.6g\t%.6g\t"
+                         "%d\t%.6g\t%.6g\t%d\t%.6g\n" % r)
+        print("wrote %d region summaries -> %s" % (len(summary), a.summary_out))
     print("\n'<=real_p' is the fraction of INDEPENDENT null regions of the same size whose")
     print("p_combined is at least as extreme as the real region's. This is the number to")
     print("quote: the discrete binomial atoms make FPR at a fixed alpha hard to interpret.")
