@@ -1627,7 +1627,7 @@ rule suppS4_tracks:
     params:
         region=config.get("s4_region", "chr6:40400000-42400000"),
         outdir=out("paper_figures", "suppS4_tracks")
-    resources: mem_mb=16000, runtime=240
+    resources: mem_mb=16000, runtime=240, cpus_per_task=4
     threads: 4
     shell:
         "python {BIN}/batch_pygenometracks.py --sheet {input.sheet} "
@@ -1926,7 +1926,14 @@ rule pvalue_floor_sweep:
         floors=" ".join(str(f) for f in FLOOR_SWEEP_FLOORS),
         cmps=" ".join(FLOOR_SWEEP_CMPS),
     threads: config.get("floor_sweep_threads", 12)
-    resources: mem_mb=32000, runtime=180
+    # Job 25060837 timed out at 180 min because the SLURM profile allocated ONE
+    # core (no cpus_per_task here), so threads was scaled down to 1 (~200 s per
+    # permutation file, ~22 h for 4 comparisons x 100 perms). cpus_per_task
+    # must match threads. Runtime/memory are configurable; default 12 h / 48 GB.
+    resources:
+        mem_mb=config.get("floor_sweep_mem_mb", 48000),
+        runtime=config.get("floor_sweep_runtime", 720),
+        cpus_per_task=config.get("floor_sweep_threads", 12)
     shell:
         "python {BIN}/pvminsig_sweep.py "
         "--diff-dir {OUT}/compare "
