@@ -1,7 +1,7 @@
 # ----------------------------------------------------------------------
 # File     : tests/test_prior_strength.py
-# Version  : 1.0.0
-# Date     : 2026-09-28
+# Version  : 1.1.0
+# Date     : 2026-10-07 (1.0.0: 2026-09-28)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # Purpose  : pin the composition prior (--prior-strength): off = identical
@@ -73,3 +73,18 @@ def test_provenance_digest_unchanged_when_prior_off():
     on = score_provenance_signature(*args, prior_strength=1.0)
     assert old == zero
     assert on[0] != old[0] and "prior_strength=1" in on[1]
+
+
+def test_consensus_rescore_matches_scorer_with_prior():
+    # compare_qcat --consensus-q must apply the same prior as bigwig_to_qcat
+    # (1.1.0: it previously ignored prior_strength and used min_signal 0.01).
+    import compare_qcat as cq
+    x = np.array([[0, 0, 0.15, 0, 0, 0], [5, 3, 1, 8, 2, 4.0],
+                  [0.02, 0, 0, 0, 0, 0.03]])
+    raw = {i: x[i] for i in range(len(x))}
+    for alpha in (0.0, 1.0):
+        got, _, _ = cq.rescore_bins_with_consensus_q(
+            raw, Q, min_signal=0.1, prior_strength=alpha)
+        want = _score(x, min_signal=0.1, prior_strength=alpha, prior_source=x)
+        for i in range(len(x)):
+            assert np.isclose(float(got[i].sum()), want[i], atol=1e-5)

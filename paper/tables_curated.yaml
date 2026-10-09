@@ -89,25 +89,32 @@ table1:
     - "Note: the lymphocyte cells analysed here (DN, DP, EbKO, and the in-house Pro-B samples) are Rag-deficient; the public Pro-B architectural/H3K27ac tracks are also Rag-deficient (Rag1-/- or Rag2-/-; see Table S4) and therefore carry unrearranged, germline antigen-receptor loci. This is a deliberate design choice: because no intervening DNA is excised, chromatin and Hi-C contact differences between conditions cannot be confounded by recombination-mediated deletion. \"Active recombination\" in earlier drafts referred to locus activation/accessibility, not to completed rearrangement. [VERIFY] The RAG status of the mice underlying the PUBLIC Pro-B and 3T3 tracks (see Public-data usage) must be confirmed; Methods M.0 currently describes the published Pro-B samples as RAG-sufficient, which conflicts with this note."
 
 table_s5:
-  title: "Table S5. BEARING vs ChromHMM / Segway / EpiSegMix (capability comparison)"
-  subtitle: "In lieu of a benchmark: a head-to-head comparison is ill-posed because those tools answer a categorical question on binarized inputs. [VERIFY tool details before submission.]"
+  title: "Table S5. BEARING compared with chromatin-state segmentation and per-assay differential methods (capabilities)"
+  subtitle: "In lieu of a single head-to-head score: these methods answer different questions. Segmentation tools ask which categorical state a bin is in; per-assay differential tests ask whether one assay changed in amount; BEARING asks whether the relative composition of all assays changed and which assay drove it. They are therefore compared on what each can and cannot detect, not ranked. [VERIFY tool details before submission.]"
   header:
     - "Capability"
     - "BEARING"
     - "ChromHMM"
     - "Segway"
     - "EpiSegMix (ESMM)"
+    - "SCIDDO"
+    - "Per-assay differential (edgeR / csaw)"
   rows:
-    - ["Input signal", "Continuous BigWig", "Binarized", "Binarized/continuous (Gaussian)", "Mixed (per-mark distributions)"]
-    - ["Requires trained state model", "No", "Yes", "Yes", "Yes"]
-    - ["Requires replicates for differential inference", "No (empirical perm. null)", "Effectively yes", "Effectively yes", "Yes"]
-    - ["Output", "Continuous per-track score", "Discrete states", "Discrete states", "Discrete states"]
-    - ["Per-track attribution of change", "Yes", "No (state relabeling)", "No", "No"]
-    - ["Native two-condition differential", "Yes", "No (align states post hoc)", "No", "No"]
-    - ["Reference model-free", "Yes", "No", "No", "No"]
-    - ["Number of input tracks here", "6", "n/a (categorical)", "n/a", "n/a"]
+    - ["Question answered", "Did the composition across assays change, and which assay drove it?", "Which state is this bin in?", "Which state is this bin in?", "Which state is this bin in?", "Where do two state maps differ?", "Did this one assay change in amount?"]
+    - ["Input signal", "Continuous BigWig, all assays jointly", "Binarized", "Continuous (transformed; Gaussian emissions)", "Read counts (per-mark distributions)", "ChromHMM-style segmentations", "Read counts, one assay at a time"]
+    - ["Requires a learned state model", "No", "Yes", "Yes", "Yes", "Yes (input segmentations)", "No"]
+    - ["Native two-condition differential", "Yes", "No (align states post hoc)", "No", "No", "Yes", "Yes"]
+    - ["Replicates for differential inference", "Not required (circular-shift permutation null); replicate calibration recommended", "Effectively yes", "Effectively yes", "Yes", "Not required", "Yes"]
+    - ["Output", "Continuous per-bin, per-track score", "Discrete states", "Discrete states", "Discrete states", "Differential regions between state maps", "Per-assay log fold change and p-value"]
+    - ["Per-track attribution of change", "Yes (per-track score decomposition)", "No (state relabeling)", "No", "No", "Via state labels", "Trivially (one test per assay); no joint attribution"]
+    - ["Detects a magnitude-only change (all assays scale together)", "No (composition unchanged)", "Only if it crosses a binarization threshold", "Only if the state call changes", "Only if the state call changes", "Only if the state call changes", "Yes"]
+    - ["Detects a balance-only change (one assay up, another down, total unchanged)", "Yes", "Only if the state call changes", "Only if the state call changes", "Only if the state call changes", "Only if the state call changes", "Each assay tested separately; coordinated sub-threshold shifts are missed"]
+    - ["Behaviour at near-empty bins", "Composition shrunk toward the genome-wide background (prior alpha), score goes smoothly to 0", "Thresholded to absent", "Low-signal emissions", "Low-count emissions", "Inherits segmentation", "Low-count filter (e.g. filterByExpr)"]
+    - ["Reference model-free", "Yes", "No", "No", "No", "No", "Yes"]
+    - ["Number of input tracks here", "6", "n/a (categorical)", "n/a", "n/a", "n/a", "1 per test"]
   notes:
-    - "[VERIFY] Confirm ChromHMM/Segway/ESMM rows against current tool docs and the Foroozandeh Shahraki et al. 2024 replicate-prerequisite argument."
+    - "Complementarity, not superiority: BEARING is blind by design to changes that scale every assay by the same factor (the composition is unchanged), which a per-assay test detects; per-assay tests can miss coordinated shifts across several assays that are each below threshold, which BEARING detects. The RNA-seq edgeR concordance (Table S8) is the per-assay comparison on these data."
+    - "[VERIFY] Confirm the ChromHMM / Segway / ESMM / SCIDDO cells against current tool documentation, and the Foroozandeh Shahraki et al. 2024 replicate-prerequisite argument."
   # Related-work block, relocated here from Introduction paragraph 19 so the
   # tools are tabulated rather than narrated. Citations must stay live in the
   # manuscript's EndNote field codes -- this table carries the short form only.
@@ -119,6 +126,7 @@ table_s5:
     - "Reference"
   related_rows:
     - ["Peak-based differential ChIP/ATAC", "Differential binding", "Binarized peak calls", "Require replicates; discard continuous signal", "Steinhauser et al. 2016; Eder & Grebien 2022"]
+    - ["Window-based differential (csaw; edgeR on bins)", "Differential abundance per assay", "Read counts in windows or bins", "One assay at a time; detects magnitude, not composition; requires replicates", "Lun & Smyth 2016; Robinson et al. 2010 [VERIFY EndNote entries]"]
     - ["dPCA", "Multi-mark differential", "Continuous signal", "No per-track attribution of change", "Ji et al. 2013"]
     - ["mixNBHMM", "Multi-condition combinatorial", "Read counts", "Requires multi-replicate inputs", "Baldoni et al. 2020"]
     - ["chromstaR", "Combinatorial state dynamics", "Binarized marks", "Requires multi-replicate inputs", "Taudt et al. 2016"]

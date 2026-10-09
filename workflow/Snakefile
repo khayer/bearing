@@ -1410,7 +1410,9 @@ rule compare_consensusq:
         "python {BIN}/compare_qcat.py --sheet {input.sheet} "
         "--out {OUT}/consensusQ/compare "
         "--categories {CATS} --regions-file {input.regions} --genes {GENES} "
-        "{GTF_ARG} --no-clip --workers {threads} --consensus-q"
+        "{GTF_ARG} --no-clip --workers {threads} --consensus-q "
+        "--consensus-prior-strength %s --consensus-min-signal %s"
+        % (PRIOR_STRENGTH, P["min_signal"])
 
 rule pvalue_consensusq:
     input: compare=out("consensusQ", "compare.done"), perm_diff=out("perm_diff.done")

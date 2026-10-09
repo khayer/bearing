@@ -561,7 +561,8 @@ def compute_consensus_q(samples, raw_bin_dicts):
 
 
 def rescore_bins_with_consensus_q(raw_bin_dict, Q_consensus,
-                                  pseudocount=1e-6, min_signal=0.01):
+                                  pseudocount=1e-6, min_signal=0.01,
+                                  prior_strength=0.0):
     """
     Rescore all bins using the consensus Q vector.
 
@@ -572,6 +573,11 @@ def rescore_bins_with_consensus_q(raw_bin_dict, Q_consensus,
 
     Returns
     -------
+    prior_strength : float -- composition prior alpha, as in
+                     bigwig_to_qcat.shrink_composition, centred on Q_consensus:
+                     P = (x + alpha*Q) / (sum x + alpha). 0 (default) keeps the
+                     original pseudocount-only composition, byte-identical.
+
     score_dict : {bin_key: score_array}  (same shape as original parse output)
     n_rescored : int
     n_skipped  : int  (bins where raw was None or low-signal)
@@ -599,14 +605,19 @@ def rescore_bins_with_consensus_q(raw_bin_dict, Q_consensus,
             n_skipped += 1
             continue
 
-        r_pseudo = r + float(pseudocount)
-        denom = float(r_pseudo.sum())
-        if denom <= 0.0:
-            score_dict[bin_key] = np.zeros_like(Q_safe, dtype=np.float32)
-            n_skipped += 1
-            continue
-
-        P = r_pseudo / denom
+        if prior_strength and float(prior_strength) > 0.0:
+            # Same shrinkage as bigwig_to_qcat.shrink_composition (raw clipped
+            # signal, no pseudocount), centred on the consensus background.
+            a = float(prior_strength)
+            P = (r + a * Q_safe) / (float(r.sum()) + a)
+        else:
+            r_pseudo = r + float(pseudocount)
+            denom = float(r_pseudo.sum())
+            if denom <= 0.0:
+                score_dict[bin_key] = np.zeros_like(Q_safe, dtype=np.float32)
+                n_skipped += 1
+                continue
+            P = r_pseudo / denom
         scores = P * np.log2((P + 1e-300) / Q_safe)
         scores = np.clip(scores, 0.0, None)
         score_dict[bin_key] = scores.astype(np.float32)
@@ -2868,6 +2879,8 @@ def run(sheet_path, out_dir, chroms=None, skip_diff=False, skip_pca=False,
     categories=None, qcat_max=5.0, regions_file=None, workers=1,
         clip_for_ini=True,
         consensus_q=False,
+        consensus_prior_strength=0.0,
+        consensus_min_signal=0.01,
         diff_min_signal=0.0,
         diff_floor_combiner="max",
         diff_signal_source="auto",
@@ -3143,7 +3156,8 @@ def run(sheet_path, out_dir, chroms=None, skip_diff=False, skip_pca=False,
                 raw_by_bin,
                 Q_consensus,
                 pseudocount=1e-6,
-                min_signal=0.01,
+                min_signal=consensus_min_signal,
+                prior_strength=consensus_prior_strength,
             )
             mat = np.zeros((len(bins), num_states), dtype=np.float32)
             for bi, bin_key in enumerate(bins):
@@ -4491,6 +4505,21 @@ def main():
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
+        "--consensus-prior-strength", type=float, default=0.0, metavar="ALPHA",
+        help=(
+            "Composition prior alpha used when --consensus-q rescores bins "
+            "(must match the --prior-strength the qcats and permutation nulls "
+            "were scored with). Default 0 = original scoring."
+        ),
+    )
+    parser.add_argument(
+        "--consensus-min-signal", type=float, default=0.01, metavar="X",
+        help=(
+            "Low-signal floor used when --consensus-q rescores bins (should "
+            "match bigwig_to_qcat --min-signal; default 0.01 = historical value)."
+        ),
+    )
+    parser.add_argument(
         "--regions-file", metavar="TSV",
         help=(
             "TSV file (columns: name, region [label]) listing genomic regions "
@@ -4611,7 +4640,9 @@ def main():
     if args.diff_only:
         print("  Mode: DIFF-ONLY (no compare plots/INI/clipping)")
     if args.consensus_q:
-        print("  Consensus Q rescoring: ENABLED")
+        print("  Consensus Q rescoring: ENABLED "
+              f"(prior alpha = {args.consensus_prior_strength}, "
+              f"min_signal = {args.consensus_min_signal})")
     if args.diff_min_signal and args.diff_min_signal > 0:
         print(f"  Diff signal floor: {args.diff_floor_combiner}(sig_A, sig_B) "
               f">= {args.diff_min_signal}")
@@ -4657,6 +4688,8 @@ def main():
         workers=args.workers,
         clip_for_ini=(not args.no_clip),
         consensus_q=args.consensus_q,
+        consensus_prior_strength=args.consensus_prior_strength,
+        consensus_min_signal=args.consensus_min_signal,
         diff_min_signal=args.diff_min_signal,
         diff_floor_combiner=args.diff_floor_combiner,
         diff_signal_source=args.diff_signal_source,
