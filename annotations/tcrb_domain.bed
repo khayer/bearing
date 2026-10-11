@@ -1,0 +1,8 @@
+# Tcrb recombination domain and sub-windows for the domain-scale per-track
+# decomposition (Results, Figure 5). mm10. Co-created K. Hayer + Claude, 2026-10-11.
+# Domain chr6:40.4-42.4 Mb (Methods M.12); focal window as in the focal-vs-flank
+# test (Methods M.10); DJ_RC as in tcrb_regions_v5.bed; chr6 for a background.
+chr6	40400000	42400000	Tcrb_domain
+chr6	40850000	41700000	Tcrb_focal
+chr6	41500000	41551500	DJ_RC
+chr6	0	149736546	chr6_all

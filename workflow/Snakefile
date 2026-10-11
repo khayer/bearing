@@ -1424,6 +1424,20 @@ rule fig6b_igh_decomp:
         "--filename-pattern 'diff_*.stats.tsv' "
         "--out {params.prefix}"
 
+# Results / Figure 5 domain-scale per-track shares (fraction of summed |kl| per
+# track over bins with |BES| >= 0.5 in the region), all DN-referenced contrasts.
+rule tcrb_domain_decomp:
+    input: pvalue=out("pvalue.done")
+    output: out("table_sources", "tcrb_domain_decomp.per_region.tsv")
+    params: prefix=out("table_sources", "tcrb_domain_decomp")
+    resources: mem_mb=16000, runtime=120
+    shell:
+        "python {BIN}/bearing_region_decomposition.py "
+        "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/tcrb_domain.bed "
+        "--categories {OUT}/DN_rep1_cats.json "
+        "--filename-pattern 'diff_%s_vs_*.stats.tsv' "
+        "--out {params.prefix}" % REF
+
 # ---- Consensus-Q diagnostic chain (isolated; does NOT touch canonical results)
 # Re-scores against an element-wise-median consensus Q to test whether the
 # genome-wide CTCF/Cohesin-dominated DN-vs-EbKO shift seen in the cross-locus
@@ -1928,6 +1942,7 @@ def _table_source_targets():
     t += [os.path.join(TS, "regional_null_calibration_%s_DNrep_bg.tsv" % l)
           for l in REGIONAL_LOCI]
     t += [os.path.join(TS, "regional_empirical_%s.tsv" % l) for l in REGIONAL_LOCI]
+    t += [os.path.join(TS, "tcrb_domain_decomp.per_region.tsv")]
     t += [os.path.join(TS, "focal_flank", "%s.focal_vs_flank.tsv" % g) for g in FOCAL_FLANK_TAGS]
     t += [os.path.join(TS, "regional_null_contrast_matched", "cmnull_%s_%s_summary.tsv" % (l, c))
           for l in REGIONAL_LOCI for c in COMPARISONS]
