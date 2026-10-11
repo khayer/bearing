@@ -1,0 +1,9 @@
+sample	condition	bam
+DN_rep1	DN	/path/to/bam/DN_rep1.RNA.bam
+DN_rep2	DN	/path/to/bam/DN_rep2.RNA.bam
+DP_rep1	DP	/path/to/bam/DP_rep1.RNA.bam
+DP_rep2	DP	/path/to/bam/DP_rep2.RNA.bam
+EbKO_rep1	EbKO	/path/to/bam/EbKO_rep1.RNA.bam
+EbKO_rep2	EbKO	/path/to/bam/EbKO_rep2.RNA.bam
+ProB_rep1	ProB	/path/to/bam/ProB_rep1.RNA.bam
+ProB_rep2	ProB	/path/to/bam/ProB_rep2.RNA.bam

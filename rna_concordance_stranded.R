@@ -1,5 +1,10 @@
 #!/usr/bin/env Rscript
 # rna_concordance_stranded.R
+# Version  : 1.1.0 (2026-10-11: helper_dir / regions_tsv configurable; the
+#            helpers live in dev/, so the 1.0 root-level paths failed)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# Driver   : paper/run_edger_validation.sh writes the config.R files.
 #
 # Strand-matched RNA concordance between BEARING's per-track RNA differential and
 # an independent edgeR test, for ONE comparison, BOTH strands, in one call.
@@ -69,6 +74,10 @@ bins_bed    <- file.path(bearing_dir, "bearing_bins_200bp.bed")
 bearing_diff_tsv <- file.path(bearing_dir,
   sprintf("workflow/results/pvalue/diff_%s.stats.tsv", comp))
 categories_json  <- file.path(bearing_dir, "DN_rep1_cats.json")
+# Python helpers (extract_track_diff_bed.py, bearing_diff_concordance.py) and
+# the named-regions table used by concord_region.
+helper_dir  <- file.path(bearing_dir, "dev")
+regions_tsv <- file.path(bearing_dir, "workflow", "config", "regions.tsv")
 
 # How to pick BEARING's significant per-strand bins for the BED:
 #   bearing_select="significant" -> bins flagged FDR-significant by the run
@@ -127,8 +136,8 @@ for (f in c(bam_files, bins_bed, bearing_diff_tsv, categories_json)) {
   if (!file.exists(f)) stop("missing input: ", f)
 }
 dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
-extract_py <- file.path(bearing_dir, "extract_track_diff_bed.py")
-concord_py <- file.path(bearing_dir, "bearing_diff_concordance.py")
+extract_py <- file.path(helper_dir, "extract_track_diff_bed.py")
+concord_py <- file.path(helper_dir, "bearing_diff_concordance.py")
 for (f in c(extract_py, concord_py)) if (!file.exists(f)) stop("missing helper: ", f)
 python_bin <- Sys.getenv("PYTHON", unset = "python")
 
@@ -226,7 +235,7 @@ run_strand <- function(strand_label, strand_sym, bearing_track) {
     if (grepl(":", concord_region)) {
       region_args <- c("--region", concord_region)
     } else {
-      region_args <- c("--region-name", concord_region)
+      region_args <- c("--region-name", concord_region, "--regions-tsv", regions_tsv)
     }
   }
   concord_tsv <- file.path(outdir,
