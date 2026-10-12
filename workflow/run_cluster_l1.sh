@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : workflow/run_cluster_l1.sh
-# Version  : 1.0.0
-# Date     : 2026-10-12
+# Version  : 1.0.1
+# Date     : 2026-10-12 (1.0.1: clears an inherited PYTHONPATH)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -49,6 +49,14 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WF="$REPO/workflow"
 PROFILE="$WF/profiles/slurm"
 SRC=""; SRC_CONFIG=""; DEST=""; DRY=0; SMK=${SNAKEMAKE:-snakemake}
+# A loaded environment module (e.g. R/4.4.0 pulls in an EasyBuild SciPy-bundle)
+# can put another Python's site-packages on PYTHONPATH; snakemake and the
+# pipeline scripts then import an incompatible pandas/numpy. The pipeline does
+# not use PYTHONPATH, so clear it.
+if [ -n "${PYTHONPATH:-}" ]; then
+  echo "NOTE: clearing PYTHONPATH (was: $PYTHONPATH)"
+  unset PYTHONPATH
+fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
