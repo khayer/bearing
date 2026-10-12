@@ -7,3 +7,5 @@ EbKO_rep1	EbKO	/path/to/bam/EbKO_rep1.RNA.bam
 EbKO_rep2	EbKO	/path/to/bam/EbKO_rep2.RNA.bam
 ProB_rep1	ProB	/path/to/bam/ProB_rep1.RNA.bam
 ProB_rep2	ProB	/path/to/bam/ProB_rep2.RNA.bam
+S3T3_rep1	S3T3	/path/to/bam/S3T3_rep1.RNA.bam
+S3T3_rep2	S3T3	/path/to/bam/S3T3_rep2.RNA.bam

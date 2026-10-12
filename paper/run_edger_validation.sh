@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : paper/run_edger_validation.sh
-# Version  : 1.0.0
-# Date     : 2026-10-11
+# Version  : 1.1.0
+# Date     : 2026-10-12 (1.1.0: optional DN vs S3T3 arm)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -14,6 +14,8 @@
 #   2. DN vs DP, genome-wide, min.count = 3                         (Table S8, sensitivity)
 #   3. DN vs Pro-B, concordance restricted to the Igh locus, 10 and 3
 #   4. DN vs EbKO, recombination-center characterisation (region_match_ebko.py)
+#   5. OPTIONAL, only when the manifest has S3T3 rows: DN vs 3T3, genome-wide,
+#      min.count = 10 and 3 (Col1a1 and recombination-center calls)
 #
 # For each, featureCounts counts reads per strand on BEARING's own 200 bp grid
 # (blacklist from the same run), edgeR quasi-likelihood tests each bin, and the
@@ -36,7 +38,9 @@
 #       [--single-end] [--no-dup-flag] [--threads 4] [--outdir DIR] [--dry]
 #
 # The BAM manifest is a TSV with a header and columns: sample  condition  bam
-# (condition one of DN, DP, EbKO, ProB). Template: paper/edger_bam_manifest.template.tsv
+# (condition one of DN, DP, EbKO, ProB, and optionally S3T3). Template:
+# paper/edger_bam_manifest.template.tsv. Library type (--library, --single-end,
+# --no-dup-flag) applies to every BAM; check that the S3T3 BAMs share it.
 #
 # ASCII-only.
 
@@ -89,7 +93,10 @@ for f in "$REPO/rna_concordance_stranded.R" "$REPO/dev/extract_track_diff_bed.py
 done
 CATS="$RESULTS/DN_rep1_cats.json"
 [ -f "$CATS" ] || die "missing $CATS (finished BEARING run expected in --results)"
-for c in DP ProB EbKO; do
+HAS_3T3=0
+if awk -F'\t' 'NR>1 && $2=="S3T3"{f=1} END{exit !f}' "$MANIFEST"; then HAS_3T3=1; fi
+COND_REQ="DP ProB EbKO"; [ "$HAS_3T3" = 1 ] && COND_REQ="$COND_REQ S3T3"
+for c in $COND_REQ; do
   [ -f "$RESULTS/pvalue/diff_DN_vs_${c}.stats.tsv" ] || die "missing $RESULTS/pvalue/diff_DN_vs_${c}.stats.tsv"
 done
 
@@ -97,7 +104,7 @@ done
 bams_for() {
   awk -F'\t' -v c="$1" 'NR>1 && $2==c {printf "%s\"%s\"", (n++?", ":""), $3}' "$MANIFEST"
 }
-for c in DN DP ProB EbKO; do
+for c in DN $COND_REQ; do
   n=$(awk -F'\t' -v c="$c" 'NR>1 && $2==c' "$MANIFEST" | wc -l)
   [ "$n" -ge 2 ] || die "manifest has $n BAM(s) for $c; need at least 2 replicates"
   while IFS= read -r b; do [ -f "$b" ] || die "BAM not found: $b"; done \
@@ -106,6 +113,7 @@ done
 echo "   results : $RESULTS"
 echo "   outdir  : $OUTDIR"
 echo "   library : $LIBRARY  paired=$PAIRED  dups_marked=$DUPS  threads=$THREADS"
+echo "   S3T3    : $([ "$HAS_3T3" = 1 ] && echo "yes (DN vs S3T3 arm runs)" || echo "no S3T3 rows; arm skipped")"
 mkdir -p "$OUTDIR/configs" "$TS"
 
 # ---- the BEARING bin grid (same chrom sizes and blacklist as the run) --------
@@ -154,6 +162,10 @@ run_one DN_vs_DP   DN DP   3  ""    S8_DN_vs_DP_mc3
 run_one DN_vs_ProB DN ProB 10 "igh" igh_DN_vs_ProB_mc10
 run_one DN_vs_ProB DN ProB 3  "igh" igh_DN_vs_ProB_mc3
 run_one DN_vs_EbKO DN EbKO 10 ""    ebko_counts_mc10
+if [ "$HAS_3T3" = 1 ]; then
+  run_one DN_vs_S3T3 DN S3T3 10 ""  S3T3_DN_vs_S3T3_mc10
+  run_one DN_vs_S3T3 DN S3T3 3  ""  S3T3_DN_vs_S3T3_mc3
+fi
 
 # ---- EbKO recombination center ----------------------------------------------
 echo "== EbKO recombination center (region_match_ebko.py)"
@@ -178,6 +190,7 @@ Done. Outputs in $OUTDIR:
   rna_concordance_DN_vs_DP_summary.tsv, ..._mc3_summary.tsv   (Table S8; copied to table_sources/)
   rna_concordance_DN_vs_ProB_igh_summary.tsv, ..._mc3_igh_summary.tsv   (Igh sentence)
   ebko_rc_characterisation.tsv                                 (EbKO recombination-center paragraph)
+  rna_concordance_DN_vs_S3T3_summary.tsv, ..._mc3_summary.tsv (only with S3T3 rows; DN vs 3T3)
   *_missed.tsv per strand (testable BEARING bins edgeR did not call, with logFC/FDR)
 Rebuild the workbook:  cd workflow && snakemake ... paper_tables  (or rerun all)
 Report recovery as a fraction of the TESTABLE BEARING bins, not the raw count.
