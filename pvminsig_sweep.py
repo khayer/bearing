@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : pvminsig_sweep.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 pvminsig_sweep.py -- differential-floor sensitivity, parallel and low-memory.
 
@@ -59,6 +65,19 @@ import numpy as np
 
 SCORE_RE = re.compile(rb"\[(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?),")
 
+# Tested statistic, as bearing_pvalue.py --diff-stat: "sum" = |sum of the
+# per-track values| (original), "l1" = sum of |per-track values|. Set in main()
+# before the worker pool forks, so workers inherit it.
+_DIFF_STAT = "sum"
+
+
+def _tested(payload):
+    vals = [float(m.group(1)) for m in SCORE_RE.finditer(payload)]
+    total = sum(vals)
+    if _DIFF_STAT == "l1":
+        return total, sum(abs(v) for v in vals)
+    return total, abs(total)
+
 # Set before the Pool forks; workers inherit these copy-on-write on Linux.
 _EDGES = None
 _MIN_FLOOR = None
@@ -108,8 +127,7 @@ def read_observed_bins(path, min_abs):
                 continue
             rs = col.find(b",raw:", qs)
             payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
-            total = sum(float(m.group(1)) for m in SCORE_RE.finditer(payload))
-            a = abs(total)
+            total, a = _tested(payload)
             if a < min_abs:
                 continue
             chroms.append(intern(parts[0].decode()))
@@ -149,8 +167,7 @@ def iter_abs_scores(path, min_abs, block=1000000):
             # enough to flip a bin sitting exactly on the floor. Observed once in
             # 5,013,001 bins (chr12:45070600, sums to exactly 0.5 under sum() and
             # to 0.49999999999999994 naively).
-            total = sum(float(m.group(1)) for m in SCORE_RE.finditer(payload))
-            a = abs(total)
+            total, a = _tested(payload)
             if a < min_abs:
                 continue
             buf.append(a)
@@ -204,6 +221,8 @@ def main():
                     help="Use only the first N perm dirs (smoke test). "
                          "--verify needs all of them.")
     ap.add_argument("--fdr", type=float, default=0.05)
+    ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                    help="tested statistic, as bearing_pvalue.py --diff-stat")
     ap.add_argument("--out", required=True)
     ap.add_argument("--verify", default=None, metavar="PVALUE_DIR")
     ap.add_argument("--per-bin-out", default=None, metavar="DIR",
@@ -212,6 +231,8 @@ def main():
                          "significant. Enables Panel C to cite a REAL flipping "
                          "bin. Written incrementally + gzipped.")
     args = ap.parse_args()
+    global _DIFF_STAT
+    _DIFF_STAT = args.diff_stat
     if args.per_bin_out:
         os.makedirs(args.per_bin_out, exist_ok=True)
 
@@ -310,13 +331,16 @@ def main():
                 pb = os.path.join(args.per_bin_out,
                                   "%s_floor%s.tsv.gz" % (cmp_name, floor_tag(f)))
                 with gzip.open(pb, "wt") as pf:   # incremental, gzipped
+                    l1 = (_DIFF_STAT == "l1")
                     pf.write("chrom\tstart\tend\tbearing_score\tpval\t"
-                             "pval_adj_bh\tsignificant\n")
+                             "pval_adj_bh\tsignificant"
+                             + ("\tbearing_score_tested" if l1 else "") + "\n")
                     for k in range(len(idx_kept)):
                         oi = int(idx_kept[k])
-                        pf.write("%s\t%d\t%d\t%.6g\t%.6g\t%.6g\t%d\n" % (
+                        pf.write("%s\t%d\t%d\t%.6g\t%.6g\t%.6g\t%d" % (
                             obs_chrom[oi], obs_start[oi], obs_end[oi],
-                            obs_signed[oi], p[k], q[k], 1 if sig[k] else 0))
+                            obs_signed[oi], p[k], q[k], 1 if sig[k] else 0)
+                            + (("\t%.6g" % obs_abs[oi]) if l1 else "") + "\n")
             print("    floor %-5g tested=%-12s null=%-15s sig=%-8s min_p=%.3g"
                   % (f, format(len(s_kept), ","), format(n_null_f, ","),
                      format(n_sig, ","), p.min()), file=sys.stderr)

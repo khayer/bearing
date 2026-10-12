@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
-# Version  : 1.1.0  (2026-10-09: --regions accepts BED or
+# Version  : 1.2.0  (2026-10-12: --diff-stat sum|l1; 2026-10-09: --regions accepts BED or
 #            regions_manuscript.tsv (name, chrom:start-end); v1.0 matched no
 #            rows of regions_manuscript.tsv and wrote header-only tables)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
@@ -58,8 +58,17 @@ import numpy as np
 import scipy.stats
 
 
+# Tested statistic, as bearing_pvalue.py --diff-stat: "sum" = |signed reduced
+# score| (original), "l1" = sum over the kept tracks of |per-track value|.
+_DIFF_STAT = "sum"
+
+
+def _tested(signed, l1):
+    return l1 if _DIFF_STAT == "l1" else abs(signed)
+
+
 def parse_qcat_locus(path, keep, lc, ls, le):
-    """Yield (start, sum_over_keep, sign) for bins on chrom lc within [ls, le).
+    """Yield (start, sum_over_keep, sign, tested) for bins on chrom lc within [ls, le).
 
     Filters on the tab-delimited chrom/start BEFORE json-parsing the payload, so
     only in-locus lines are decoded -- essential when the perm qcats are
@@ -91,10 +100,12 @@ def parse_qcat_locus(path, keep, lc, ls, le):
                 payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
                 pairs = json.loads(payload)
             s = 0.0
+            l1 = 0.0
             for score, idx in pairs:
                 if int(idx) in keepset:
                     s += float(score)
-            yield start, s, (1 if s > 0 else -1)
+                    l1 += abs(float(score))
+            yield start, s, (1 if s > 0 else -1), _tested(s, l1)
 
 
 def _verify_parser(repo, path, keep, lc, ls, le, n=200):
@@ -109,7 +120,7 @@ def _verify_parser(repo, path, keep, lc, ls, le, n=200):
             if len(ref) >= n:
                 break
     checked = 0
-    for start, s, _sg in parse_qcat_locus(path, keep, lc, ls, le):
+    for start, s, _sg, _t in parse_qcat_locus(path, keep, lc, ls, le):
         if start in ref:
             if abs(ref[start] - s) > 1e-9:
                 sys.exit("locus reader disagrees with production parse_qcat at %d" % start)
@@ -120,14 +131,15 @@ def _verify_parser(repo, path, keep, lc, ls, le, n=200):
 
 
 def parse_qcat_genome(path, keep):
-    """Yield (reduced_score, sign) for EVERY bin, summing over kept tracks.
-    Genome-wide pass; used only to derive g_dir exactly as production does."""
-    for _chrom, _start, s, sign in _genome_stream_with_pos(path, keep):
-        yield s, sign
+    """Yield (reduced_score, sign, tested) for EVERY bin, summing over kept
+    tracks. Genome-wide pass; used only to derive g_dir exactly as production
+    does."""
+    for _chrom, _start, s, sign, t in _genome_stream_with_pos(path, keep):
+        yield s, sign, t
 
 
 def _genome_stream_with_pos(path, keep):
-    """Yield (chrom, start, reduced_score, sign) for EVERY bin, genome-wide."""
+    """Yield (chrom, start, reduced_score, sign, tested) for EVERY bin."""
     keepset = set(keep)
     with gzip.open(path, "rt") as fh:
         for line in fh:
@@ -147,10 +159,12 @@ def _genome_stream_with_pos(path, keep):
                 payload = col[qs + 5:rs] if rs >= 0 else col[qs + 5:]
                 pairs = json.loads(payload)
             s = 0.0
+            l1 = 0.0
             for score, idx in pairs:
                 if int(idx) in keepset:
                     s += float(score)
-            yield f[0], int(f[1]), s, (1 if s > 0 else -1)
+                    l1 += abs(float(score))
+            yield f[0], int(f[1]), s, (1 if s > 0 else -1), _tested(s, l1)
 
 
 def genome_wide_g_dir(diff_path, keep, null_sorted, p_thresh):
@@ -166,8 +180,8 @@ def genome_wide_g_dir(diff_path, keep, null_sorted, p_thresh):
     second genome-wide pass over the 100 perm files."""
     pos = tot = 0
     n = null_sorted.size
-    for s, sign in parse_qcat_genome(diff_path, keep):
-        ge = n - np.searchsorted(null_sorted, abs(s), side="left")
+    for s, sign, t in parse_qcat_genome(diff_path, keep):
+        ge = n - np.searchsorted(null_sorted, t, side="left")
         p = (1.0 + ge) / (1.0 + n)
         if p < p_thresh:
             tot += 1
@@ -179,20 +193,21 @@ def genome_wide_g_dir(diff_path, keep, null_sorted, p_thresh):
 
 def load_observed(path, keep, locus):
     lc, ls, le = locus
-    starts, scores, signs = [], [], []
-    for start, s, sign in parse_qcat_locus(path, keep, lc, ls, le):
-        starts.append(start); scores.append(s); signs.append(sign)
+    starts, scores, signs, tested = [], [], [], []
+    for start, s, sign, t in parse_qcat_locus(path, keep, lc, ls, le):
+        starts.append(start); scores.append(s); signs.append(sign); tested.append(t)
     o = np.argsort(starts, kind="stable")
-    return (np.asarray(starts)[o], np.asarray(scores)[o], np.asarray(signs)[o])
+    return (np.asarray(starts)[o], np.asarray(scores)[o], np.asarray(signs)[o],
+            np.asarray(tested)[o])
 
 
 def load_null(perm_paths, keep, locus, max_perms):
-    """Pooled null of |reduced score| within the locus, from the permutation qcats."""
+    """Pooled null of the tested reduced statistic within the locus."""
     lc, ls, le = locus
     vals = []
     for i, p in enumerate(perm_paths[:max_perms]):
-        for start, s, _sign in parse_qcat_locus(p, keep, lc, ls, le):
-            vals.append(abs(s))
+        for start, s, _sign, t in parse_qcat_locus(p, keep, lc, ls, le):
+            vals.append(t)
         if (i + 1) % 10 == 0:
             print("    ... %d/%d perm files, %d null bins so far"
                   % (i + 1, min(len(perm_paths), max_perms), len(vals)))
@@ -248,6 +263,8 @@ def main():
     ap.add_argument("--keep", default="1,2,3",
                     help="1-based track indices to retain (default in-house: ATAC,RNA+,RNA-)")
     ap.add_argument("--p-thresh", type=float, default=0.05)
+    ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                    help="tested statistic, as bearing_pvalue.py --diff-stat")
     ap.add_argument("--max-perms", type=int, default=100)
     ap.add_argument("--emit-stats", default=None,
                     help="also write a genome-wide reduced-panel stats.tsv "
@@ -256,6 +273,8 @@ def main():
                          "for the size-matched empirical null.")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    global _DIFF_STAT
+    _DIFF_STAT = a.diff_stat
 
     keep = [int(x) for x in a.keep.split(",")]
     lc, rest = a.locus.split(":"); ls, le = (int(v) for v in rest.split("-"))
@@ -264,7 +283,7 @@ def main():
 
     print("loading observed reduced scores ...")
     _verify_parser(os.path.abspath(a.repo), a.diff_qcat, keep, lc, ls, le)
-    starts, scores, signs = load_observed(a.diff_qcat, keep, locus)
+    starts, scores, signs, tested = load_observed(a.diff_qcat, keep, locus)
     print("  %d bins in locus" % starts.size)
 
     perm_paths = sorted(glob.glob(a.perm_glob))
@@ -276,7 +295,7 @@ def main():
     print("  %d null bins" % null.size)
 
     # per-bin empirical p on the reduced score (locus bins), for the spatial test
-    pvals = empirical_p(np.abs(scores), null)
+    pvals = empirical_p(tested, null)
 
     # g_dir MUST be genome-wide (production uses all genome-wide significant bins,
     # not locus bins) or the directional test is computed against a degenerate
@@ -296,8 +315,8 @@ def main():
         wrote = 0
         with open(a.emit_stats, "w") as fh:
             fh.write("chrom\tstart\tend\tbearing_score\tpval\tdirection\n")
-            for chrom, start, s, sign in _genome_stream_with_pos(a.diff_qcat, keep):
-                ge = nnull - np.searchsorted(null, abs(s), side="left")
+            for chrom, start, s, sign, t in _genome_stream_with_pos(a.diff_qcat, keep):
+                ge = nnull - np.searchsorted(null, t, side="left")
                 p = (1.0 + ge) / (1.0 + nnull)
                 fh.write("%s\t%d\t%d\t%.6g\t%.6g\t%s\n"
                          % (chrom, start, start + 200, s, p, "+" if sign > 0 else "-"))

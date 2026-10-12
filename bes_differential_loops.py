@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : bes_differential_loops.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 bes_differential_loops.py  (#3 -- differential loops vs differential BES)
 ========================================================================
@@ -130,6 +136,9 @@ def load_diff(path, locus=None, fdr_only=False):
         try:
             r["_c"] = r["chrom"]; r["_s"] = int(r["start"]); r["_e"] = int(r["end"])
             r["_bes"] = float(r.get("bearing_score", "nan"))
+            # magnitude = tested statistic (|bearing_score| for --diff-stat sum)
+            r["_mag"] = (float(r["bearing_score_tested"]) if r.get("bearing_score_tested")
+                         else abs(r["_bes"]))
             r["_sig"] = int(float(r.get(fdr_col, "0") or 0)) if fdr_col else 0
         except (KeyError, ValueError):
             continue
@@ -172,7 +181,7 @@ def bins_in_intervals(by, kl_cols, ivs):
             if key in seen:
                 continue
             seen.add(key)
-            abs_bes.append(abs(r["_bes"]))
+            abs_bes.append(r["_mag"])
             sig += r["_sig"]
             for k in kl_cols:
                 try:

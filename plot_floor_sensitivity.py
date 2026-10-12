@@ -27,7 +27,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-VERSION = "1.0"
+VERSION = "1.1"  # 2026-10-12: --diff-stat sum|l1 (Nina + Claude)
 
 FLOOR_COLORS = {0.1: "#9e9e9e", 0.25: "#66bb6a", 0.5: "#d32f2f",
                 1.0: "#1976d2", 1.5: "#7b1fa2"}
@@ -91,8 +91,10 @@ def read_stats(path):
                 continue
             try:
                 key = (p[idx["chrom"]], int(p[idx["start"]]))
-                out[key] = (float(p[idx["bearing_score"]]),
-                            float(p[idx["pval"]]))
+                sc = (float(p[idx["bearing_score_tested"]])
+                      if (DIFF_STAT == "l1" and "bearing_score_tested" in idx)
+                      else float(p[idx["bearing_score"]]))
+                out[key] = (sc, float(p[idx["pval"]]))
             except ValueError:
                 continue
     return out
@@ -124,7 +126,10 @@ def read_per_bin(per_bin_dir, cmp_name, floor):
             if len(p) < len(header):
                 continue
             key = (p[idx["chrom"]], int(p[idx["start"]]))
-            out[key] = (float(p[idx["bearing_score"]]), float(p[idx["pval"]]),
+            sc = (float(p[idx["bearing_score_tested"]])
+                  if (DIFF_STAT == "l1" and "bearing_score_tested" in idx)
+                  else float(p[idx["bearing_score"]]))
+            out[key] = (sc, float(p[idx["pval"]]),
                         float(p[idx["pval_adj_bh"]]), int(p[idx["significant"]]))
     return out
 
@@ -168,11 +173,31 @@ def bes_scalar_q(P, q):
     return float(np.sum(P[mask] * np.log2(P[mask] / q)))
 
 
+def bes_tracks_scalar_q(P, q):
+    """Per-state clamped-KL contributions with a scalar background q."""
+    P = np.asarray(P, dtype=np.float64)
+    out = np.zeros_like(P)
+    m = P > q
+    out[m] = P[m] * np.log2(P[m] / q)
+    return out
+
+
+# Tested differential statistic (bearing_pvalue.py --diff-stat); set in main().
+DIFF_STAT = "sum"
+
+
 def detection_curve(q, xs):
-    """y(x) = |ceiling - BES([1-x, x])| for a pure-track-A bin losing fraction
-    x to track B, both tracks sharing background q. ceiling = -log2(q)."""
+    """y(x) = tested differential between a pure-track-A bin and the same bin
+    after losing fraction x to track B, both tracks sharing background q.
+    sum: |ceiling - BES([1-x, x])|; l1: sum over tracks of |kl_i difference|.
+    ceiling = -log2(q)."""
     ceiling = -np.log2(q)
-    ys = np.array([abs(ceiling - bes_scalar_q([1.0 - x, x], q)) for x in xs])
+    pure = bes_tracks_scalar_q([1.0, 0.0], q)
+    if DIFF_STAT == "l1":
+        ys = np.array([float(np.abs(pure - bes_tracks_scalar_q([1.0 - x, x], q)).sum())
+                       for x in xs])
+    else:
+        ys = np.array([abs(ceiling - bes_scalar_q([1.0 - x, x], q)) for x in xs])
     return ceiling, ys
 
 
@@ -202,10 +227,15 @@ def main():
     ap.add_argument("--mechanism-comparison", default="DN_vs_DP")
     ap.add_argument("--example-bins", required=True)
     ap.add_argument("--fdr", type=float, default=0.05)
+    ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                    help="tested statistic of the run (bearing_pvalue.py --diff-stat); "
+                         "sets the Panel A detection curve")
     ap.add_argument("--out-pdf", required=True)
     ap.add_argument("--out-png", required=True)
     ap.add_argument("--source-data", required=True)
     args = ap.parse_args()
+    global DIFF_STAT
+    DIFF_STAT = args.diff_stat
 
     sweep = read_sweep(args.sweep_tsv)
     q, q_sample, q_names = load_q(args.q_json)

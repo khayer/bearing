@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : bes_loop_anchor_enrichment.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 bes_loop_anchor_enrichment.py  (#2 -- anchor-stratified BES)
 ===========================================================
@@ -165,6 +171,9 @@ def main():
         try:
             c = r["chrom"]; s = int(r["start"]); e = int(r["end"])
             bes = float(r.get("bearing_score", "nan"))
+            # magnitude = the tested statistic (bearing_pvalue.py --diff-stat);
+            # equals |bearing_score| for the sum statistic
+            mag = float(r["bearing_score_tested"]) if r.get("bearing_score_tested") else abs(bes)
         except (KeyError, ValueError):
             continue
         sig = int(float(r.get(fdr_col, "0") or 0)) if fdr_col else 0
@@ -173,7 +182,7 @@ def main():
         if args.fdr_only and sig != 1:
             continue
         grp = anchor if overlaps_anchor(lookup, c, s, e) else nonanc
-        grp["abs_bes"].append(abs(bes))
+        grp["abs_bes"].append(mag)
         grp["sig"] += sig
         grp["n"] += 1
         for k in kl_cols:

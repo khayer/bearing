@@ -45,7 +45,9 @@ tested under realistic noise rather than on a noise-free toy.
 - `evaluate_bearing_recovery.py`  runs the real pipeline and scores recovery
 - `plot_bearing_sweep.py`  renders the SNR x dispersion x pseudocount sweep
 - `visualize_bearing_tracks.py`  track-stack sanity view (planted blocks vs BEARING score)
-- `run_bearing_recovery_sweep.sh`  driver for the full coarse-grid sweep
+- `run_bearing_recovery_sweep.sh`  driver for the full coarse-grid sweep (Table S7; PRIOR=1 MIN_SIGNAL=0.1 = production scoring, the default since 2026-10-11)
+- `complementarity_benchmark.py`  two-condition test of BEARING against a replicate-based per-assay test on planted magnitude-only, composition-switch, rebalance, both and on/off blocks (production scoring and null, reused from bigwig_to_qcat.py and bearing_pvalue.py)
+- `run_complementarity_sweep.sh` + `summarize_complementarity.py`  depth x prior x seed sweep of the above and the pooled table (~5 min on one CPU)
 
 ## Run
 
@@ -56,7 +58,10 @@ python3 simulate_bearing_tracks.py --out-prefix bearing_sim
 # 2) run the real pipeline on them and score recovery
 python3 evaluate_bearing_recovery.py --prefix bearing_sim --out-prefix recovery
 
-# 3) full parameter sweep + figures
+# 3) two-condition complementarity benchmark (BEARING vs per-assay)
+bash run_complementarity_sweep.sh complementarity_sweep
+
+# 4) full parameter sweep + figures
 bash run_bearing_recovery_sweep.sh
 python3 plot_bearing_sweep.py --master sweep_master.tsv --out-prefix sweep
 ```

@@ -320,6 +320,17 @@ SCORE_METHOD = config.get("score_method", "kl")
 # observed scoring AND permutation scoring, and checked by score_provenance.
 PRIOR_STRENGTH = float(config.get("prior_strength", 0) or 0)
 PRIOR_FLAG = ("--prior-strength %s" % PRIOR_STRENGTH) if PRIOR_STRENGTH > 0 else ""
+# Differential test statistic (bearing_pvalue.py --diff-stat). "sum" (the
+# original, default) tests |sum over tracks of the per-track differential|,
+# which cancels when one track rises and another falls; "l1" tests the sum of
+# |per-track differentials| and does not (benchmark/complementarity_benchmark.py).
+# Applied identically to the observed bins, the testing floor, the permutation
+# null and every script that recomputes the statistic (calibration, floor
+# sweep, Fig 7B, Tables S10, S12, S13). The permutation qcats do not change.
+DIFF_STAT = str(config.get("diff_stat", "sum") or "sum")
+if DIFF_STAT not in ("sum", "l1"):
+    raise ValueError("config diff_stat must be 'sum' or 'l1', got %r" % DIFF_STAT)
+DIFF_STAT_FLAG = "--diff-stat %s" % DIFF_STAT
 # Optional explicit override for the p-value-stage score floor. If unset,
 # bearing_pvalue.py picks it from --score-method (0.5 KL, 0.05 JSD).
 _PV_MINSIG = config.get("pvalue_min_signal", None)
@@ -546,15 +557,16 @@ rule pvalue_diff_one:
            prov=out("score_provenance.done")
     output: stats=out("pvalue", "diff_{comp}.stats.tsv")
     wildcard_constraints: comp=ALL_PAIRWISE_RE
-    params: n=P["n_perms"]
+    params: n=P["n_perms"], diff_stat=DIFF_STAT
     threads: 4
     resources: mem_mb=256000, runtime=600, cpus_per_task=4
     benchmark: out("benchmarks", "pvalue_diff_one.{comp}.tsv")
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "bash {BIN}/slurm/run_pvalue_one.sh {OUT}/compare {wildcards.comp} {params.n} "
-        "{OUT}/perm/perm {OUT}/pvalue %s %s"
-        % (SCORE_METHOD, ("'%s'" % _PV_MINSIG) if _PV_MINSIG is not None else "''")
+        "{OUT}/perm/perm {OUT}/pvalue %s %s %s"
+        % (SCORE_METHOD, ("'%s'" % _PV_MINSIG) if _PV_MINSIG is not None else "''",
+           DIFF_STAT)
 
 rule pvalue_diff:
     input: expand(out("pvalue", "diff_{comp}.stats.tsv"), comp=ALL_PAIRWISE)
@@ -1185,14 +1197,15 @@ rule calibration_one:
     # not collide/race across the parallel jobs.
     input: score=out("score.done")
     output: summary=out("calibration", "{cond}", "{cond}", "{cond}_summary.txt")
-    params: nperms=P.get("n_perms", 10), outdir=lambda wc: out("calibration", wc.cond)
+    params: nperms=P.get("n_perms", 10), outdir=lambda wc: out("calibration", wc.cond),
+            diff_stat=DIFF_STAT
     resources: mem_mb=200000, runtime=1440
     shell:
         "bash {BIN}/run_replicate_calibration.sh "
         "--sheet {OUT}/samples.qcat.tsv --out {params.outdir} "
         "--perm-template '{OUT}/perm/perm{{perm}}/{{sample}}/{{sample}}_perm{{perm}}.qcat.bgz' "
         "--n-perms {params.nperms} --obs-qcat-col qcat --scripts-dir {BIN} "
-        "--conditions {wildcards.cond}"
+        "--conditions {wildcards.cond} " + DIFF_STAT_FLAG
 
 rule calibration_summary_fig:
     # S10 cross-condition composite (lambda / BH hits / floor fraction) from the
@@ -1467,7 +1480,7 @@ rule pvalue_consensusq:
     shell:
         "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1; "
         "bash {BIN}/slurm/run_perm_diff_pvalue.sh {OUT}/consensusQ/compare {params.n} "
-        "{OUT}/perm/perm {OUT}/consensusQ/pvalue"
+        "{OUT}/perm/perm {OUT}/consensusQ/pvalue kl '' %s" % DIFF_STAT
 
 rule crosslocus_ebko_survey_consensusq:
     input: pvalue=out("consensusQ", "pvalue.done")
@@ -1644,13 +1657,13 @@ rule fig7b_null_one:
             for i in PERM_INDICES),
         label=lambda wc: wc.cmp.replace("_vs_", " - "),
         prefix=lambda wc: out("paper_figures", "fig7b", "Fig7B_%s" % wc.cmp),
-        minsig=_FIG7B_MINSIG
+        minsig=_FIG7B_MINSIG, diff_stat=DIFF_STAT
     resources: mem_mb=32000, runtime=720
     shell:
         "python {BIN}/make_fig7b.py --null-qcat {params.nulls} "
         "--observed-stats {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
         "--label '{params.label}' --min-signal {params.minsig} "
-        "--out-prefix {params.prefix}"
+        "--out-prefix {params.prefix} " + DIFF_STAT_FLAG
 
 rule fig7b_all:
     input: expand(out("paper_figures", "fig7b", "Fig7B_{cmp}.pdf"), cmp=COMPARISONS)
@@ -1777,13 +1790,14 @@ rule table_s10_baseline:
     wildcard_constraints: pair="|".join(BASELINE_TAGS) if BASELINE_TAGS else "NONE"
     params:
         a=lambda wc: _BASELINE[wc.pair][0], b=lambda wc: _BASELINE[wc.pair][1],
-        minsig=P["min_signal"], prior=PRIOR_STRENGTH
+        minsig=P["min_signal"], prior=PRIOR_STRENGTH, diff_stat=DIFF_STAT
     resources: mem_mb=200000, runtime=1440
     shell:
         "python {BIN}/dev/baseline_comparison.py --sheet {input.sheet} "
         "--data-dir {DATA_DIR} --sample-name {params.a} --vs {params.b} "
         "--chrom-sizes {CS} --repo {BIN} --regions {BIN}/regions_manuscript.tsv "
-        "--min-signal {params.minsig} --prior-strength {params.prior} --out {output}"
+        "--min-signal {params.minsig} --prior-strength {params.prior} "
+        "--diff-stat {params.diff_stat} --out {output}"
 
 # Table S11: regional null calibration (background mode, n=500, seed 42), one
 # per regional locus, on the REFERENCE condition's replicate differential.
@@ -1859,7 +1873,8 @@ rule table_s12_track_ablation:
         window=lambda wc: REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["window"],
         keep=lambda wc: _ABL[wc.tag].get("keep", "1,2,3"),
         bed=lambda wc: os.path.join(BIN, REGIONAL_LOCI[_ABL[wc.tag]["locus"]]["bed"]),
-        stats=lambda wc: out("track_ablation", "track_ablation_%s.stats.tsv" % wc.tag)
+        stats=lambda wc: out("track_ablation", "track_ablation_%s.stats.tsv" % wc.tag),
+        diff_stat=DIFF_STAT
     resources: mem_mb=64000, runtime=720
     shell:
         "mkdir -p {OUT}/track_ablation && "
@@ -1868,7 +1883,7 @@ rule table_s12_track_ablation:
         "--perm-glob '{OUT}/perm/perm*/diff_comparison/diff_{params.cmp}.qcat.bgz' "
         "--repo {BIN} --regions {params.bed} --locus {params.window} "
         "--keep {params.keep} --p-thresh {REGIONAL_PTHRESH} "
-        "--emit-stats {params.stats} --out {output}"
+        "--emit-stats {params.stats} --diff-stat {params.diff_stat} --out {output}"
 
 # Table S12 significance: the same contrast-matched null as Table S11, on the
 # reduced-panel genome-wide stats that table_s12_track_ablation emits.
@@ -1901,13 +1916,14 @@ rule table_s13_replicate_stability:
     params:
         a=lambda wc: "%s:%s" % (REF, ",".join(_cond_samples(REF))),
         b=lambda wc: "%s:%s" % (wc.cond, ",".join(_cond_samples(wc.cond))),
-        minsig=P["min_signal"], prior=PRIOR_STRENGTH
+        minsig=P["min_signal"], prior=PRIOR_STRENGTH, diff_stat=DIFF_STAT
     resources: mem_mb=128000, runtime=720
     shell:
         "python {BIN}/dev/replicate_stability.py --sheet {input.sheet} "
         "--data-dir {DATA_DIR} --chrom-sizes {CS} --regions {BIN}/regions_manuscript.tsv "
         "--cond-a '{params.a}' --cond-b '{params.b}' --repo {BIN} "
-        "--min-signal {params.minsig} --prior-strength {params.prior} --out {output}"
+        "--min-signal {params.minsig} --prior-strength {params.prior} "
+        "--diff-stat {params.diff_stat} --out {output}"
 
 # Table S3: CBE regional enrichment, DN-vs-DP (existing rule) + DN-vs-EbKO.
 rule regional_enrichment_cbe_ebko:
@@ -2044,6 +2060,7 @@ rule pvalue_floor_sweep:
     params:
         floors=" ".join(str(f) for f in FLOOR_SWEEP_FLOORS),
         cmps=" ".join(FLOOR_SWEEP_CMPS),
+        diff_stat=DIFF_STAT,
     threads: config.get("floor_sweep_threads", 12)
     # Job 25060837 timed out at 180 min because the SLURM profile allocated ONE
     # core (no cpus_per_task here), so threads was scaled down to 1 (~200 s per
@@ -2059,7 +2076,7 @@ rule pvalue_floor_sweep:
         "--perm-glob '{OUT}/perm/perm*/diff_comparison' "
         "--comparisons {params.cmps} --floors {params.floors} "
         "--threads {threads} --per-bin-out {output.per_bin} "
-        "--out {output.tsv} --verify {OUT}/pvalue"
+        "--out {output.tsv} --verify {OUT}/pvalue --diff-stat {params.diff_stat}"
 
 
 rule plot_floor_sensitivity:
@@ -2080,4 +2097,5 @@ rule plot_floor_sensitivity:
         "--stats-dir {OUT}/pvalue --q-json {input.q_json} "
         "--example-bins {input.examples} "
         "--mechanism-comparison DN_vs_DP "
-        "--out-pdf {output.pdf} --out-png {output.png} --source-data {output.src}"
+        "--out-pdf {output.pdf} --out-png {output.png} --source-data {output.src} "
+        + DIFF_STAT_FLAG

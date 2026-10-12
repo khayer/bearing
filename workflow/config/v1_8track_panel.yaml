@@ -3,10 +3,13 @@
 # v1_6track_panel + TWO O/E virtual-4C contact channels (make_oe_4c.py):
 #   4C RC     : viewpoint on the whole RC anchor set (5'PC_CBE..CBE_3, ~41,500-41,560 kb).
 #               Its differential registers AT Trbv1 (the loop that collapses in V1PKO).
-#   4C Trbv1  : reciprocal viewpoint on Trbv1 + its 3'CBE (~40,888-40,894 kb).
-#               Its differential registers AT the RC. Same loop, read from both ends.
+#   4C Trbv13-2: viewpoint on Trbv13-2 (viewpoints.bed 41,120-41,126 kb); the
+#               bigwig used is merged_corrected_KR_<cond>_bs_10000_Trbv13-2_OE4C.bw.
+#               (Earlier comments called this channel "4C Trbv1" with the Trbv1
+#               viewpoint 40,888-40,894 kb; the sample sheet has always used the
+#               Trbv13-2 viewpoint. Label corrected 2026-10-11, Nina + Claude.)
 # Order is FIXED and must match the bw column in samples_v1p_8track.tsv:
-#   RNAseq +, RNAseq -, CTCF, Cohesin, NIPBL, H3K27ac, 4C RC, 4C Trbv1
+#   RNAseq +, RNAseq -, CTCF, Cohesin, NIPBL, H3K27ac, 4C RC, 4C Trbv13-2
 #
 # Fields: name, color, negative_strand (true => bigwig encodes - strand as
 # negative numbers; abs() before normalization).

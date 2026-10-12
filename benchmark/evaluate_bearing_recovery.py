@@ -198,6 +198,12 @@ def load_truth(path):
 # Run the REAL scorer via subprocess, parse the qcat output into per-bin
 # score vectors keyed by genomic start coordinate.
 # -----------------------------------------------------------------------------
+# Composition prior (alpha) applied to EVERY scorer run and to the in-process
+# epsilon sweep; set from --prior-strength in main(). 0 = off (the Table S7
+# setting before 2026-10-11); production since results_prior1_n100 is 1.
+PRIOR_STRENGTH = 0.0
+
+
 def run_scorer(scorer_path, bw_paths, chrom_sizes, out_path,
                min_signal=None, normalize_method=None, normalize_tracks=False,
                pseudocount=None):
@@ -214,6 +220,8 @@ def run_scorer(scorer_path, bw_paths, chrom_sizes, out_path,
         cmd += ["--normalize-method", normalize_method]
     if pseudocount is not None:
         cmd += ["--pseudocount", str(pseudocount)]
+    if PRIOR_STRENGTH:
+        cmd += ["--prior-strength", str(PRIOR_STRENGTH)]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         sys.stderr.write(res.stdout + "\n" + res.stderr + "\n")
@@ -705,7 +713,8 @@ def insample_rescore(mod, raw_signal, q, pseudocount, min_signal):
         P = mod.signals_to_prob(raw_signal)
         scores, _ = mod.kl_scores_per_bin(
             P, q, raw_signal_matrix=raw_signal, min_signal=min_signal,
-            normalize_score=False)
+            normalize_score=False, prior_strength=PRIOR_STRENGTH,
+            prior_source=raw_signal if PRIOR_STRENGTH else None)
     finally:
         mod.PSEUDOCOUNT = saved
     return scores
@@ -929,9 +938,21 @@ def main(argv=None):
                          "expected remains a fair test of whether normalization "
                          "preserves faithful attribution. Lets a sweep treat "
                          "track normalization as an on/off knob.")
+    ap.add_argument("--prior-strength", type=float, default=0.0,
+                    help="composition prior alpha passed to EVERY scorer run "
+                         "(--prior-strength) and to the in-process epsilon "
+                         "sweep. Default 0 (off) reproduces Table S7 v25; the "
+                         "production setting (results_prior1_n100) is 1.")
+    ap.add_argument("--min-signal", type=float, default=None,
+                    help="low-signal mask for the baseline run (panels a-d) and "
+                         "the epsilon sweep; default: the scorer default. The "
+                         "production setting is 0.1. Panel e's min-signal sweep "
+                         "uses its own grid.")
     ap.add_argument("--keep-tmp", action="store_true",
                     help="keep intermediate qcat files in the outdir")
     args = ap.parse_args(argv)
+    global PRIOR_STRENGTH
+    PRIOR_STRENGTH = float(args.prior_strength)
 
     os.makedirs(args.outdir, exist_ok=True)
     tmpdir = os.path.join(args.outdir, "tmp")
@@ -954,7 +975,14 @@ def main(argv=None):
 
     # Baseline run (panels a-d). Uses --pseudocount if given, else scorer default.
     base_out = os.path.join(tmpdir, "baseline.qcat.bgz")
+    if PRIOR_STRENGTH:
+        print("composition prior alpha for all scorer runs: %g" % PRIOR_STRENGTH)
+    if args.min_signal is not None:
+        consts["MIN_SIGNAL"] = args.min_signal
+        print("min-signal for the baseline run and epsilon sweep: %g"
+              % args.min_signal)
     run_scorer(args.scorer, args.bw, args.chrom_sizes, base_out,
+               min_signal=args.min_signal,
                normalize_tracks=args.normalize_tracks,
                pseudocount=args.pseudocount)
     scores_by_start = parse_qcat(base_out, truth["chrom"])

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : hic/define_wide_loci.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 define_wide_loci_v2.py
 
@@ -81,7 +87,8 @@ def main():
     if missing:
         sys.exit("missing columns in " + args.bes + ": " + str(missing))
 
-    df["abs_bes"] = df["bearing_score"].abs()
+    df["abs_bes"] = (df["bearing_score_tested"].abs() if "bearing_score_tested" in df
+                     else df["bearing_score"].abs())
     n_total = len(df)
 
     # Significance + magnitude floor

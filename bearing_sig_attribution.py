@@ -20,7 +20,7 @@ ASCII only. Uses tabix (or pysam) for the qcat; streams the pval tsv once.
 
 USAGE
   python3 bearing_sig_attribution.py diff_DN_vs_V1P.qcat.bgz diff_DN_vs_V1P.stats.tsv \
-      --track-names "RNAseq +,RNAseq -,CTCF,Cohesin,NIPBL,H3K27ac,4C RC,4C Trbv1" \
+      --track-names "RNAseq +,RNAseq -,CTCF,Cohesin,NIPBL,H3K27ac,4C RC,4C Trbv13-2" \
       --contact-name "4C RC" --fdr 0.05
 """
 import argparse, gzip, io, json, os, shutil, subprocess, sys

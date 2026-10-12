@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : dev/replicate_stability.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 replicate_stability.py
 ======================
@@ -31,8 +37,9 @@ production qcat, Spearman 0.9987). Each of the up-to-four replicate samples is
 loaded once; the per-track KL score is computed per sample against that sample's
 own genome-wide Q, exactly as production scores each sample. The single-replicate
 differential per track is klA[:,i] - klB[:,i], which sums to bearing_kl(A) -
-bearing_kl(B); the tested differential is the absolute summed value, matching the
-production diff_mode statistic. Because each per-sample per-track KL is faithful
+bearing_kl(B); the tested differential is the absolute summed value (or, with
+--diff-stat l1, the sum of absolute per-track values), matching the production
+diff_mode statistic of bearing_pvalue.py --diff-stat. Because each per-sample per-track KL is faithful
 to production, so is its per-track difference -- no averaged-differential
 reproduction is required.
 
@@ -108,6 +115,10 @@ def main():
                     help="composition prior alpha; must match the production "
                          "scoring (config prior_strength)")
     ap.add_argument("--top-frac", type=float, default=0.01)
+    ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                    help="statistic ranked for readout 1, as bearing_pvalue.py "
+                         "--diff-stat: sum = |summed differential|, l1 = sum of "
+                         "|per-track differential|")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     global PRIOR_STRENGTH
@@ -186,7 +197,8 @@ def main():
         print("    %-22s %8s %10s %12s" % ("pairing", "hits", "fold", "p"))
         folds = []
         for (ai, bj) in pairings:
-            absd = np.abs(diff_sum[(ai, bj)])
+            absd = (np.abs(diff_track[(ai, bj)]).sum(axis=1) if a.diff_stat == "l1"
+                    else np.abs(diff_sum[(ai, bj)]))
             top = np.argpartition(-absd, n_top - 1)[:n_top]
             sel = np.zeros(N, dtype=bool); sel[top] = True
             k = int((sel & rmask).sum())

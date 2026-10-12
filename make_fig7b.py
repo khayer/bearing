@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # make_fig7b.py -- Figure 7B: pooled empirical permutation null for one differential comparison
 # Authors: Katharina E. Hayer (CHOP/Drexel) with Claude (Anthropic), co-created
-# Version: 1.1   Date: 2026-09-17  (v1.1: caches the histogram in <out-prefix>.npz; --from-npz re-renders without streaming; bounded log axis)
+# Version: 1.2   Date: 2026-10-12  (v1.2: --diff-stat sum|l1, the tested statistic of bearing_pvalue.py --diff-stat; v1.1: caches the histogram in <out-prefix>.npz; --from-npz re-renders without streaming; bounded log axis)
 #
 # Streams the N permuted diff qcat files (never holds them all in memory), builds a fixed-bin
 # histogram of |diff score| above the production min-signal floor, overlays the 2-component
@@ -16,13 +16,15 @@
 import argparse, json, sys, os
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bearing_pvalue import parse_qcat, fit_gamma_mixture  # same repo, same parser
+from bearing_pvalue import parse_qcat, fit_gamma_mixture, diff_statistic  # same repo, same parser
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--null-qcat", nargs="+", required=True)
 ap.add_argument("--observed-stats", required=True, help="<prefix>.stats.tsv from bearing_pvalue.py --diff")
 ap.add_argument("--label", default="DN - EbKO")
 ap.add_argument("--min-signal", type=float, default=0.5, help="production floor on |score| (KL: 0.5)")
+ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                help="tested statistic, as bearing_pvalue.py --diff-stat (default sum)")
 ap.add_argument("--xmax", type=float, default=6.0)
 ap.add_argument("--nbins", type=int, default=220)
 ap.add_argument("--gamma-subsample", type=int, default=5_000_000)
@@ -46,8 +48,9 @@ seen = 0
 for path in ([] if a.from_npz else a.null_qcat):
     n = 0
     buf = []
-    for _, _, _, score, _ in parse_qcat(path, min_signal=a.min_signal, diff_mode=True):
-        s = abs(score)
+    for _, _, _, score, per in parse_qcat(path, min_signal=a.min_signal, diff_mode=True,
+                                          diff_stat=a.diff_stat):
+        s = diff_statistic(score, per, a.diff_stat)
         if s < a.min_signal:
             continue
         buf.append(s); n += 1
@@ -80,7 +83,10 @@ import csv
 obs = []; fdr_scores = []
 with open(a.observed_stats) as fh:
     rd = csv.DictReader(fh, delimiter="\t")
-    scol = "bearing_score" if "bearing_score" in rd.fieldnames else [c for c in rd.fieldnames if "score" in c][0]
+    # bearing_score_tested is the tested statistic (|bearing_score| for sum, the L1 for l1)
+    scol = ("bearing_score_tested" if "bearing_score_tested" in rd.fieldnames else
+            "bearing_score" if "bearing_score" in rd.fieldnames else
+            [c for c in rd.fieldnames if "score" in c][0])
     sigcol = [c for c in rd.fieldnames if c.startswith("significant")]
     for row in rd:
         try:
@@ -108,7 +114,7 @@ if len(obs):
     ho, _ = np.histogram(obs, bins=edges); ax.step(edges[:-1], ho / (len(obs) * width), where="post", color="#b00020", lw=1.0, label=f"observed {a.label}")
 if fdr_thr:
     ax.axvline(fdr_thr, color="#b00020", lw=1.0, ls=":"); ax.text(fdr_thr, 5, " FDR 0.05", color="#b00020", fontsize=6.5)
-ax.set_yscale("log"); ax.set_ylim(0.3 / (total * width), 20); ax.set_xlabel("|differential BEARING score|", fontsize=8); ax.set_ylabel("density", fontsize=8)
+ax.set_yscale("log"); ax.set_ylim(0.3 / (total * width), 20); ax.set_xlabel("|differential BEARING score|" if a.diff_stat == "sum" else "sum over tracks of |per-track differential| (L1)", fontsize=8); ax.set_ylabel("density", fontsize=8)
 ax.tick_params(labelsize=7); ax.legend(fontsize=6, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.28), ncol=1)
 ax.set_title(f"Pooled empirical null, {a.label}\n{total:,.0f} null bins from {len(a.null_qcat)} permutations; min p = {min_p:.1e}", fontsize=7.5)
 for s in ("top", "right"): ax.spines[s].set_visible(False)

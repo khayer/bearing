@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ----------------------------------------------------------------------
+# File     : slurm/run_pvalue_one.sh
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 set -euo pipefail
 
 # Compute differential p-values for ONE comparison against its permutation nulls.
@@ -8,7 +14,7 @@ set -euo pipefail
 #
 # Usage:
 #   run_pvalue_one.sh COMPARISON_DIR COMP N_PERMS PERM_PREFIX RESULTS_DIR \
-#                     [SCORE_METHOD] [PV_MINSIG]
+#                     [SCORE_METHOD] [PV_MINSIG] [DIFF_STAT]
 # Set FORCE_PVALUE=1 to recompute even if RESULTS_DIR/diff_COMP.stats.tsv exists.
 # ASCII only.
 
@@ -20,7 +26,9 @@ RESULTS_DIR="${5:?results dir}"
 SCORE_METHOD="${6:-kl}"
 PV_MINSIG="${7:-}"
 
+DIFF_STAT="${8:-sum}"   # sum (original) or l1 (non-cancelling); bearing_pvalue.py --diff-stat
 PV_FLAGS="--score-method ${SCORE_METHOD}"
+PV_FLAGS="$PV_FLAGS --diff-stat ${DIFF_STAT}"
 if [[ -n "$PV_MINSIG" ]]; then
   PV_FLAGS="$PV_FLAGS --min-signal ${PV_MINSIG}"
 fi

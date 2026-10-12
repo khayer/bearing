@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ----------------------------------------------------------------------
+# File     : run_replicate_calibration.sh
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 #
 # run_replicate_calibration.sh
 # ============================
@@ -34,7 +40,7 @@
 #       --perm-template 'perm_v6_paper{perm}/{sample}/{sample}_perm{perm}.qcat.bgz' \
 #       --n-perms 3 \
 #       --scripts-dir ~/data/tools/scripts/bigwig_to_qcat/ \
-#       [--obs-qcat-col out] [--fdr 0.05] [--min-signal 0.0] \
+#       [--obs-qcat-col out] [--fdr 0.05] [--min-signal 0.0] [--diff-stat sum|l1] \
 #       [--conditions "DN EbKO"] [--force] [--dry-run]
 #
 # The real per-sample qcat for each replicate is read from the master sheet
@@ -82,6 +88,7 @@ while [[ $# -gt 0 ]]; do
         --obs-qcat-col)  OBS_QCAT_COL="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"; shift 2 ;;
         --fdr)           FDR="$2"; shift 2 ;;
         --min-signal)    MIN_SIGNAL="$2"; shift 2 ;;
+        --diff-stat)     DIFF_STAT="$2"; shift 2 ;;
         --conditions)    CONDITIONS="$2"; shift 2 ;;
         --scripts-dir)   SCRIPTS_DIR="$(expand_home "$2")"; shift 2 ;;
         --force)         FORCE=1; shift ;;
@@ -255,6 +262,7 @@ for cond in "${CONDS[@]}"; do
         --out-prefix "$out_prefix" \
         --min-signal "$MIN_SIGNAL" \
         --fdr "$FDR" \
+        --diff-stat "${DIFF_STAT:-sum}" \
         --label "$cond rep1 vs rep2" \
         --bearing-pvalue "$BEARING_PVALUE"
 

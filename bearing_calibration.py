@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : bearing_calibration.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 bearing_calibration.py
 ======================
@@ -179,7 +185,7 @@ def preflight(bp):
 # Load observed (reuses bp.parse_qcat in diff mode)
 # ---------------------------------------------------------------------------
 
-def load_observed(bp, diff_qcat, min_signal):
+def load_observed(bp, diff_qcat, min_signal, diff_stat="sum"):
     """
     Parse the observed within-condition rep-vs-rep diff qcat in diff mode
     (filters by abs(score) >= min_signal, keeps the signed total).
@@ -187,19 +193,25 @@ def load_observed(bp, diff_qcat, min_signal):
     Returns (rows, signed, tested):
       rows   : list of (chrom, start, end)
       signed : np.float64 array of signed differential scores
-      tested : np.float64 array of |signed| (the value the null tests)
+      tested : np.float64 array of the tested statistic (|signed| for
+               diff_stat "sum", sum of |per-track| for "l1"; the value the
+               null tests, as in bearing_pvalue.py --diff-stat)
     """
     rows = []
     signed = []
-    for chrom, start, end, score_total, _per_track in bp.parse_qcat(
-            diff_qcat, min_signal=min_signal, diff_mode=True):
+    tested = []
+    kw = {"diff_stat": diff_stat} if diff_stat != "sum" else {}
+    for chrom, start, end, score_total, per_track in bp.parse_qcat(
+            diff_qcat, min_signal=min_signal, diff_mode=True, **kw):
         rows.append((chrom, start, end))
         signed.append(score_total)
+        tested.append(bp.diff_statistic(score_total, per_track, diff_stat)
+                      if diff_stat != "sum" else abs(score_total))
     if not rows:
         sys.exit("ERROR: no observed bins passed min_signal=%.4g in %s"
                  % (min_signal, diff_qcat))
     signed = np.asarray(signed, dtype=np.float64)
-    return rows, signed, np.abs(signed)
+    return rows, signed, np.asarray(tested, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +463,9 @@ def main():
     ap.add_argument("--min-signal", type=float, default=0.0, metavar="FLOAT",
                     help="abs(score) threshold applied IDENTICALLY to observed "
                          "and null (default 0.0).")
+    ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                    help="Differential statistic, as bearing_pvalue.py --diff-stat "
+                         "(default sum). Applied to observed bins, floor and null.")
     ap.add_argument("--fdr", type=float, default=0.05, metavar="FLOAT",
                     help="Benjamini-Hochberg FDR level for the significant-bin "
                          "count (default 0.05).")
@@ -482,12 +497,18 @@ def main():
     preflight(bp)
 
     print("Loading observed differential...", file=sys.stderr)
-    rows, signed, tested = load_observed(bp, args.diff_qcat, args.min_signal)
+    if args.diff_stat != "sum" and not hasattr(bp, "diff_statistic"):
+        sys.exit("ERROR: --diff-stat %s needs a bearing_pvalue.py with "
+                 "diff_statistic()" % args.diff_stat)
+    print("  diff statistic: %s" % args.diff_stat, file=sys.stderr)
+    rows, signed, tested = load_observed(bp, args.diff_qcat, args.min_signal,
+                                         args.diff_stat)
     print("  observed bins: %s" % "{:,}".format(len(rows)), file=sys.stderr)
 
     print("Pooling permutation null...", file=sys.stderr)
     null_sorted, _ = bp.collect_null_scores(
-        args.null_qcat, min_signal=args.min_signal, diff_mode=True)
+        args.null_qcat, min_signal=args.min_signal, diff_mode=True,
+        **({"diff_stat": args.diff_stat} if args.diff_stat != "sum" else {}))
     n_null = len(null_sorted)
     p_floor = 1.0 / (n_null + 1.0)
 

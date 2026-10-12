@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : bearing_pvalue.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 bearing_pvalue.py -- Statistical significance scoring for Bearing qcat output.
 
@@ -57,8 +63,24 @@ The more permutations, the lower the minimum achievable p-value:
 SIGNED DIFF QCAT
 -----------------
 For signed diff qcats (from compare_qcat.py), use --diff to test both
-directions using |bearing_score|. The output BigWig is signed:
+directions. The output BigWig is signed by the net differential:
 positive -log10(p) for A > B bins, negative for B > A bins.
+
+DIFFERENTIAL STATISTIC (--diff-stat, diff mode only)
+----------------------------------------------------
+Each diff bin carries the signed per-track differential d_i = s_A,i - s_B,i.
+  sum  |sum_i d_i|  = |total score A - total score B|. Tests a change in how
+       far the bin departs from background. Cancels when one track's gain is
+       another track's loss, so a switch between two compositions that are
+       equally far from Q scores ~0 (benchmark/complementarity_benchmark.py).
+       The original statistic; default, so earlier runs reproduce exactly.
+  l1   sum_i |d_i|. Does not cancel: tests any change in the per-track scores,
+       including a switch in which assay dominates. Additive over tracks, so
+       |d_i| / l1 is each track's share of the tested statistic. Equals the
+       sum statistic whenever all tracks move the same way.
+The same statistic is applied to the observed bins, to the testing floor
+(--min-signal) and to every permutation null bin. bearing_score stays the
+signed net sum (its sign gives the direction column in both modes).
 
 CATEGORY NAMES
 --------------
@@ -106,8 +128,9 @@ OUTPUT COLUMNS (TSV)
   kl_<name>               -- per-state KL score (one column per assay)
 
 In --diff mode, additional columns:
-  bearing_score_tested    -- |bearing_score| used for null test
-  direction               -- +, -, or 0
+  bearing_score_tested    -- the tested statistic (--diff-stat): |bearing_score|
+                             for sum, sum_i |kl_i| for l1
+  direction               -- +, -, or 0 (sign of the net bearing_score)
 
 DEPENDENCIES
 ------------
@@ -146,12 +169,27 @@ MM10_CHROM_SIZES = {
 # Parsing
 # ---------------------------------------------------------------------------
 
-def parse_qcat(path, min_signal=0.0, diff_mode=False):
+DIFF_STATS = ("sum", "l1")
+
+
+def diff_statistic(score_total, per_track, diff_stat="sum"):
+    """Tested value of one diff bin (see DIFFERENTIAL STATISTIC above).
+    sum: |sum_i d_i| (abs of the signed total); l1: sum_i |d_i|."""
+    if diff_stat == "l1":
+        return sum(abs(v) for v in per_track.values())
+    if diff_stat == "sum":
+        return abs(score_total)
+    raise ValueError("unknown diff_stat %r (expected one of %s)"
+                     % (diff_stat, ", ".join(DIFF_STATS)))
+
+
+def parse_qcat(path, min_signal=0.0, diff_mode=False, diff_stat="sum"):
     """
     Yield (chrom, start, end, score_total, per_track_dict) from a qcat.bgz.
 
-    In diff_mode, bins are filtered by abs(score) >= min_signal.
-    Returns score_total with its original sign; filtering uses abs value.
+    In diff_mode, bins are filtered by diff_statistic(...) >= min_signal
+    (|score| for diff_stat "sum", the default; sum of |per-track| for "l1").
+    Returns score_total with its original sign.
     """
     import gzip
     with gzip.open(path, "rt") as fh:
@@ -179,14 +217,16 @@ def parse_qcat(path, min_signal=0.0, diff_mode=False):
             per_track = {int(state_idx): float(score)
                          for score, state_idx in pairs}
             score_total = sum(per_track.values())
-            tested = abs(score_total) if diff_mode else score_total
+            tested = (diff_statistic(score_total, per_track, diff_stat)
+                      if diff_mode else score_total)
             if tested < min_signal:
                 continue
             yield chrom, start, end, score_total, per_track
 
 
 def collect_null_scores(null_paths, min_signal=0.0, diff_mode=False,
-                        max_per_file=None, per_track_pvals=False):
+                        max_per_file=None, per_track_pvals=False,
+                        diff_stat="sum"):
     """
     Pool scores from one or more permuted null qcat files.
 
@@ -200,8 +240,9 @@ def collect_null_scores(null_paths, min_signal=0.0, diff_mode=False,
         file_scores = []
         print(f"  Loading null: {path}", file=sys.stderr)
         for _, _, _, score, per_track in parse_qcat(path, min_signal=min_signal,
-                                                    diff_mode=diff_mode):
-            s = abs(score) if diff_mode else score
+                                                    diff_mode=diff_mode,
+                                                    diff_stat=diff_stat):
+            s = diff_statistic(score, per_track, diff_stat) if diff_mode else score
             if s >= min_signal:
                 file_scores.append(s)
                 if per_track_pvals:
@@ -638,9 +679,15 @@ def main():
                     help="Save a score distribution plot "
                          "(<out-prefix>.score_dist.pdf).")
     ap.add_argument("--diff",         action="store_true",
-                    help="Diff mode: filter and test using |bearing_score|. "
+                    help="Diff mode: filter and test using the --diff-stat statistic. "
                          "Output BigWig is signed: positive -log10(p) for "
                          "A > B bins, negative for B > A bins.")
+    ap.add_argument("--diff-stat", choices=list(DIFF_STATS), default="sum",
+                    help="Diff mode: per-bin test statistic. 'sum' (default) = "
+                         "|sum of per-track differentials|, which cancels when one "
+                         "track rises and another falls; 'l1' = sum of "
+                         "|per-track differentials|, which does not. Applied to "
+                         "observed bins, the --min-signal floor and the null.")
     ap.add_argument("--null-subsample", type=int, default=None,
                     metavar="N",
                     help="Subsample at most N bins per null qcat file "
@@ -779,9 +826,12 @@ def main():
     all_scores = []
     n_pos = n_neg = n_zero = 0
 
+    if args.diff:
+        print("Diff statistic: %s" % args.diff_stat, file=sys.stderr)
     for chrom, start, end, score, per_track in parse_qcat(
-            args.qcat, min_signal=args.min_signal, diff_mode=args.diff):
-        tested = abs(score) if args.diff else score
+            args.qcat, min_signal=args.min_signal, diff_mode=args.diff,
+            diff_stat=args.diff_stat):
+        tested = diff_statistic(score, per_track, args.diff_stat) if args.diff else score
         all_scores.append(tested)
         all_bins.append((chrom, start, end, score, per_track))
         if score > 0: n_pos += 1
@@ -827,6 +877,7 @@ def main():
             diff_mode=args.diff,
             max_per_file=args.null_subsample,
             per_track_pvals=args.per_track_pvals,
+            diff_stat=args.diff_stat,
         )
         pvals = empirical_pvals(scores_arr, null_scores_sorted)
         # Guard: abort if the null does not overlap the observed scores (the
@@ -1041,7 +1092,7 @@ def main():
         for i, (chrom, start, end, score, per_track) in enumerate(all_bins):
             row = (
                 [chrom, start, end, f"{score:.6f}"]
-                + ([f"{abs(score):.6f}"] if args.diff else [])
+                + ([f"{scores_arr[i]:.6f}"] if args.diff else [])
                 + [tsv_null_method]
                 + ["true" if score_normalised else "false"]
                 + ([f"{k:.6f}", f"{theta:.6f}"] if k is not None else [])

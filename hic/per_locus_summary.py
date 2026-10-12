@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : hic/per_locus_summary.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 per_locus_summary.py
 
@@ -75,8 +81,9 @@ def summarize_one_locus(df_diff, chrom, start, end, kl_cols):
     if n_total == 0:
         return None
 
-    abs_bes_locus = in_locus["bearing_score"].abs()
-    abs_bes_bg = out_locus["bearing_score"].abs()
+    _mcol = "bearing_score_tested" if "bearing_score_tested" in in_locus else "bearing_score"
+    abs_bes_locus = in_locus[_mcol].abs()
+    abs_bes_bg = out_locus[_mcol].abs()
 
     sig = in_locus[in_locus["pval_adj_bh"] < 0.05]
     mean_locus = float(abs_bes_locus.mean())

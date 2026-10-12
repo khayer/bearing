@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : crosslocus_fdr_counts.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 crosslocus_fdr_counts.py
 ========================
@@ -77,6 +83,9 @@ def main():
         try:
             c = r["chrom"]; s = int(r["start"]); e = int(r["end"])
             bes = float(r.get("bearing_score", "nan"))
+            # threshold the tested statistic (|bearing_score| for --diff-stat sum)
+            if r.get("bearing_score_tested"):
+                bes = float(r["bearing_score_tested"])
             sig = int(float(r.get(fdr_col, "0") or 0))
         except (ValueError, KeyError):
             continue

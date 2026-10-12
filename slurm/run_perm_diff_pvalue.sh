@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ----------------------------------------------------------------------
+# File     : slurm/run_perm_diff_pvalue.sh
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 set -euo pipefail
 
 # Automated p-value computation for all differential comparisons
@@ -10,7 +16,9 @@ PERM_PREFIX="${3:-perm}"
 RESULTS_DIR="${4:-results}"
 SCORE_METHOD="${5:-kl}"
 PV_MINSIG="${6:-}"
+DIFF_STAT="${7:-sum}"   # sum (original) or l1 (non-cancelling); bearing_pvalue.py --diff-stat
 PV_FLAGS="--score-method ${SCORE_METHOD}"
+PV_FLAGS="$PV_FLAGS --diff-stat ${DIFF_STAT}"
 if [[ -n "$PV_MINSIG" ]]; then
   PV_FLAGS="$PV_FLAGS --min-signal ${PV_MINSIG}"
 fi

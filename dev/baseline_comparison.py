@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : dev/baseline_comparison.py
+# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 # baseline_comparison.py  (v7 -- adds --regions locus recovery: do the top bins land in the right place?)
 #
 # Reviewer question (NAR): "is BEARING simply rediscovering what a simpler
@@ -181,7 +187,9 @@ def compute_Q_all_bins(R, prob_fn, chunk=2_000_000):
     return acc / n
 
 
-def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
+def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0, keep_tracks=False):
+    """Per-bin statistics. keep_tracks=True also returns the per-track BEARING
+    KL matrix under key "_kl_tracks" (bins x tracks), for the L1 differential."""
     P = prob_fn(R.astype(np.float64))
     if Q is None:
         Q = P.mean(axis=0)
@@ -196,7 +204,8 @@ def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
         return np.asarray(arr)
 
     out = {}
-    out["bearing_kl"] = _scores("kl").sum(axis=1)
+    _klt = _scores("kl")
+    out["bearing_kl"] = _klt.sum(axis=1)
     try:
         out["bearing_jsd"] = _scores("jsd").sum(axis=1)
     except Exception as e:
@@ -223,6 +232,9 @@ def statistics(R, kl_fn, prob_fn, Q=None, min_signal=0.0):
         low = R.sum(axis=1) < min_signal
         for k in out:
             out[k] = np.where(low, 0.0, out[k])
+    if keep_tracks:
+        out["_kl_tracks"] = (np.where(low[:, None], 0.0, _klt)
+                             if min_signal > 0 else _klt)
     return out, Q
 
 
@@ -389,6 +401,10 @@ def main():
     ap.add_argument("--stride", type=int, default=1,
                     help="use every Nth passing bin for the correlations (Q uses all)")
     ap.add_argument("--top-frac", type=float, default=0.01)
+    ap.add_argument("--diff-stat", choices=["sum", "l1"], default="sum",
+                    help="BEARING differential for --vs, as bearing_pvalue.py "
+                         "--diff-stat: sum = |bearing_kl(A) - bearing_kl(B)|, "
+                         "l1 = sum over tracks of |kl_A,i - kl_B,i|")
     ap.add_argument("--check-qcat", default=None,
                     help="qcat.bgz to validate the reconstruction against")
     ap.add_argument("--check-chrom", default="chr19")
@@ -490,9 +506,14 @@ def main():
 
     # each sample gets its own Q, as in production
     Q2 = compute_Q_all_bins(R2, prob_fn)
-    s1, _ = statistics(R1[both], kl_fn, prob_fn, Q=Q1)   # each sample its own Q,
-    s2, _ = statistics(R2[both], kl_fn, prob_fn, Q=Q2)   # computed over all bins
+    l1 = (a.diff_stat == "l1")
+    s1, _ = statistics(R1[both], kl_fn, prob_fn, Q=Q1, keep_tracks=l1)   # each sample its own Q,
+    s2, _ = statistics(R2[both], kl_fn, prob_fn, Q=Q2, keep_tracks=l1)   # computed over all bins
+    t1, t2 = s1.pop("_kl_tracks", None), s2.pop("_kl_tracks", None)
     diff = {k: np.abs(s1[k] - s2[k]) for k in s1 if k in s2}
+    if l1:
+        # the tested BEARING differential under --diff-stat l1 (bearing_pvalue.py)
+        diff["bearing_kl"] = np.abs(t1 - t2).sum(axis=1)
     if a.stride > 1:
         diff = {k: v[::a.stride] for k, v in diff.items()}
     print("\nDIFFERENTIAL |%s - %s| (n=%d bins):"

@@ -68,23 +68,32 @@
 # Activate the env (numpy scipy matplotlib pyBigWig pysam) BEFORE running.
 # =============================================================================
 set -euo pipefail
+export PRIOR MIN_SIGNAL 2>/dev/null || true
 
 # ---- paths to the scripts (edit if not in the current directory) ------------
-SIM=./simulate_bearing_tracks.py
-EVAL=./evaluate_bearing_recovery.py
-SCORER=~/data/tools/scripts/bigwig_to_qcat/bigwig_to_qcat.py
-VIZ=./visualize_bearing_tracks.py
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SIM=${SIM:-$HERE/simulate_bearing_tracks.py}
+EVAL=${EVAL:-$HERE/evaluate_bearing_recovery.py}
+SCORER=${SCORER:-$HERE/../bigwig_to_qcat.py}
+VIZ=${VIZ:-$HERE/visualize_bearing_tracks.py}
+
+# Scoring settings applied to EVERY cell (2026-10-11, Nina + Claude):
+#   PRIOR=1 MIN_SIGNAL=0.1 is the production setting (results_prior1_n100) and
+#   regenerates Table S7 at alpha 1. PRIOR=0 MIN_SIGNAL= (set empty) reproduces
+#   the Table S7 v25 (alpha 0) run.
+PRIOR=${PRIOR:-1}
+MIN_SIGNAL=${MIN_SIGNAL-0.1}
 
 PY=${PYTHON:-python3}
 OUTROOT=${1:-bearing_sweep_new}
 CHROM=chrSim
-LENGTH=20000000          # 20 Mb full run; set 2000000 for a smoke test
+LENGTH=${LENGTH:-20000000}          # 20 Mb full run; set 2000000 for a smoke test
 SEED=12345
 
 # ---- COARSE grids -----------------------------------------------------------
-SNR_GRID="20 40 80"            # 3 values
-DISP_GRID="4 16"               # 2 values
-NORMTRACKS_GRID="off on"       # 2 values: per-track normalization off / on
+SNR_GRID=${SNR_GRID:-"20 40 80"}            # 3 values
+DISP_GRID=${DISP_GRID:-"4 16"}               # 2 values
+NORMTRACKS_GRID=${NORMTRACKS_GRID:-"off on"}       # 2 values: per-track normalization off / on
 
 # Pseudocount is PINNED (no longer swept); representative mid value.
 PSEUDOCOUNT=1e-6
@@ -99,7 +108,7 @@ PROBE_PSEUDO=${PROBE_PSEUDO:-1e-2}
 
 mkdir -p "$OUTROOT"
 MASTER="$OUTROOT/sweep_master.tsv"
-echo -e "snr\tdisp\tnormalize_tracks\tpseudocount\toutdir\tperblock_slope_vs_expected\tperblock_pearson_vs_expected\trank_recovery\tinformative_frac_min\tinformative_frac_max" > "$MASTER"
+echo -e "prior_strength\tmin_signal\tsnr\tdisp\tnormalize_tracks\tpseudocount\toutdir\tperblock_slope_vs_expected\tperblock_pearson_vs_expected\trank_recovery\tinformative_frac_min\tinformative_frac_max" > "$MASTER"
 
 BW () { local p=$1; echo "${p}_atac.bw ${p}_rnaplus.bw ${p}_rnaminus.bw ${p}_ctcf.bw ${p}_rad21.bw ${p}_h3k27ac.bw"; }
 
@@ -107,7 +116,7 @@ BW () { local p=$1; echo "${p}_atac.bw ${p}_rnaplus.bw ${p}_rnaminus.bw ${p}_ctc
 collect () {
   local snr=$1 disp=$2 normtracks=$3 pseudo=$4 outdir=$5
   "$PY" - "$snr" "$disp" "$normtracks" "$pseudo" "$outdir" "$outdir/recovery_summary.txt" "$MASTER" <<'PYEOF'
-import sys, re
+import sys, re, os
 snr, disp, normtracks, pseudo, outdir, sumf, master = sys.argv[1:8]
 slope=pear=rank=fmin=fmax="NA"
 try:
@@ -123,7 +132,8 @@ try:
 except FileNotFoundError:
     pass
 with open(master,"a") as fh:
-    fh.write("\t".join([snr,disp,normtracks,pseudo,outdir,slope,pear,rank,fmin,fmax])+"\n")
+    fh.write("\t".join([os.environ.get("PRIOR","0"), os.environ.get("MIN_SIGNAL","default"),
+                        snr,disp,normtracks,pseudo,outdir,slope,pear,rank,fmin,fmax])+"\n")
 PYEOF
 }
 
@@ -141,6 +151,8 @@ evaluate_cell () {
         --chrom-sizes "${prefix}.chrom.sizes" \
         --scorer "$SCORER" \
         --pseudocount "$pseudo" \
+        --prior-strength "$PRIOR" \
+        ${MIN_SIGNAL:+--min-signal "$MIN_SIGNAL"} \
         "${nt_flag[@]}" \
         --outdir "$outdir" >/dev/null
   collect "$snr" "$disp" "$normtracks" "$pseudo" "$outdir"

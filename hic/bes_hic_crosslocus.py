@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : bes_hic_crosslocus.py
-# Version  : 2.0.1
+# Version  : 2.0.2 (2026-10-12: magnitude from bearing_score_tested, the --diff-stat statistic)
 # Date     : 2026-09-26
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
@@ -153,15 +153,16 @@ def resolve_set_tokens(columns, tokens):
 def load_bes(path, score_sets=None, resolved_log=None):
     """Load a BEARING diff TSV. Returns DataFrame with chrom,start,end,
     abs_bes, plus one column per score set (sum of |kl_i| over the set).
-    Uses bearing_score column; falls back to bearing_score_tested."""
+    Uses bearing_score_tested (the tested statistic of bearing_pvalue.py
+    --diff-stat; = |bearing_score| for sum); falls back to bearing_score."""
     header = pd.read_csv(path, sep="\t", nrows=0).columns.tolist()
     needed = {"chrom", "start", "end"}
     if not needed.issubset(header):
         sys.exit("BES TSV {} missing chrom/start/end".format(path))
-    if "bearing_score" in header:
-        bcol = "bearing_score"
-    elif "bearing_score_tested" in header:
+    if "bearing_score_tested" in header:
         bcol = "bearing_score_tested"
+    elif "bearing_score" in header:
+        bcol = "bearing_score"
     else:
         sys.exit("BES TSV {} has no bearing_score column".format(path))
     set_cols = {}
