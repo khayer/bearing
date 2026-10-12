@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : paper/run_edger_validation.sh
-# Version  : 1.1.2
-# Date     : 2026-10-12 (1.1.2: PYTHONPATH not inherited from modules; 1.1.1: PYTHONPATH for the dev/ helpers; 1.1.0: optional DN vs S3T3 arm)
+# Version  : 1.1.3
+# Date     : 2026-10-12 (1.1.3: body read in full before running; 1.1.2: PYTHONPATH not inherited from modules; 1.1.1: PYTHONPATH for the dev/ helpers; 1.1.0: optional DN vs S3T3 arm)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -45,6 +45,11 @@
 # ASCII-only.
 
 set -euo pipefail
+# The whole body is one { ... } block, read by bash completely before it runs,
+# so editing this file (git pull, git am) while a job is running cannot change
+# what the running job executes. Without this, bash reads the script
+# incrementally and an edit mid-run can silently end or derail the job.
+{
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 # repo modules (bigwig_to_qcat, compare_qcat, ...) for the dev/ helpers, also
@@ -201,3 +206,5 @@ Done. Outputs in $OUTDIR:
 Rebuild the workbook:  cd workflow && snakemake ... paper_tables  (or rerun all)
 Report recovery as a fraction of the TESTABLE BEARING bins, not the raw count.
 EOF
+exit 0
+}
