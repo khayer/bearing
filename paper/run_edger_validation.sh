@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : paper/run_edger_validation.sh
-# Version  : 1.1.0
-# Date     : 2026-10-12 (1.1.0: optional DN vs S3T3 arm)
+# Version  : 1.1.1
+# Date     : 2026-10-12 (1.1.1: PYTHONPATH for the dev/ helpers; 1.1.0: optional DN vs S3T3 arm)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -47,6 +47,9 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# repo modules (bigwig_to_qcat, compare_qcat, ...) for the dev/ helpers, also
+# when R calls them from inside the output directory
+export PYTHONPATH="$REPO:$REPO/dev${PYTHONPATH:+:$PYTHONPATH}"
 RESULTS="$REPO/workflow/results_prior1_n100"
 MANIFEST=""
 LIBRARY="reverse"

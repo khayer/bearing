@@ -33,9 +33,12 @@ Examples:
 ASCII only.
 """
 import argparse
+import os
 import sys
 
-from bigwig_to_qcat import (
+# bigwig_to_qcat.py lives at the repository root, one level up from dev/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from bigwig_to_qcat import (  # noqa: E402
     bins_for_chrom,
     load_blacklist,
     bins_overlapping_blacklist,
