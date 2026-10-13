@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------
+# File     : dev/region_match_ebko.py
+# Version  : 2026-10-13 (per-track columns mapped by position when named
+#            kl_<assay>, as in production stats.tsv)
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
 """
 region_match_ebko.py -- EbKO recombination-centre characterisation (canonical).
 
@@ -84,6 +91,16 @@ def main():
     if not keep:
         sys.exit("ERROR: no BEARING bins in %s:%d-%d" % (a.chrom, a.lo, a.hi))
     b = pd.concat(keep, ignore_index=True)
+    # stats.tsv labels the per-track columns kl_<assay name> when the categories
+    # JSON is found (production: kl_ATAC, "kl_RNAseq +", ...) and kl_1..kl_6
+    # otherwise. Map them to kl_1..kl_6 by position (panel order).
+    klcols = [c for c in b.columns if c.startswith("kl_")]
+    if "kl_1" not in klcols:
+        if len(klcols) < 6:
+            sys.exit("ERROR: expected 6 kl_* columns in %s, found %s" % (a.diff, klcols))
+        b = b.rename(columns={c: "kl_%d" % (i + 1) for i, c in enumerate(klcols[:6])})
+        print("per-track columns mapped by panel order: %s"
+              % ", ".join("%s->kl_%d" % (c, i + 1) for i, c in enumerate(klcols[:6])))
     b["start"] = b["start"].astype(int)
     b["bid"] = b["start"] // BIN
     print("RC BEARING bins:", len(b))
