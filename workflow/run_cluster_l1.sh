@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : workflow/run_cluster_l1.sh
-# Version  : 1.0.1
-# Date     : 2026-10-12 (1.0.1: clears an inherited PYTHONPATH)
+# Version  : 1.1.0
+# Date     : 2026-10-14 (1.1.0: --target; guard only blocks jobs writing into linked paths; 1.0.1: clears an inherited PYTHONPATH)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -39,6 +39,10 @@
 # USAGE (from the repository root)
 #   bash workflow/run_cluster_l1.sh --source results_prior1_n100 \
 #        --source-config workflow/config/config_prior1.generated.yaml [--dry]
+#   V1P (a targeted run): pass the source run's targets, with DEST paths:
+#   bash workflow/run_cluster_l1.sh --source results_v1p_prior1 \
+#        --source-config workflow/config/config_v1p_prior1.yaml \
+#        --target results_v1p_prior1_l1/pvalue.done ... [--dry]
 #   DEST defaults to <source>_l1. The source config must be the one the
 #   source run was built with (prior_strength 1, n_perms 100); it is checked.
 #
@@ -49,6 +53,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WF="$REPO/workflow"
 PROFILE="$WF/profiles/slurm"
 SRC=""; SRC_CONFIG=""; DEST=""; DRY=0; SMK=${SNAKEMAKE:-snakemake}
+TARGETS=()
 # A loaded environment module (e.g. R/4.4.0 pulls in an EasyBuild SciPy-bundle)
 # can put another Python's site-packages on PYTHONPATH; snakemake and the
 # pipeline scripts then import an incompatible pandas/numpy. The pipeline does
@@ -64,6 +69,7 @@ while [ $# -gt 0 ]; do
     --source-config) SRC_CONFIG="$2"; shift 2 ;;
     --dest) DEST="$2"; shift 2 ;;
     --dry) DRY=1; shift ;;
+    --target) TARGETS+=("$2"); shift 2 ;;
     -h|--help) sed -n 2,45p "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -132,14 +138,31 @@ for s in samples.bearing.tsv samples.qcat.tsv; do
   fi
 done
 
-echo; echo "== dry run (all)"
+# Targets: default `all`. A source run that was built with explicit targets
+# (e.g. V1P) has no upstream for the rest of `all`; pass the same targets with
+# --target (repeatable, paths relative to workflow/, results dir = DEST).
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(all)
+echo; echo "== dry run (${TARGETS[*]})"
 cd "$WF"
 DRYLOG="$DEST_ABS/l1_dryrun.log"
-"$SMK" -s "$WF/Snakefile" --configfile "$NEW_CONFIG" --rerun-triggers mtime -n all \
+"$SMK" -s "$WF/Snakefile" --configfile "$NEW_CONFIG" --rerun-triggers mtime -n "${TARGETS[@]}" \
   > "$DRYLOG" 2>&1 || { tail -30 "$DRYLOG"; echo "ERROR: dry run failed" >&2; exit 1; }
-# job table: lines "rule_name  count" between "Job stats:" and the total line
-BAD=$(awk '/^Job stats:/{f=1;next} f&&/^total/{f=0} f{print $1}' "$DRYLOG" \
-      | grep -E '^(score_sample|score|score_provenance|stamp_provenance|perm_sample_one|perm_null_one|perm_diff_one|perm_nulls|perm_nulls_diff|compare|compare_consensusq|detect_blacklist|merge_blacklist|bearing_sheet)$' || true)
+# job table: lines "rule_name  count" between "Job stats:" and the total line.
+# A rule is only dangerous when its output lives in a LINKED path (it would
+# write through the link into the source run); a rule whose output does not
+# exist in the source (nothing was linked) builds in DEST and is fine.
+JOBS=$(awk '/^Job stats:/{f=1;next} f&&/^total/{f=0} f{print $1}' "$DRYLOG")
+linked() { [ -L "$DEST_ABS/$1" ]; }
+BAD=""
+for r in $JOBS; do
+  case "$r" in
+    score_sample|score|score_provenance|stamp_provenance) linked score.done && BAD="$BAD $r" ;;
+    perm_sample_one|perm_null_one|perm_diff_one|perm_nulls|perm_nulls_diff) linked perm && BAD="$BAD $r" ;;
+    compare) linked compare && BAD="$BAD $r" ;;
+    compare_consensusq) linked consensusQ/compare && BAD="$BAD $r" ;;
+    detect_blacklist|merge_blacklist) linked blacklist && BAD="$BAD $r" ;;
+  esac
+done
 awk '/^Job stats:/{f=1} f{print "   " $0} f&&/^total/{exit}' "$DRYLOG"
 if [ -n "$BAD" ]; then
   echo "ERROR: the dry run would rebuild linked upstream products: $BAD" >&2
@@ -147,10 +170,10 @@ if [ -n "$BAD" ]; then
   echo "       Check why (e.g. a newer config sheet or categories file): $DRYLOG" >&2
   exit 1
 fi
-echo "   OK: no score / perm / compare jobs; full dry-run log: $DRYLOG"
+echo "   OK: no job writes into a linked upstream path; full dry-run log: $DRYLOG"
 [ "$DRY" = 1 ] && { echo; echo "Dry run only."; exit 0; }
 
-echo; echo "== submitting all -> $DEST"
+echo; echo "== submitting ${TARGETS[*]} -> $DEST"
 "$SMK" -s "$WF/Snakefile" --configfile "$NEW_CONFIG" --rerun-triggers mtime \
-  --profile "$PROFILE" all
+  --profile "$PROFILE" --keep-going "${TARGETS[@]}"
 echo; echo "Done -> workflow/$DEST (diff_stat l1). Compare with workflow/$SRC."
