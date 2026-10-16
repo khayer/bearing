@@ -71,3 +71,9 @@ def parse_named_region_item(item: str, arg_name: str = "region") -> Dict[str, st
         empty_msg=f"Invalid {arg_name} entry: {item}",
     )
     return {"name": name, "region": region}
+
+
+def missing_columns(fields: Iterable[str], required: Iterable[str]) -> List[str]:
+    """Return the ``required`` columns absent from ``fields``, in required order."""
+    present = set(fields)
+    return [c for c in required if c not in present]
