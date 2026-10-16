@@ -8,5 +8,5 @@
 #   label     human-readable label for plots
 
 name	region	resolution	label
-rag	chr2:50700000-50950000	10000	Rag locus
+rag	chr2:101541504-101723921	10000	Rag1 and Rag2
 hoxd	chr2:74500000-75200000	10000	Hoxd cluster

@@ -373,3 +373,14 @@ class TestHicIO:
 def test_package_exports():
     for name in bearing.__all__:
         assert callable(getattr(bearing, name))
+
+
+def test_null_min_bytes_default_and_env(monkeypatch):
+    import bearing_pvalue
+    monkeypatch.delenv("BEARING_NULL_MIN_BYTES", raising=False)
+    assert bearing_pvalue._default_null_min_bytes() == 1_000_000
+    monkeypatch.setenv("BEARING_NULL_MIN_BYTES", "0")
+    assert bearing_pvalue._default_null_min_bytes() == 0
+    monkeypatch.setenv("BEARING_NULL_MIN_BYTES", "abc")
+    with pytest.raises(SystemExit, match="must be an integer"):
+        bearing_pvalue._default_null_min_bytes()

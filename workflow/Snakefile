@@ -335,6 +335,13 @@ DIFF_STAT_FLAG = "--diff-stat %s" % DIFF_STAT
 # bearing_pvalue.py picks it from --score-method (0.5 KL, 0.05 JSD).
 _PV_MINSIG = config.get("pvalue_min_signal", None)
 _PV_MINSIG_FLAG = ("--min-signal %s" % _PV_MINSIG) if _PV_MINSIG is not None else ""
+# Optional override for bearing_pvalue.py's truncated-null size gate (default
+# 1e6 bytes, sized for genome-wide qcats). Exported as BEARING_NULL_MIN_BYTES so
+# every p-value call (rules and the slurm/ wrapper scripts) inherits it. Only
+# the small simulated test run (workflow/test/) needs this; leave unset for
+# real data.
+if config.get("pvalue_null_min_bytes", None) is not None:
+    os.environ["BEARING_NULL_MIN_BYTES"] = str(int(config["pvalue_null_min_bytes"]))
 
 # Opt-in adaptive (variable-width) binning. When on, a single consensus
 # segmentation BED is built once and every sample + the permutation null are

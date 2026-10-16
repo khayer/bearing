@@ -637,6 +637,21 @@ def plot_score_distribution(scores_arr, out_path, sample_name="",
 # Main
 # ---------------------------------------------------------------------------
 
+
+NULL_MIN_BYTES_DEFAULT = 1_000_000
+
+
+def _default_null_min_bytes():
+    """Default for --null-min-bytes: $BEARING_NULL_MIN_BYTES if set, else 1e6."""
+    raw = os.environ.get("BEARING_NULL_MIN_BYTES", "").strip()
+    if not raw:
+        return NULL_MIN_BYTES_DEFAULT
+    try:
+        return int(raw)
+    except ValueError:
+        sys.exit("ERROR: BEARING_NULL_MIN_BYTES must be an integer, got %r" % raw)
+
+
 def main():
     ap = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -697,10 +712,14 @@ def main():
                          "Guards against a partial/incomplete permutation set "
                          "silently producing p-values (the failure that wrote "
                          "stale, degenerate stats). Set to the run's n_perms.")
-    ap.add_argument("--null-min-bytes", type=int, default=1_000_000, metavar="B",
+    ap.add_argument("--null-min-bytes", type=int, default=_default_null_min_bytes(),
+                    metavar="B",
                     help="Minimum plausible size (bytes) for each --null-qcat "
                          "file; smaller is treated as truncated/empty and aborts "
-                         "BEFORE loading. Default 1e6 (healthy qcats are >100 MB).")
+                         "BEFORE loading. Default 1e6 (healthy genome-wide qcats "
+                         "are >100 MB), or $BEARING_NULL_MIN_BYTES if set (the "
+                         "workflow sets it from config pvalue_null_min_bytes, "
+                         "e.g. 0 for the small simulated test run).")
     ap.add_argument("--per-track-pvals", action="store_true",
                     help=(
                         "In addition to the overall p-value, compute a separate p-value for "
