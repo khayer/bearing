@@ -4,17 +4,32 @@ from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Tuple
 
 
+def _split_key_value(item: str, missing_sep_msg: str, empty_msg: str) -> Tuple[str, str]:
+    """Split ``KEY=VALUE`` on the first '=', stripping both sides.
+
+    Raises ValueError with ``missing_sep_msg`` when there is no '=' and with
+    ``empty_msg`` when either side is empty after stripping.
+    """
+    if "=" not in item:
+        raise ValueError(missing_sep_msg)
+    key, value = (part.strip() for part in item.split("=", 1))
+    if not key or not value:
+        raise ValueError(empty_msg)
+    return key, value
+
+
 def parse_key_value_items(items: List[str], arg_name: str) -> Dict[str, str]:
-    """Parse repeatable CLI items of form KEY=VALUE into a dictionary."""
+    """Parse repeatable CLI items of form KEY=VALUE into a dictionary.
+
+    Later duplicates of a key overwrite earlier ones.
+    """
     out: Dict[str, str] = {}
     for item in items:
-        if "=" not in item:
-            raise ValueError(f"{arg_name} expects CONDITION=VALUE, got: {item}")
-        key, value = item.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key or not value:
-            raise ValueError(f"Invalid {arg_name} item: {item}")
+        key, value = _split_key_value(
+            item,
+            missing_sep_msg=f"{arg_name} expects CONDITION=VALUE, got: {item}",
+            empty_msg=f"Invalid {arg_name} item: {item}",
+        )
         out[key] = value
     return out
 
@@ -50,11 +65,9 @@ def parse_ucsc_region(region_str: str) -> Tuple[str, int, int]:
 
 def parse_named_region_item(item: str, arg_name: str = "region") -> Dict[str, str]:
     """Parse a CLI item in NAME=chr:start-end format."""
-    if "=" not in item:
-        raise ValueError(f"{arg_name} must be NAME=chr:start-end, got: {item}")
-    name, region = item.split("=", 1)
-    name = name.strip()
-    region = region.strip()
-    if not name or not region:
-        raise ValueError(f"Invalid {arg_name} entry: {item}")
+    name, region = _split_key_value(
+        item,
+        missing_sep_msg=f"{arg_name} must be NAME=chr:start-end, got: {item}",
+        empty_msg=f"Invalid {arg_name} entry: {item}",
+    )
     return {"name": name, "region": region}
