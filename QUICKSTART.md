@@ -10,7 +10,7 @@ integration (`.github/workflows/test.yml`).
 ```bash
 git clone https://github.com/khayer/bearing.git
 cd bearing
-pip install -e . pytest        # core scientific stack + entry points
+pip install -e ".[test]"      # core stack + entry points + pytest/h5py
 ```
 
 For the Hi-C figure scripts and the full workflow you need the conda
@@ -26,9 +26,9 @@ conda activate bearing        # includes pytest; `pytest -q` works immediately
 
 ```bash
 pytest -q
-# expected: 228 passed
-# (with a plain pip install: 227 passed, 1 skipped -- the .mcool loader test
-#  needs h5py, which comes with the optional Hi-C extra: pip install -e ".[hic]")
+# expected: 228 passed  (conda env or pip install -e ".[test]")
+# a bare `pip install -e .` gives 227 passed, 1 skipped: the .mcool loader
+# test needs h5py
 ```
 
 The core-library tests (`tests/test_core_characterization.py`) run on the tiny
@@ -65,8 +65,58 @@ zcat sim.qcat.bgz | head -2
 # each line: chrSim  start  end  id:N,qcat:[[score,track], ...]
 ```
 
-That is the full core loop: **simulate -> score -> inspect**. Everything else
-in the repository builds on the qcat files produced in step 4.
+## 6. Plot the scores against the planted blocks
+
+```bash
+python benchmark/visualize_bearing_tracks.py --prefix sim --qcat sim.qcat.bgz \
+  --out sim_tracks.png
+```
+
+`sim_tracks.png` should look like this (seed 1):
+
+![Expected sim_tracks.png](docs/img/quickstart_sim_tracks.png)
+
+Check for:
+
+- **Left (whole chromosome):** the grey stripes are the planted blocks. The
+  **BEARING score** row peaks inside them and stays flat everywhere else.
+- **Middle (`architecture` block):** the score rises over the block, and the
+  **per-track score** there is mostly RAD21 (dark red) plus CTCF (red).
+- **Right (`transcription` block):** the per-track score is almost all RNA+
+  (light blue).
+
+## 7. (Optional) Check recovery against the ground truth (~20 s)
+
+```bash
+python benchmark/evaluate_bearing_recovery.py --truth sim_truth.tsv \
+  --bw sim_atac.bw sim_rnaplus.bw sim_rnaminus.bw sim_ctcf.bw sim_rad21.bw sim_h3k27ac.bw \
+  --chrom-sizes sim.chrom.sizes --scorer bigwig_to_qcat.py --outdir eval \
+  --min-signal-grid 0.01,0.1 --epsilon-grid 1e-6
+cat eval/recovery_summary.txt
+```
+
+Expected headline numbers in `eval/recovery_summary.txt`:
+
+```text
+PER-BLOCK mean vs EXPECTED (headline): Pearson=0.872 Spearman=0.766 slope=0.881 n=60
+Panel d (null behavior): ... null fraction above threshold=0.050, planted fraction above threshold=0.724
+```
+
+`eval/fig_a_recovered_vs_planted.png`: recovered vs planted proportions
+should follow the diagonal.
+
+![Expected recovery plot](docs/img/quickstart_recovery.png)
+
+`eval/fig_d_null_vs_planted.png`: about 5% of null bins pass the null p95
+threshold (the nominal rate), compared with about 70% of planted bins.
+
+![Expected null-vs-planted plot](docs/img/quickstart_null_vs_planted.png)
+
+If your plots match, the install works end to end:
+**simulate -> score -> plot -> evaluate**. Everything else in the repository
+builds on the qcat files from step 4. Small numeric differences across
+platforms or library versions are fine; flat scores, or peaks outside the
+planted blocks, mean something is wrong.
 
 ---
 
