@@ -22,12 +22,17 @@ conda env create -f environment.yml
 conda activate bearing        # includes pytest; `pytest -q` works immediately
 ```
 
-## 2. Run the test suite (~6 s)
+## 2. Run the test suite (~15 s)
 
 ```bash
 pytest -q
-# expected: 62 passed
+# expected: 228 passed
+# (with a plain pip install: 227 passed, 1 skipped -- the .mcool loader test
+#  needs h5py, which comes with the optional Hi-C extra: pip install -e ".[hic]")
 ```
+
+The core-library tests (`tests/test_core_characterization.py`) run on the tiny
+simulated fixtures in `tests/data/` (see its README); no real data is needed.
 
 ## 3. Simulate a tiny chromosome with known ground truth
 

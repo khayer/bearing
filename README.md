@@ -156,7 +156,7 @@ annotations/             region BEDs (Tcrb, Igh, feature sets)
 paper/                   figure -> code reproducibility map
 docs/                    scoring method, statistics/significance, roadmap, run notes
 slurm/                   HPC submission scripts
-tests/                   unit + integration tests
+tests/                   unit + integration tests (tests/data/: small simulated fixtures)
 bearing/                 shared library modules
 ```
 
