@@ -1,106 +1,129 @@
 from __future__ import annotations
 
+import importlib
 import sys
 
 import numpy as np
 
 from .plot_loaders import detect_hic_format
 
+# Normalizations tried for .hic files, in order of preference.
+HIC_NORM_ORDER = ("KR", "SCALE", "VC_SQRT", "NONE")
 
-def load_hic_matrix(hic_path, chrom, start, end, resolution):
-    """Load a Hi-C contact matrix from a .hic file using hicstraw."""
+
+def _import_or_exit(module_name, file_kind):
+    """Import an optional dependency or exit with an install hint."""
     try:
-        import hicstraw
+        return importlib.import_module(module_name)
     except ImportError:
         sys.exit(
-            "ERROR: hicstraw is required for .hic files.\n"
-            "Install with:  pip install hicstraw"
+            f"ERROR: {module_name} is required for {file_kind} files.\n"
+            f"Install with:  pip install {module_name}"
         )
 
-    hic = hicstraw.HiCFile(str(hic_path))
-    available = hic.getResolutions()
-    if resolution not in available:
-        closest = min(available, key=lambda r: abs(r - resolution))
-        print(f"  WARNING: resolution {resolution} not in .hic file. Using {closest} instead.")
-        resolution = closest
 
-    norm_order = ["KR", "SCALE", "VC_SQRT", "NONE"]
-    result = None
-    used_norm = None
+def _closest_resolution(available, resolution):
+    return min(available, key=lambda r: abs(r - resolution))
+
+
+def _log_contacts(mat):
+    """Replace NaNs with 0 and return log1p(counts) as float64."""
+    mat = np.where(np.isnan(mat), 0.0, mat).astype(np.float64)
+    return np.log1p(mat)
+
+
+def _hic_zoom_data(hic, chrom, start, resolution):
+    """Return (zoom_data, norm) for the first normalization that yields records.
+
+    Each candidate is probed with a single-bin query at ``start`` because
+    missing normalization vectors only raise once records are requested.
+    Returns (None, None) when no normalization works.
+    """
     chrom_str = chrom.replace("chr", "")
-    for norm in norm_order:
+    for norm in HIC_NORM_ORDER:
         try:
             candidate = hic.getMatrixZoomData(
                 chrom_str, chrom_str, "observed", norm, "BP", resolution,
             )
             candidate.getRecords(start, start + resolution, start, start + resolution)
-            result = candidate
-            used_norm = norm
-            break
+            return candidate, norm
         except Exception:
             continue
+    return None, None
 
-    if result is None:
+
+def load_hic_matrix(hic_path, chrom, start, end, resolution):
+    """Load a Hi-C contact matrix from a .hic file using hicstraw."""
+    hicstraw = _import_or_exit("hicstraw", ".hic")
+
+    hic = hicstraw.HiCFile(str(hic_path))
+    available = hic.getResolutions()
+    if resolution not in available:
+        closest = _closest_resolution(available, resolution)
+        print(f"  WARNING: resolution {resolution} not in .hic file. Using {closest} instead.")
+        resolution = closest
+
+    zoom_data, used_norm = _hic_zoom_data(hic, chrom, start, resolution)
+    if zoom_data is None:
         sys.exit(
             f"ERROR: Could not load Hi-C matrix for {chrom} at {resolution} bp with any normalization. "
             f"Check that this resolution exists in the .hic file."
         )
-
     if used_norm != "KR":
         print(f"  NOTE: KR normalization not available for {chrom} at {resolution} bp -- using {used_norm} instead.")
 
-    records = result.getRecords(start, end, start, end)
     n_bins = (end - start) // resolution + 1
     mat = np.zeros((n_bins, n_bins), dtype=np.float64)
-
-    for rec in records:
+    for rec in zoom_data.getRecords(start, end, start, end):
         i = (rec.binX - start) // resolution
         j = (rec.binY - start) // resolution
         if 0 <= i < n_bins and 0 <= j < n_bins:
-            mat[i, j] = rec.counts
-            mat[j, i] = rec.counts
+            mat[i, j] = mat[j, i] = rec.counts
 
-    mat = np.where(np.isnan(mat), 0.0, mat)
-    mat = np.log1p(mat)
-    return mat, int(resolution)
+    return _log_contacts(mat), int(resolution)
+
+
+def _mcool_resolutions(cool_path):
+    """List resolutions stored in an .mcool, or [] if it cannot be read."""
+    try:
+        import h5py
+        with h5py.File(cool_path, "r") as f:
+            return sorted(int(r) for r in f.get("resolutions", {}).keys())
+    except Exception:
+        return []
+
+
+def _open_mcool(cooler, cool_path, resolution):
+    """Open an .mcool at ``resolution``, falling back to the closest stored one.
+
+    Returns (Cooler, used_resolution); exits when nothing can be opened.
+    """
+    try:
+        return cooler.Cooler(f"{cool_path}::/resolutions/{resolution}"), int(resolution)
+    except Exception:
+        pass
+    available = _mcool_resolutions(cool_path)
+    if not available:
+        sys.exit(
+            f"ERROR: Could not open {cool_path} at resolution {resolution}. "
+            f"Run 'cooler ls {cool_path}' to check available resolutions."
+        )
+    closest = _closest_resolution(available, resolution)
+    print(f"  WARNING: resolution {resolution} not in .mcool. Using {closest} instead.")
+    return cooler.Cooler(f"{cool_path}::/resolutions/{closest}"), int(closest)
 
 
 def load_cool_matrix(cool_path, chrom, start, end, resolution):
     """Load a Hi-C contact matrix from a .cool/.mcool file using cooler."""
-    try:
-        import cooler
-    except ImportError:
-        sys.exit(
-            "ERROR: cooler is required for .cool/.mcool files.\n"
-            "Install with:  pip install cooler"
-        )
+    cooler = _import_or_exit("cooler", ".cool/.mcool")
 
     cool_path = str(cool_path)
-    used_resolution = int(resolution)
     if cool_path.endswith(".mcool"):
-        try:
-            clr = cooler.Cooler(cool_path + "::/resolutions/" + str(resolution))
-        except Exception:
-            try:
-                import h5py
-                with h5py.File(cool_path, "r") as f:
-                    available = sorted(int(r) for r in f.get("resolutions", {}).keys())
-            except Exception:
-                available = []
-            if available:
-                closest = min(available, key=lambda r: abs(r - resolution))
-                print(f"  WARNING: resolution {resolution} not in .mcool. Using {closest} instead.")
-                used_resolution = int(closest)
-                clr = cooler.Cooler(cool_path + "::/resolutions/" + str(closest))
-            else:
-                sys.exit(
-                    f"ERROR: Could not open {cool_path} at resolution {resolution}. "
-                    f"Run 'cooler ls {cool_path}' to check available resolutions."
-                )
+        clr, used_resolution = _open_mcool(cooler, cool_path, resolution)
     else:
         clr = cooler.Cooler(cool_path)
-        if getattr(clr, "binsize", None) is not None:
-            used_resolution = int(clr.binsize)
+        binsize = getattr(clr, "binsize", None)
+        used_resolution = int(binsize) if binsize is not None else int(resolution)
 
     region_str = f"{chrom}:{start}-{end}"
     try:
@@ -109,9 +132,7 @@ def load_cool_matrix(cool_path, chrom, start, end, resolution):
         print("  NOTE: ICE balancing weights not found, using raw counts.")
         mat = clr.matrix(balance=False).fetch(region_str)
 
-    mat = np.where(np.isnan(mat), 0.0, mat).astype(np.float64)
-    mat = np.log1p(mat)
-    return mat, used_resolution
+    return _log_contacts(mat), used_resolution
 
 
 def load_contact_matrix(path, chrom, start, end, resolution, fmt=None):
