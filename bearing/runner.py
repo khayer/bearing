@@ -7,51 +7,54 @@ from typing import List, Sequence, Tuple
 
 
 def format_command(cmd: Sequence[str]) -> str:
+    """Render ``cmd`` as a shell-safe, copy-pasteable string."""
     return " ".join(shlex.quote(str(part)) for part in cmd)
 
 
 def emit_command(cmd: Sequence[str], label: str = "") -> None:
+    """Print an optional ``[label]`` header followed by the indented command."""
     if label:
         print(f"[{label}]")
     print(f"  $ {format_command(cmd)}")
 
 
-def execute_command(cmd: Sequence[str], run: bool, label: str = "") -> int:
-    emit_command(cmd, label=label)
-    if not run:
-        return 0
+def _run(cmd: Sequence[str]) -> int:
     return subprocess.run(list(cmd)).returncode
 
 
+def execute_command(cmd: Sequence[str], run: bool, label: str = "") -> int:
+    """Print ``cmd`` and, if ``run``, execute it. Returns its exit code (0 on dry run)."""
+    emit_command(cmd, label=label)
+    return _run(cmd) if run else 0
+
+
 def execute_commands(commands: List[Sequence[str]], run: bool, threads: int = 1) -> Tuple[int, int]:
-    """Execute command list. Returns (total, failures)."""
+    """Execute command list. Returns (total, failures).
+
+    With ``run=False`` commands are only printed. With ``threads > 1`` all
+    commands are announced as queued, then run concurrently.
+    """
     total = len(commands)
     if not run:
         for cmd in commands:
             emit_command(cmd)
         return total, 0
 
+    status = "running" if threads <= 1 else "queued"
+
+    def announce(i: int, cmd: Sequence[str]) -> None:
+        print(f"[{i}/{total}] {status}")
+        emit_command(cmd)
+
     if threads <= 1:
-        failures = 0
+        return_codes = []
         for i, cmd in enumerate(commands, start=1):
-            print(f"[{i}/{total}] running")
-            print(f"  $ {format_command(cmd)}")
-            rc = subprocess.run(list(cmd)).returncode
-            if rc != 0:
-                failures += 1
-        return total, failures
+            announce(i, cmd)
+            return_codes.append(_run(cmd))
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as ex:
+            for i, cmd in enumerate(commands, start=1):
+                announce(i, cmd)
+            return_codes = list(ex.map(_run, commands))
 
-    def _run_one(cmd: Sequence[str]) -> int:
-        return subprocess.run(list(cmd)).returncode
-
-    failures = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as ex:
-        for i, cmd in enumerate(commands, start=1):
-            print(f"[{i}/{total}] queued")
-            print(f"  $ {format_command(cmd)}")
-        futures = [ex.submit(_run_one, c) for c in commands]
-        for fut in concurrent.futures.as_completed(futures):
-            rc = fut.result()
-            if rc != 0:
-                failures += 1
-    return total, failures
+    return total, sum(1 for rc in return_codes if rc != 0)
