@@ -12,9 +12,9 @@ per-track decompositions, p-value overlays, and gene annotations. It requires
 no pre-trained chromatin-state model and no replicates (significance comes from
 an empirical permutation null).
 
-> **New here?** See [`QUICKSTART.md`](QUICKSTART.md) for a 5-minute, no-data
-> path that installs, runs the tests, and scores a simulated chromosome end to
-> end -- the same path exercised by CI.
+> **New here?** [`QUICKSTART.md`](QUICKSTART.md) is a 5-minute, no-data check
+> of a local install: run the tests, score a simulated chromosome, and compare
+> your plots with the reference images there. CI runs the same path.
 
 ## Install
 
@@ -32,9 +32,8 @@ apptainer build bearing.sif Apptainer.def
 
 `pip install -e .` exposes console entry points: `bearing-score`,
 `bearing-compare`, `bearing-pvalue`, `bearing-regional`, `bearing-perm`,
-`bearing-shift`, `bearing-rebin`. Add the test tools with
-`pip install -e ".[test]"` (the conda environment already includes `pytest`),
-then run the suite with `pytest -q`.
+`bearing-shift`, `bearing-rebin`. For tests, use `pip install -e ".[test]"`
+(the conda environment already has everything) and run `pytest -q`.
 
 ## Run the pipeline
 
@@ -54,23 +53,20 @@ Two scripts expose a flag named `--min-signal`, with **different meanings and
 different defaults**. They are intentionally not renamed (renaming would break
 the CLI); know which is which:
 
-- `bigwig_to_qcat.py --min-signal` is a per-sample **raw-signal** floor
-  (default `0.01`; the workflow sets `min_signal: 0.1`). It gates scoring.
-- `bearing_pvalue.py --min-signal` is a **|score|** floor on the differential
-  (default `0.5` for KL scores, `0.05` for JSD). Bins below it are not tested.
+| Flag | Meaning | Default | Workflow config key |
+|---|---|---|---|
+| `bigwig_to_qcat.py --min-signal` | per-sample **raw-signal** floor; gates scoring | `0.01` | `min_signal` (set to `0.1`) |
+| `bearing_pvalue.py --min-signal` | **\|score\|** floor on the differential; lower bins are not tested | `0.5` (KL), `0.05` (JSD) | `pvalue_min_signal` |
 
-In the workflow these are two separate config keys: `min_signal` (raw-signal,
-scoring) and `pvalue_min_signal` (differential score floor, p-value stage). The
-latter is set explicitly (`0.5` for the KL configs, `0.05` for the JSD config)
-so the historical implicit default is recorded and stays reproducible if the
-library default ever changes.
+The workflow sets `pvalue_min_signal` explicitly so results stay reproducible
+even if the library default changes.
 
 ### Composition prior for weak bins
 
 The score stage also supports an optional composition prior via
 `bigwig_to_qcat.py --prior-strength` / `config prior_strength`. The default is
 `0.0` (off, identical to the legacy scoring path). When `prior_strength > 0`,
- each bin is shrunk toward the background composition `Q` before scoring:
+each bin is shrunk toward the background composition `Q` before scoring:
 
 ```text
 P = (x + alpha * Q) / (sum(x) + alpha)
@@ -78,18 +74,11 @@ P = (x + alpha * Q) / (sum(x) + alpha)
 
 This smooths the hard cliff created by the raw-signal floor for barely-detectable
 bins while preserving bins with real signal; it is intended for sensitivity
-scans rather than the default production run. The workflow checks this setting via
-`score_provenance` and the permutation workflows pass it through to the null
-scoring so the observed and null score scales stay aligned.
+scans rather than the default production run. The workflow records the setting
+via `score_provenance` and passes it to the permutation-null scoring, so
+observed and null scores stay on the same scale.
 
-Example config:
-
-```yaml
-min_signal: 0.1
-prior_strength: 1.0
-```
-
-Example command:
+Set it in the config (`prior_strength: 1.0`) or on the command line:
 
 ```bash
 python bigwig_to_qcat.py \
@@ -106,9 +95,8 @@ A dedicated workflow helper is included for a focused prior sweep:
 bash workflow/run_cluster_prior.sh --alpha 1 --n-perms 10
 ```
 
-This generates a derived config under `workflow/config/` and reruns the default
-p-value path with the composition prior on, keeping the observed and permutation
-scores in lockstep.
+This writes a derived config under `workflow/config/` and reruns the default
+p-value path with the prior on.
 
 ## Plotting entry points
 
@@ -137,10 +125,8 @@ bearing_calibration.py   within-condition replicate-differential FDR calibration
 diffuse_architecture_top1pct.py   per-track diffuse-vs-focal quantification
 bes_hic_correlation.py         within-locus BES-Hi-C co-localization
 
-bearing_hic_combined_plot.py      two-condition figure (entry point)
-bearing_hic_plot.py / *_pval_overlay.py / *_triangle.py / bearing_hic_kl_track_plot.py
-bearing_kl_track_plot.py          focal-locus per-track tracks
-batch_bearing_hic_plots.py / batch_pygenometracks.py
+bearing_hic_*_plot.py, bearing_kl_track_plot.py, batch_*.py
+                         figure scripts (see "Plotting entry points" above)
 
 convert_categories.py    convert a JSON/YAML categories file to the standard categories YAML
 fetch_geo_bigwigs.py     fetch processed bigWigs from a GEO series into a BEARING-ready
@@ -149,7 +135,7 @@ fetch_geo_bigwigs.py     fetch processed bigWigs from a GEO series into a BEARIN
 hic/                     Hi-C analysis (Figs 3, 4, S7)
   tad_extension_analysis.py, tcrb_contact_isolation.py, compartment_analysis.py,
   bes_hic_crosslocus.py, define_wide_loci.py, per_locus_summary.py, top_diff_sites.py
-benchmark/               SYNTHETIC-DATA recovery benchmark (simulated, see its README)
+benchmark/               synthetic-data recovery benchmark (see Validation)
 workflow/                Snakemake pipeline + config
 categories/              track-panel definitions (mm10_6track_panel.yaml is canonical)
 annotations/             region BEDs (Tcrb, Igh, feature sets)
