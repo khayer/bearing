@@ -1,0 +1,13 @@
+# simulated features
+track name=sim
+chrSim	bad	10
+chrSim	100	200
+chrSim	300	450	geneA
+chrSim	500	650	geneB	7	+
+chrSim	700	900	enh1	0	-	700	900	255,0,0
+chrSim	950	1000	enh2	0	.	950	1000	65280
+chrSim	1100	1200	badrgb	0	+	1100	1200	1,2
+chrSim	1300	1400	junkrgb	0	+	1300	1400	abc
+chrSim	5000	6000	far
+chrOther	100	200	other
+short	1
