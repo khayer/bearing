@@ -1,0 +1,4 @@
+name	region
+# skip
+locusA	chrSim:1,000-2,000
+locusB	chrSim:5000-9000

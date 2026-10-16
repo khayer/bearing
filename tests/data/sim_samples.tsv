@@ -1,0 +1,5 @@
+# simulated sample sheet
+Sample	Condition	BW1	BW2	bw3
+S1	WT	 s1_atac.bw 		s1_ctcf.bw
+
+S2	KO	s2_atac.bw	s2_rna.bw	
