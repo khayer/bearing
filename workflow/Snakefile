@@ -58,6 +58,12 @@ _sheet = pd.read_csv(SHEET, sep="\t", dtype=str,
                      comment="#").fillna("")
 BEARING_ROWS = _sheet[_sheet["bw"].str.strip() != ""]
 SAMPLES = BEARING_ROWS["sample"].tolist()
+# Track-name/colour JSON written next to each scored sample; any sample's copy
+# works because all samples share one categories panel. Historically hard-coded
+# to DN_rep1 (kept as the default when present, so manuscript runs are
+# unchanged); otherwise the first sample, or config cats_json to override.
+_CATS_SAMPLE = "DN_rep1" if "DN_rep1" in SAMPLES else SAMPLES[0]
+CATS_JSON = config.get("cats_json") or os.path.join(OUT, "%s_cats.json" % _CATS_SAMPLE)
 QCATS = [r["out"] for _, r in BEARING_ROWS.iterrows()]
 
 # data_dir: what the sheet's relative bw paths resolve against (default cwd).
@@ -100,9 +106,14 @@ REGIONAL_LOCUS_RE = "|".join(REGIONAL_LOCI.keys())
 REGIONAL_CMP_RE = "|".join(COMPARISONS)
 
 # ---- element-class variables ----------------------------------------------
-ELEMENT_CLASS_DIR = os.path.join(BIN, "annotations/tcrb_element_classes")
-ELEMENT_CLASSES = ["CBE", "promoter", "RSS", "Vbeta_functional",
-                   "Vbeta_pseudogene", "lncRNA", "DJC_recomb_center"]
+# Defaults are the Tcrb element classes used in the manuscript; override with
+# config element_class_dir (a directory of <class>.bed files) and
+# element_classes (the list of class names) for other loci or genomes.
+ELEMENT_CLASS_DIR = os.path.join(
+    BIN, config.get("element_class_dir", "annotations/tcrb_element_classes"))
+ELEMENT_CLASSES = config.get("element_classes",
+                             ["CBE", "promoter", "RSS", "Vbeta_functional",
+                              "Vbeta_pseudogene", "lncRNA", "DJC_recomb_center"])
 ELEMENT_CLASS_WINDOW = config.get("element_class_window", "chr6:40500000-41800000")
 ELEMENT_CLASS_RE = "|".join(ELEMENT_CLASSES)
 
@@ -756,7 +767,7 @@ rule cbe_point_query:
     shell:
         "python {BIN}/cbe_point_query.py --diffs {params.diffs} "
         "--cbe-bed {BIN}/annotations/cbe_mm10.bed "
-        "--categories {OUT}/DN_rep1_cats.json --out {output.tsv} "
+        "--categories {CATS_JSON} --out {output.tsv} "
         "--summary-out {output.summary}"
 
 # Per-track differential changes (signed kl_<track> + p-values) at known CTCF
@@ -772,7 +783,7 @@ rule feature_changes_cbe:
     shell:
         "python {BIN}/feature_track_changes.py "
         "--features {BIN}/annotations/cbe_mm10.bed --diffs {params.diffs} "
-        "--categories {OUT}/DN_rep1_cats.json --mode point --out {output}"
+        "--categories {CATS_JSON} --mode point --out {output}"
 
 rule feature_changes_agr:
     input: pvalue=out("pvalue.done")
@@ -784,7 +795,7 @@ rule feature_changes_agr:
     shell:
         "python {BIN}/feature_track_changes.py "
         "--features {BIN}/annotations/AgRgenes_mm10_s.bed --diffs {params.diffs} "
-        "--categories {OUT}/DN_rep1_cats.json --mode region --out {output}"
+        "--categories {CATS_JSON} --mode region --out {output}"
 
 # Per-region, per-comparison FDR-significant bin counts from the differential
 # p-value tables (diff_<cmp>.stats.tsv). Stands alone from the (parallelized)
@@ -825,7 +836,7 @@ rule bes_loop_anchor:
     shell:
         "python {BIN}/bes_loop_anchor_enrichment.py "
         "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
-        "--loops {params.loops} --categories {OUT}/DN_rep1_cats.json --out {output}"
+        "--loops {params.loops} --categories {CATS_JSON} --out {output}"
 
 rule bes_differential_loops:
     input: pvalue=out("pvalue.done")
@@ -839,7 +850,7 @@ rule bes_differential_loops:
         "python {BIN}/bes_differential_loops.py "
         "--loops-a {params.loops_a} --loops-b {params.loops_b} "
         "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
-        "--categories {OUT}/DN_rep1_cats.json --out {output}"
+        "--categories {CATS_JSON} --out {output}"
 
 # Locus-scoped versions (default = Tcrb window via config 'loops_locus'). The
 # genome-wide versions are dominated by the noise floor; these re-ask the
@@ -855,7 +866,7 @@ rule bes_loop_anchor_locus:
     shell:
         "python {BIN}/bes_loop_anchor_enrichment.py "
         "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
-        "--loops {params.loops} --categories {OUT}/DN_rep1_cats.json "
+        "--loops {params.loops} --categories {CATS_JSON} "
         "--locus %s --out {output}" % LOOPS_LOCUS
 
 rule bes_differential_loops_locus:
@@ -869,7 +880,7 @@ rule bes_differential_loops_locus:
         "python {BIN}/bes_differential_loops.py "
         "--loops-a {params.loops_a} --loops-b {params.loops_b} "
         "--diff {OUT}/pvalue/diff_{wildcards.cmp}.stats.tsv "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--locus %s --out {output}" % LOOPS_LOCUS
 
 rule loops_topology:
@@ -907,7 +918,7 @@ rule bearing_hic_triangle_one:
         "--resolution {params.res} --rgb-hic --rgb-palette red-green "
         "--no-loops-on-triangle "
         "--regions-file {input.regions} --gtf {GTF} "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--bed {AGR} --bed {CBE} "
         "--label-a {REF} --label-b {params.cond} "
         "--outdir {params.subdir}; "
@@ -970,7 +981,7 @@ rule bearing_hic_combined_one:
         "{params.loops_a} {params.loops_b} {params.style} "
         "--show-hic A,B,diff --resolution {params.res} "
         "--regions-file {input.regions} --gtf {GTF} "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--bed {AGR} --bed {CBE} "
         "--label-a {REF} --label-b {params.cond} "
         "--outdir {params.subdir}; "
@@ -1257,7 +1268,7 @@ rule decomposition_report:
     resources: mem_mb=64000, runtime=240
     shell:
         "python {BIN}/bearing_decomposition_report.py --diff-dir {OUT}/pvalue "
-        "--categories {OUT}/DN_rep1_cats.json --out {OUT}/cross_comparison --top-n 500"
+        "--categories {CATS_JSON} --out {OUT}/cross_comparison --top-n 500"
 
 rule benchmark:
     output: done=touch(out("benchmark", "recovery.done"))
@@ -1440,7 +1451,7 @@ rule fig6b_igh_decomp:
     shell:
         "python {BIN}/bearing_region_decomposition.py "
         "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/igh_regions_v4.bed "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--filename-pattern 'diff_*.stats.tsv' "
         "--out {params.prefix}"
 
@@ -1454,7 +1465,7 @@ rule tcrb_domain_decomp:
     shell:
         "python {BIN}/bearing_region_decomposition.py "
         "--diff-dir {OUT}/pvalue --regions {BIN}/annotations/tcrb_domain.bed "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--filename-pattern 'diff_%s_vs_*.stats.tsv' "
         "--out {params.prefix}" % REF
 
@@ -1499,7 +1510,7 @@ rule crosslocus_ebko_survey_consensusq:
         "python {BIN}/bearing_region_decomposition.py "
         "--diff-dir {OUT}/consensusQ/pvalue "
         "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--filename-pattern 'diff_DN_vs_EbKO.stats.tsv' "
         "--out {params.prefix}; "
         "python {BIN}/crosslocus_fdr_counts.py "
@@ -1525,7 +1536,7 @@ rule crosslocus_ebko_survey:
         "python {BIN}/bearing_region_decomposition.py "
         "--diff-dir {OUT}/pvalue "
         "--regions {BIN}/annotations/crosslocus_ebko_survey.bed "
-        "--categories {OUT}/DN_rep1_cats.json "
+        "--categories {CATS_JSON} "
         "--filename-pattern 'diff_DN_vs_EbKO.stats.tsv' "
         "--out {params.prefix}; "
         "python {BIN}/crosslocus_fdr_counts.py "

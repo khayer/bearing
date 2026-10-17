@@ -131,7 +131,17 @@ appear. This exercises the actual scripts and the data flow between them; it
 does NOT reproduce biology. Use it after any code change to confirm the core
 path still runs.
 
-Note: the dry run checks structure; the smoke test checks execution. Run both.
+**3. Full simulated workflow (~6-10 min) -- runs Snakemake itself, every rule.**
+```bash
+bash workflow/test/run_sim_test.sh sim_workflow_test 4
+```
+Runs `rule all` (52 jobs, Hi-C phases off) on a simulated 4-sample dataset and
+checks the key outputs. Unlike the smoke test, this goes through the Snakefile,
+so it catches broken rule wiring, script paths, and config keys. Run it before
+and after moving files. Details: [`test/README.md`](test/README.md).
+
+Note: the dry run checks structure; the smoke and simulated-workflow tests
+check execution.
 
 ## Configure
 
