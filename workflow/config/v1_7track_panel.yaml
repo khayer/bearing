@@ -1,0 +1,34 @@
+# ----------------------------------------------------------------------
+# File     : workflow/config/v1_7track_panel.yaml
+# Version  : 1.0.0
+# Date     : 2026-10-20
+# Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
+#            (Anthropic), co-created
+# ----------------------------------------------------------------------
+# V1P-vs-DN seven-track panel = v1_8track_panel minus the 4C Trbv13-2 channel.
+# The Trbv13-2 O/E 4C channel carried 4,196 of 4,853 V1P BH bins across the
+# whole 4C reach (chr6 35-48 Mb) and was V1P-higher at the RC; treated as
+# non-specific (DN reference maps merge conventional + Arima libraries, V1P is
+# Arima only). Decision Craig + Nina 2026-10-20: report V1P on the RC viewpoint
+# plus the linear tracks.
+# Order is FIXED and must match the bw column in samples_v1p_7track.tsv:
+#   RNAseq +, RNAseq -, CTCF, Cohesin, NIPBL, H3K27ac, 4C RC
+# ASCII-only.
+name: "V1 7-track panel"
+genome: mm10
+categories:
+  - name: "RNAseq +"
+    color: "#6495ed"
+  - name: "RNAseq -"
+    color: "#1a3a8f"
+    negative_strand: true
+  - name: CTCF
+    color: "#ff2200"
+  - name: Cohesin
+    color: "#8b0000"
+  - name: NIPBL
+    color: "#00bcd4"
+  - name: H3K27ac
+    color: "#00e676"
+  - name: "4C RC"
+    color: "#ffab00"
