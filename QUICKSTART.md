@@ -26,7 +26,7 @@ conda activate bearing        # includes pytest; `pytest -q` works immediately
 
 ```bash
 pytest -q
-# expected: 62 passed
+# expected: all tests pass (181 passed as of 2026-10-28), ~15-20 s
 ```
 
 ## 3. Simulate a tiny chromosome with known ground truth

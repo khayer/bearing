@@ -192,6 +192,7 @@ def all_targets():
             out("paper_figures", "qc_crosslocus_ebko_survey_rawQ.pdf"),
             out("paper_figures", "collect.done"),
             out("paper_figures", "fig7b", "fig7b.done"),
+            out("paper_figures", "fig7e", "Fig7E_regional_empirical.pdf"),
             out("paper_figures", "suppS4_tracks", "suppS4.done"),
         ]
     # Manuscript workbook: only for configs that carry the manuscript conditions
@@ -1668,6 +1669,26 @@ rule fig7b_null_one:
 rule fig7b_all:
     input: expand(out("paper_figures", "fig7b", "Fig7B_{cmp}.pdf"), cmp=COMPARISONS)
     output: touch(out("paper_figures", "fig7b", "fig7b.done"))
+
+
+# ===========================================================================
+# Figure 7E: calibrated regional test (contrast-matched empirical null)
+# ===========================================================================
+# Added 2026-10-28 (Katharina E. Hayer with Claude, co-created). The older
+# regional/panel_E_heatmap_<locus>.pdf colours the NOMINAL q_combined; Fig 7E
+# must show the calibrated q_testable from regional_empirical_<locus>.tsv
+# (Table S2/S11 source), so figure and tables come from the same file.
+rule fig7e_regional_empirical:
+    input: expand(out("table_sources", "regional_empirical_{locus}.tsv"), locus=list(REGIONAL_LOCI.keys()))
+    output:
+        pdf=out("paper_figures", "fig7e", "Fig7E_regional_empirical.pdf"),
+        png=out("paper_figures", "fig7e", "Fig7E_regional_empirical.png"),
+        src=out("paper_figures", "fig7e", "Fig7E_regional_empirical.source.tsv")
+    params: prefix=out("paper_figures", "fig7e", "Fig7E_regional_empirical")
+    resources: mem_mb=4000, runtime=30
+    shell:
+        "python {BIN}/paper/figures/fig7e_regional_empirical.py --tables {input} "
+        "--comparisons " + " ".join(COMPARISONS) + " --out-prefix {params.prefix}"
 
 
 # ===========================================================================

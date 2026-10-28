@@ -206,5 +206,9 @@ dchic*
 !paper/expected/*.tsv
 workflow/config/samples_v1p_8track.tsv_BU
 Fig*
+!paper/figures/
+paper/figures/*
+!paper/figures/fig7e_regional_empirical.py
 nina.txt
 !paper/edger_bam_manifest.template.tsv
+*.patch

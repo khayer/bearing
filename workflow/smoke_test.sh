@@ -8,10 +8,19 @@
 # flow between them; it does NOT reproduce biology (use the full workflow for
 # that). Run from the repo root:
 #
-#   bash workflow/smoke_test.sh
+#   bash workflow/smoke_test.sh                      # score + compare
+#   bash workflow/smoke_test.sh --with-perm          # + permutations + p-values
+#   BEARING_OUT=bearing_test bash workflow/smoke_test.sh --with-perm
+#                                                    # keep outputs in ./bearing_test
 #
 # Exit 0 = the core path runs end to end and produces non-empty outputs.
 # ASCII-only.
+#
+# Revision 1.1 (2026-10-28) - Katharina E. Hayer with Claude (Anthropic):
+#   * --with-perm fixed: bearing_pvalue.py now rejects null qcats < 1 MB by
+#     default (sized for genome-wide runs); the synthetic nulls are ~230 kB,
+#     so pass --null-min-bytes 0 here.
+#   * optional BEARING_OUT=<dir> keeps the outputs (default: a mktemp dir).
 
 set -euo pipefail
 
@@ -19,7 +28,12 @@ WITH_PERM=0
 [ "${1:-}" = "--with-perm" ] && WITH_PERM=1
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="$(mktemp -d)"
+if [ -n "${BEARING_OUT:-}" ]; then
+  mkdir -p "$BEARING_OUT"
+  WORK="$(cd "$BEARING_OUT" && pwd)"
+else
+  WORK="$(mktemp -d)"
+fi
 CATS="$REPO/categories/mm10_6track_panel.yaml"
 echo "repo : $REPO"
 echo "work : $WORK"
@@ -97,7 +111,7 @@ if [ "$WITH_PERM" = "1" ]; then
     python3 "$REPO/bearing_pvalue.py" \
       --qcat "${s}.qcat.bgz" --null-qcat $nulls \
       --cats-json "${s}_cats.json" --chrom-sizes sim.chrom.sizes \
-      --min-signal 0.1 --sort-output --out-prefix "$s" >/dev/null 2>&1
+      --min-signal 0.1 --null-min-bytes 0 --sort-output --out-prefix "$s" >/dev/null 2>&1
     test -s "${s}.neglog10p.bw" || { echo "  FAIL: ${s}.neglog10p.bw missing"; exit 1; }
     test -s "${s}.stats.tsv"    || { echo "  FAIL: ${s}.stats.tsv missing"; exit 1; }
     echo "  ${s}: neglog10p.bw + stats.tsv OK"
@@ -113,7 +127,7 @@ if [ "$WITH_PERM" = "1" ]; then
     python3 "$REPO/bearing_pvalue.py" \
       --qcat compare/diff_A_vs_B.qcat.bgz --null-qcat $diffnull --diff \
       --cats-json A_rep1_cats.json --chrom-sizes sim.chrom.sizes \
-      --min-signal 0.0 --sort-output --out-prefix diff_A_vs_B >/dev/null 2>&1 || true
+      --min-signal 0.0 --null-min-bytes 0 --sort-output --out-prefix diff_A_vs_B >/dev/null 2>&1 || true
     if [ -s diff_A_vs_B.stats.tsv ]; then
       echo "  diff_A_vs_B.stats.tsv OK"
     else
