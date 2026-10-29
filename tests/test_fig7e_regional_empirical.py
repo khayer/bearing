@@ -1,6 +1,6 @@
 # ----------------------------------------------------------------------
 # File     : tests/test_fig7e_regional_empirical.py
-# Version  : 1.0.0
+# Version  : 1.1.0
 # Date     : 2026-10-28
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
@@ -54,3 +54,19 @@ def test_fig7e_writes_outputs(tmp_path):
     assert len(untest) == 1 and untest[0]["region"] == "Trbv1"
     call = [r for r in src if r["q_testable"] and float(r["q_testable"]) < 0.05]
     assert [(r["comparison"], r["region"]) for r in call] == [("DN_vs_A", "DJ_RC")]
+
+
+def test_fig7e_number_format():
+    # 1.1.0 (2026-10-28, K. E. Hayer with Claude): q never prints as alpha when below it;
+    # the null floor prints as an upper bound.
+    sys.path.insert(0, os.path.dirname(SCRIPT))
+    import fig7e_regional_empirical as f
+    assert f.fmt_q(0.00749625) == "0.0075"
+    assert f.fmt_q(0.0224888) == "0.022"
+    assert f.fmt_q(0.049975) == "0.04997"
+    assert f.fmt_q(0.0666333) == "0.067"
+    assert f.fmt_q(0.274863) == "0.27"
+    assert f.fmt_emp(0.00049975, "0") == "<= 5.0e-04"
+    assert f.fmt_emp(0.0029985, "5") == "0.0030"
+    assert f.fmt_q(0.009995) == "0.010"
+    assert f.fmt_emp(0.009995, "19") == "0.010"

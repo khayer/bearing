@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : paper/figures/fig7e_regional_empirical.py
-# Version  : 1.0.0
+# Version  : 1.1.0
 # Date     : 2026-10-28
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
+#
+# 1.1.0 (2026-10-28): q shown with 2 significant digits (0.0075, not 0.007);
+#   a q below --alpha that would round up to it is printed with more digits
+#   (0.04997, not 0.05); emp p at the null floor (emp_count 0) printed as
+#   "<= floor"; emp p < 0.01 with 2 significant digits (0.0030); less empty space above and between the panels.
 """
 Figure 7E: region x comparison heatmap of the CALIBRATED regional test.
 
@@ -69,10 +74,36 @@ def fmt_p(x):
     if x is None:
         return "-"
     if x < 0.001:
-        return "%.0e" % x
+        return "%.1e" % x
     if x < 0.01:
-        return "%.3f" % x
+        return "%#.2g" % x
     return "%.2f" % x
+
+
+def fmt_q(x, alpha=0.05):
+    """q value, 2 significant digits; never print a value below alpha as alpha
+    or above (a call must not read as q 0.05)."""
+    if x is None:
+        return "-"
+    if x < 0.001:
+        return "%.1e" % x
+    if x >= 0.1:
+        return "%.2f" % x
+    s = "%#.2g" % x
+    if x < alpha <= float(s):
+        s = "%#.4g" % x
+    return s
+
+
+def fmt_emp(x, count):
+    """emp p; at the floor (0 null draws as extreme) print it as an upper bound."""
+    s = fmt_p(x)
+    try:
+        if int(float(count)) == 0:
+            return "<= " + s
+    except (TypeError, ValueError):
+        pass
+    return s
 
 
 def cmp_label(c, ref_first=True):
@@ -131,8 +162,9 @@ def main():
     heights = [max(2.2, 0.62 * len(p[1]) + 1.2) for p in panels]
     ncols = max(len(p[2]) for p in panels)
     fig_w = 2.3 + 1.55 * ncols
-    fig = plt.figure(figsize=(fig_w, sum(heights) + 1.6))
-    gs = fig.add_gridspec(len(panels), 1, height_ratios=heights, hspace=0.55)
+    fig_h = sum(heights) + 1.3
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    gs = fig.add_gridspec(len(panels), 1, height_ratios=heights, hspace=0.22)
 
     src = []
     im = None
@@ -171,12 +203,13 @@ def main():
                                        lw=2.2 if call else 0.8))
                 dark = v / a.vmax > 0.55
                 tc = "white" if dark else INK
-                ax.text(j + 0.5, i + 0.30, "q %s" % fmt_p(qt), ha="center",
+                ax.text(j + 0.5, i + 0.30, "q %s" % fmt_q(qt, a.alpha), ha="center",
                         va="center", fontsize=9, fontweight="bold" if call else "normal",
                         color=tc)
-                ax.text(j + 0.5, i + 0.55, "emp p %s" % fmt_p(emp), ha="center",
+                ax.text(j + 0.5, i + 0.55, "emp p %s" % fmt_emp(emp, r.get("emp_count")),
+                        ha="center",
                         va="center", fontsize=7, color=tc)
-                ax.text(j + 0.5, i + 0.78, "k %s/%s  (q_all %s)" % (kp, kn, fmt_p(qa)),
+                ax.text(j + 0.5, i + 0.78, "k %s/%s  (q_all %s)" % (kp, kn, fmt_q(qa, a.alpha)),
                         ha="center", va="center", fontsize=6.5, color=tc)
                 src.append([locus, reg, c, nb, "yes", "%.6g" % emp, "%.6g" % qt,
                             "" if qa is None else "%.6g" % qa, kp, kn])
@@ -189,10 +222,10 @@ def main():
         for s in ax.spines.values():
             s.set_visible(False)
         ax.set_title(LOCUS_LABELS.get(locus, locus), loc="left", fontsize=11,
-                     fontweight="bold", color=P_DARK, pad=30)
+                     fontweight="bold", color=P_DARK, pad=26)
 
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, a.vmax))
-    cax = fig.add_axes([0.25, 0.075, 0.5, 0.018])
+    cax = fig.add_axes([0.25, 0.55 / fig_h, 0.5, 0.13 / fig_h])
     cb = fig.colorbar(sm, cax=cax, orientation="horizontal")
     cb.set_label("-log10 q_testable (contrast-matched empirical null; capped at %g)"
                  % a.vmax, fontsize=8, color=G_DARK)
@@ -201,9 +234,10 @@ def main():
     cb.outline.set_edgecolor(G_LIGHT)
     fig.text(0.02, 0.012,
              "Outlined: regional call (q_testable < %g). k = bins at p < 0.05, "
-             "first condition higher / second higher. Hatched: < 5 tested bins." % a.alpha,
+             "first condition higher / second higher. Hatched: < 5 tested bins. "
+             "<=: 0 of the matched background draws as extreme (null floor)." % a.alpha,
              fontsize=7, color=G_MID)
-    fig.subplots_adjust(left=0.22, right=0.98, top=0.86, bottom=0.17)
+    fig.subplots_adjust(left=0.22, right=0.98, top=1 - 0.75 / fig_h, bottom=1.15 / fig_h)
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out_prefix)), exist_ok=True)
     fig.savefig(a.out_prefix + ".pdf")
