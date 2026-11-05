@@ -212,3 +212,6 @@ paper/figures/*
 nina.txt
 !paper/edger_bam_manifest.template.tsv
 *.patch
+*.log
+workflow/*tgz
+s7_alpha1/*
