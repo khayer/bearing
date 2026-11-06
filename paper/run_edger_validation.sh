@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : paper/run_edger_validation.sh
-# Version  : 1.1.3
-# Date     : 2026-10-12 (1.1.3: body read in full before running; 1.1.2: PYTHONPATH not inherited from modules; 1.1.1: PYTHONPATH for the dev/ helpers; 1.1.0: optional DN vs S3T3 arm)
+# Version  : 1.2.0
+# Date     : 2026-10-29 (1.2.0: copy every Table S8 source - Igh, 3T3, EbKO RC - to table_sources/; 1.1.3: body read in full before running; 1.1.2: PYTHONPATH not inherited from modules; 1.1.1: PYTHONPATH for the dev/ helpers; 1.1.0: optional DN vs S3T3 arm)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -191,17 +191,25 @@ fi
 
 # ---- hand the Table S8 sources to the workbook ------------------------------
 if [ "$DRY" != 1 ]; then
-  cp "$OUTDIR/rna_concordance_DN_vs_DP_summary.tsv"     "$TS/rna_concordance_DN_vs_DP_summary.tsv"
-  cp "$OUTDIR/rna_concordance_DN_vs_DP_mc3_summary.tsv" "$TS/rna_concordance_DN_vs_DP_mc3_summary.tsv"
+  for f in rna_concordance_DN_vs_DP_summary.tsv rna_concordance_DN_vs_DP_mc3_summary.tsv \
+           rna_concordance_DN_vs_ProB_igh_summary.tsv rna_concordance_DN_vs_ProB_mc3_igh_summary.tsv \
+           ebko_rc_characterisation.tsv; do
+    cp "$OUTDIR/$f" "$TS/$f"
+  done
+  if [ "$HAS_3T3" = 1 ]; then
+    cp "$OUTDIR/rna_concordance_DN_vs_S3T3_summary.tsv"     "$TS/"
+    cp "$OUTDIR/rna_concordance_DN_vs_S3T3_mc3_summary.tsv" "$TS/"
+  fi
 fi
 
 cat <<EOF
 
 Done. Outputs in $OUTDIR:
-  rna_concordance_DN_vs_DP_summary.tsv, ..._mc3_summary.tsv   (Table S8; copied to table_sources/)
-  rna_concordance_DN_vs_ProB_igh_summary.tsv, ..._mc3_igh_summary.tsv   (Igh sentence)
-  ebko_rc_characterisation.tsv                                 (EbKO recombination-center paragraph)
-  rna_concordance_DN_vs_S3T3_summary.tsv, ..._mc3_summary.tsv (only with S3T3 rows; DN vs 3T3)
+  rna_concordance_DN_vs_S3T3_summary.tsv, ..._mc3_summary.tsv (Table S8 headline; only with S3T3 rows)
+  rna_concordance_DN_vs_ProB_igh_summary.tsv, ..._mc3_igh_summary.tsv   (Table S8, Igh)
+  rna_concordance_DN_vs_DP_summary.tsv, ..._mc3_summary.tsv   (Table S8, DN vs DP)
+  ebko_rc_characterisation.tsv                                 (Table S8 note, EbKO RC)
+  (all of the above copied to table_sources/)
   *_missed.tsv per strand (testable BEARING bins edgeR did not call, with logFC/FDR)
 Rebuild the workbook:  cd workflow && snakemake ... paper_tables  (or rerun all)
 Report recovery as a fraction of the TESTABLE BEARING bins, not the raw count.

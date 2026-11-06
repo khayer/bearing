@@ -3,6 +3,15 @@
 build_tables.py -- assemble the BEARING manuscript tables workbook from the
 pipeline outputs, with provenance, instead of transcribing them by hand.
 
+Revision 2026-10-29 (Katharina E. Hayer with Claude (Anthropic), co-created):
+  * Table S8 follows decision B6 (l1 production run): headline rows DN vs 3T3
+    (genome-wide) and DN vs Pro-B (Igh), then DN vs DP (0 BEARING bins under
+    l1, kept so the empty arm is visible); each at min.count 10 and 3.
+  * New sheet "Table S8 note - EbKO RC" from ebko_rc_characterisation.tsv.
+  * Table S7 reads the 12-cell recovery sweep (s7_recovery_sweep_master.tsv,
+    copied from <sweep>/sweep_master.tsv); benchmark/recovery_per_block.tsv
+    is a single simulation setting, not the published table.
+
 WHY THIS EXISTS
 ---------------
 Table 1 and Tables S1-S14 were previously assembled by hand from terminal output.
@@ -464,20 +473,32 @@ def table_registry(results, sources):
         Spec("Table S6 - FDR calibration",
              [j("calibration", "calibration_summary.tsv")],
              note="rule calibration"),
+        # 2026-10-29: the published Table S7 is the 12-cell SNR x dispersion x
+        # normalisation sweep (benchmark/run_bearing_recovery_sweep.sh), not the
+        # single-setting workflow benchmark. Copy <sweep>/sweep_master.tsv here.
         Spec("Table S7 - recovery sweep",
-             [j("benchmark", "recovery", "recovery_per_block.tsv")],
-             note="benchmark recovery rule (evaluate_bearing_recovery.py)"),
-        # EXPLICIT, not a glob. Table S8 reports DN-vs-DP ONLY, at two expression
-        # filters (min.count=10 and min.count=3) -- that is what its "Expression
-        # filter" column distinguishes. A rna_concordance_*_summary.tsv glob also
-        # matches DN_vs_EbKO_rc, DN_vs_ProB_igh, DN_vs_ProB_mc3_igh and
-        # fwd_DN_vs_DP: DIFFERENT analyses, belonging to other tables or to none.
-        # Merging them would produce a table that looks authoritative and is not.
+             [s("s7_recovery_sweep_master.tsv")],
+             note="benchmark/run_bearing_recovery_sweep.sh sweep_master.tsv "
+                  "(prior_strength 1; scoring only, independent of the differential statistic)"),
+        # EXPLICIT, not a glob (a rna_concordance_*_summary.tsv glob also matches
+        # DN_vs_EbKO_rc and fwd_DN_vs_DP, which are different analyses).
+        # 2026-10-29, decision B6 (l1 production run): the headline rows are
+        # DN vs 3T3 genome-wide and DN vs Pro-B at Igh; DN vs DP has 0 BEARING
+        # bins under l1 and stays last so the empty arm is visible, not hidden.
         Spec("Table S8 - RNA edgeR validation",
-             [(s("rna_concordance_DN_vs_DP_summary.tsv"), "min.count=10"),
-              (s("rna_concordance_DN_vs_DP_mc3_summary.tsv"), "min.count=3")],
-             expect="many", label_col="Expression filter",
-             note="rna_concordance_stranded.R; DN-vs-DP at two expression filters"),
+             [(s("rna_concordance_DN_vs_S3T3_summary.tsv"), "DN vs 3T3, genome-wide, min.count=10"),
+              (s("rna_concordance_DN_vs_S3T3_mc3_summary.tsv"), "DN vs 3T3, genome-wide, min.count=3"),
+              (s("rna_concordance_DN_vs_ProB_igh_summary.tsv"), "DN vs Pro-B, Igh, min.count=10"),
+              (s("rna_concordance_DN_vs_ProB_mc3_igh_summary.tsv"), "DN vs Pro-B, Igh, min.count=3"),
+              (s("rna_concordance_DN_vs_DP_summary.tsv"), "DN vs DP, genome-wide, min.count=10"),
+              (s("rna_concordance_DN_vs_DP_mc3_summary.tsv"), "DN vs DP, genome-wide, min.count=3")],
+             expect="many", label_col="Comparison and expression filter",
+             note="rna_concordance_stranded.R via paper/run_edger_validation.sh; recovery "
+                  "= edgeR-significant among TESTABLE BEARING bins"),
+        Spec("Table S8 note - EbKO RC",
+             [s("ebko_rc_characterisation.tsv")],
+             note="dev/region_match_ebko.py, chr6:41,500,000-41,567,200 (DN vs EbKO "
+                  "recombination center; 0 genome-wide BH bins, regional call)"),
         # EXPLICIT pairs (2026-10-09): a strong contrast, a subtle contrast and
         # the true null (DN replicate vs replicate), as in the published table.
         Spec("Table S10 - baselines",

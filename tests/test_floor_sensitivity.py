@@ -125,3 +125,33 @@ def test_plot_runs_and_pdf_is_reproducible(tmp_path):
     # source data lists a real flipping bin (the one that goes 0->1)
     src = (tmp_path / "s1.tsv").read_text()
     assert "flipping_bin=chr6:41500000" in src
+
+
+def test_plot_runs_when_mechanism_comparison_has_no_calls(tmp_path):
+    """l1 production case (2026-10-29, K. E. Hayer with Claude): DN-DP has 0 BH
+    bins at every floor, so p* = 0 everywhere; the figure must still build and
+    not claim a cutoff ratio (v1.1 printed 'p* xnan larger')."""
+    import sys
+    sw, pbd, std, qj, ex = _tiny_inputs(tmp_path)
+    lines = sw.read_text().splitlines()
+    out = [lines[0]]
+    for ln in lines[1:]:
+        f = ln.split("\t")
+        if f[0] == "DN_vs_DP":
+            f[4] = "0"
+        out.append("\t".join(f))
+    sw.write_text("\n".join(out) + "\n")
+    argv = ["plot_floor_sensitivity.py",
+            "--sweep-tsv", str(sw), "--per-bin-dir", str(pbd),
+            "--stats-dir", str(std), "--q-json", str(qj),
+            "--example-bins", str(ex), "--mechanism-comparison", "DN_vs_DP",
+            "--out-pdf", str(tmp_path / "n.pdf"), "--out-png", str(tmp_path / "n.png"),
+            "--source-data", str(tmp_path / "n.tsv")]
+    old = sys.argv
+    sys.argv = argv
+    try:
+        assert pfs.main() == 0
+    finally:
+        sys.argv = old
+    src = (tmp_path / "n.tsv").read_text()
+    assert "C\tpstar\t0.5\t0\tDN_vs_DP" in src

@@ -7,7 +7,9 @@ pipeline output or derived from one, and echoed into the --source-data TSV.
 Three panels:
   A  What each floor can detect, in compositional terms (uses the REAL
      background Q from --q-json, not a constant).
-  B  Calls are insensitive to the floor across the swept range.
+  B  BH-significant bins at each floor, as % of the production floor (title
+     states where calls peak; v1.1 asserted insensitivity, which the l1 run
+     does not show).
   C  Why raising the floor raises the significance cutoff faster than it raises
      any single bin's own p-value -- so 0.5 is conservative, not hit-maximising.
 
@@ -27,7 +29,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-VERSION = "1.1"  # 2026-10-12: --diff-stat sum|l1 (Nina + Claude)
+VERSION = "1.2"  # 2026-10-12: --diff-stat sum|l1; 2026-10-29: data-driven panel B/C titles (K. E. Hayer with Claude)
 
 FLOOR_COLORS = {0.1: "#9e9e9e", 0.25: "#66bb6a", 0.5: "#d32f2f",
                 1.0: "#1976d2", 1.5: "#7b1fa2"}
@@ -307,7 +309,7 @@ def main():
     axB.set_xscale("log")
     axB.set_xlabel("differential floor (log scale)")
     axB.set_ylabel("bins significant\n(% of floor 0.5)")
-    axB.set_title("B. Calls are insensitive to the floor")
+    axB.set_title("B. Calls across floors (%% of floor %g)" % PROD_FLOOR)
     axB.annotate("max deviation over 0.1-0.5:\n%.1f%%" % max_dev,
                  xy=(0.03, 0.03), xycoords="axes fraction", fontsize=7,
                  ha="left", va="bottom")
@@ -394,9 +396,17 @@ def main():
     fmax = max(floors)
     null_ratio = (n_null[PROD_FLOOR] / n_null[fmax]) if n_null[fmax] else np.nan
     pstar_ratio = (pstar[fmax] / pstar[PROD_FLOOR]) if pstar[PROD_FLOOR] else np.nan
+    no_calls = all((not np.isfinite(pstar[f])) or pstar[f] <= 0 for f in floors)
+    if no_calls:
+        rate_txt = "%s: no BH call at any floor\n(strongest bin above every cutoff)" % mech
+    elif np.isfinite(pstar_ratio):
+        rate_txt = "%g -> %g:\nnull x%.1f smaller\np* x%.1f larger" % (
+            PROD_FLOOR, fmax, null_ratio, pstar_ratio)
+    else:
+        rate_txt = "%g -> %g:\nnull x%.1f smaller\n(no BH call at floor %g)" % (
+            PROD_FLOOR, fmax, null_ratio, fmax)
     axC.annotate(
-        "%g -> %g:\nnull x%.1f smaller\np* x%.1f larger" % (
-            PROD_FLOOR, fmax, null_ratio, pstar_ratio),
+        rate_txt,
         xy=(0.97, 0.03), xycoords="axes fraction", fontsize=7,
         ha="right", va="bottom")
     src_rows.append(("C", "null_ratio_0.5_to_max", None, null_ratio, ""))
@@ -405,7 +415,8 @@ def main():
     axC.set_yscale("log")
     axC.set_xlabel("differential floor (log scale)")
     axC.set_ylabel("p-value (log scale)")
-    axC.set_title("C. Cutoff moves faster than the bin")
+    axC.set_title("C. %s: no floor yields a call" % mech if no_calls
+                  else "C. Cutoff moves faster than the bin")
     axC.legend(fontsize=6.0, loc="lower left", frameon=False)
 
     fig.tight_layout()
