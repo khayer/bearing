@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : dev/rna_dominance_diagnostic.py
-# Version  : 1.0.0
-# Date     : 2026-11-05
+# Version  : 1.1.0
+# Date     : 2026-11-07 (1.1.0: data-dependent transform variants log1p_rna
+#            and asinh_auto, known-region check, lead-share of top bins;
+#            1.0.0 2026-11-05)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -17,16 +19,28 @@ RNA strand and no region is led by CTCF. Candidate scoring causes:
   * the strand split: one transcribed strand of a gene is ~100% of a bin's
     signal, the most extreme composition BEARING can score;
   * dynamic range: RNA (CPM) and ChIP / CUT&RUN tracks are on different
-    scales before the composition is formed.
-This script rescores two conditions on a few chromosomes under four
-pre-specified variants and reports which track leads the strongest
-differential bins and regions in each:
+    scales before the composition is formed (RNA is heavy-tailed: a few
+    exonic bins carry values orders of magnitude above the ChIP tracks).
+This script rescores two conditions on a few chromosomes under pre-specified
+variants and reports which track leads the strongest differential bins and
+regions in each:
 
   production        the production scorer (no normalisation)
   merge_strands     RNA+ and RNA- summed into one RNA track before scoring
   nzq               per-track nonzero-quantile normalisation (the existing
                     bigwig_to_qcat --normalize-method nonzero-quantile)
   merge_strands_nzq both
+  log1p_rna         (1.1.0) RNA tracks only: x -> log1p(x / c_i)
+  asinh_auto        (1.1.0) every track: x -> asinh(x / c_i)
+
+c_i is DATA-DEPENDENT: the median of the nonzero raw values of track i, pooled
+over all samples of both conditions and all chromosomes read (one cofactor per
+track, shared by the samples, so real between-condition differences in a track
+are kept). Values well below c_i stay nearly linear; values far above c_i are
+compressed logarithmically. Both transforms map 0 to 0, so the low-signal mask
+(applied, as in production, to the PRE-transform raw signal) and on/off bins are
+unchanged; only the relative weight of large values changes. The cofactors are
+written to PREFIX.cofactors.tsv.
 
 Scoring uses the production functions of bigwig_to_qcat.py
 (mean_signal_in_bins, negative-strand abs, blacklist zeroing,
@@ -43,7 +57,12 @@ call. Q (the background composition) is computed from the chromosomes read
 
 OUTPUT (--out PREFIX)
   PREFIX.lead_tracks.tsv  one row per variant x bin set x unit (bins or
-                          regions): counts and shares of the lead track
+                          regions): counts and shares of the lead track, and
+                          (bins) the median lead share = |d_lead| / l1
+  PREFIX.regions.tsv      (1.1.0) per variant x --check-regions region: tested
+                          bins, bins in the top fractions, best l1 rank
+                          percentile among tested bins, lead track
+  PREFIX.cofactors.tsv    (1.1.0) c_i per track
   PREFIX.background_q.tsv background composition Q per variant and sample
   PREFIX.summary.txt      human-readable
 
@@ -57,10 +76,12 @@ Usage (from workflow/, cluster env: module purge; conda activate bearing;
 env -u PYTHONPATH):
   python ../dev/rna_dominance_diagnostic.py \\
     --samples config/samples.tsv --cond-a DN --cond-b S3T3 --chroms chr6 \\
+    --base-dir /mnt/isilon/bassing_lab/integration_paper \\
     --chrom-sizes resources/mm10.chrom.sizes \\
     --categories ../categories/mm10_6track_panel.yaml \\
     --blacklist results_prior1_n100_l1/blacklist/merged_blacklist.bed \\
-    --out results_prior1_n100_l1/table_sources/rna_dominance_DN_vs_S3T3_chr6
+    --variants production,nzq,log1p_rna,asinh_auto \\
+    --out results_prior1_n100_l1/table_sources/rna_dominance_v11_DN_vs_S3T3_chr6
 
 ASCII only. Reads BigWigs; writes nothing else.
 """
@@ -77,7 +98,13 @@ sys.path.insert(0, REPO)
 
 import bigwig_to_qcat as b2q  # noqa: E402  production scorer
 
-VARIANTS = ("production", "merge_strands", "nzq", "merge_strands_nzq")
+VERSION = "1.1.0"
+VARIANTS = ("production", "merge_strands", "nzq", "merge_strands_nzq",
+            "log1p_rna", "asinh_auto")
+DEFAULT_REGIONS = ("DJ_RC=chr6:41500000-41551500,"
+                   "Vbeta_cluster=chr6:41040000-41290000,"
+                   "Trbv1=chr6:40880000-40905000,"
+                   "Cd4=chr6:124825000-124950000")
 
 
 # ---------------------------------------------------------------------------
@@ -168,9 +195,40 @@ def read_sample(paths, chroms, sizes, neg_states, blacklist):
     return out
 
 
+def parse_regions(spec):
+    """'name=chr:start-end,...' -> [(name, chrom, start, end)]"""
+    out = []
+    for item in [s for s in (spec or "").split(",") if s.strip()]:
+        name, loc = item.split("=")
+        chrom, rng = loc.split(":")
+        a, b = rng.replace("_", "").split("-")
+        out.append((name.strip(), chrom.strip(), int(a), int(b)))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Variants and scoring
 # ---------------------------------------------------------------------------
+
+def track_cofactors(data):
+    """Median of the nonzero raw values of each track, pooled over every
+    sample and chromosome read (data = {sample: (cond, {chrom: (bins, m)})}).
+    A track with no nonzero value gets cofactor 1."""
+    pooled = None
+    for _, (_, sd) in data.items():
+        for chrom in sd:
+            m = np.clip(sd[chrom][1].astype(np.float64), 0.0, None)
+            if pooled is None:
+                pooled = [[] for _ in range(m.shape[1])]
+            for i in range(m.shape[1]):
+                v = m[:, i]
+                pooled[i].append(v[v > 0])
+    cof = []
+    for parts in pooled:
+        v = np.concatenate(parts) if parts else np.array([])
+        cof.append(float(np.median(v)) if v.size else 1.0)
+    return np.array(cof, dtype=np.float64)
+
 
 def merge_strands(x, ip, im):
     """Sum the two RNA strand columns into one (placed at the RNA+ position);
@@ -181,24 +239,31 @@ def merge_strands(x, ip, im):
     return y
 
 
-def variant_matrix(raw, variant, ip, im):
+def variant_matrix(raw, variant, ip, im, cof=None):
     """(signal used for P and the prior, pre-normalisation signal used for the
-    low-signal mask) for one chromosome of one sample."""
+    low-signal mask) for one chromosome of one sample. For every variant the
+    mask signal is the untransformed (clipped, strand-merged where relevant)
+    raw signal, so the masked bins are the same as in production."""
     x = np.clip(raw.astype(np.float64), 0.0, None)
     if variant in ("merge_strands", "merge_strands_nzq"):
         x = merge_strands(x, ip, im)
     pre = x.copy()
     if variant in ("nzq", "merge_strands_nzq"):
         x = b2q.normalize_signal_matrix(x, method="nonzero-quantile")
+    elif variant == "log1p_rna":
+        for j in (ip, im):
+            x[:, j] = np.log1p(x[:, j] / cof[j])
+    elif variant == "asinh_auto":
+        x = np.arcsinh(x / cof[np.newaxis, :])
     return x, pre
 
 
-def score_sample(sample_data, variant, ip, im, min_signal, alpha):
+def score_sample(sample_data, variant, ip, im, min_signal, alpha, cof=None):
     """KL scores (bins x tracks, chromosomes concatenated) and Q, with Q = the
     mean of P over all bins read, as production computes it genome-wide."""
     mats, pres, Ps = [], [], []
     for chrom in sample_data:
-        x, pre = variant_matrix(sample_data[chrom][1], variant, ip, im)
+        x, pre = variant_matrix(sample_data[chrom][1], variant, ip, im, cof)
         mats.append(x)
         pres.append(pre)
         Ps.append(b2q.signals_to_prob(x))
@@ -231,6 +296,17 @@ def lead_counts_bins(d, idx, n_tracks):
     return np.bincount(lead, minlength=n_tracks)
 
 
+def median_lead_share(d, idx):
+    """Median over bins of |d_lead| / l1: 1.0 = a single track carries the
+    whole differential (transform-invariant one-track bins)."""
+    if idx.size == 0:
+        return float("nan")
+    a = np.abs(d[idx])
+    l1 = a.sum(axis=1)
+    ok = l1 > 0
+    return float(np.median(a[ok].max(axis=1) / l1[ok])) if ok.any() else float("nan")
+
+
 def regions_from_bins(idx, chrom_of, start_of, end_of, gap):
     """Merge sorted bin indices into regions (same chromosome, start - previous
     end <= gap). Returns a list of index arrays."""
@@ -255,6 +331,34 @@ def lead_counts_regions(d, regs, n_tracks):
     return c
 
 
+def region_check(d, l1, tested, order, top_sets, regions, chroms, chrom_of,
+                 start_of, end_of, names):
+    """Per known region: tested bins, bins in each top set, best rank
+    percentile (0 = strongest tested bin) and the lead track."""
+    rank = np.full(l1.size, -1, dtype=np.int64)
+    rank[order] = np.arange(order.size)
+    tested_mask = np.zeros(l1.size, dtype=bool)
+    tested_mask[tested] = True
+    out = []
+    for name, chrom, a, b in regions:
+        if chrom not in chroms:
+            continue
+        ci = chroms.index(chrom)
+        sel = np.where((chrom_of == ci) & (end_of > a) & (start_of < b))[0]
+        st = sel[tested_mask[sel]]
+        r = dict(region=name, tested=int(st.size))
+        for set_name, idx in top_sets:
+            r["in_" + set_name] = int(np.isin(st, idx).sum())
+        if st.size and order.size:
+            r["best_rank_pct"] = 100.0 * rank[st].min() / order.size
+            r["lead"] = names[int(np.argmax(np.abs(d[st]).sum(axis=0)))]
+        else:
+            r["best_rank_pct"] = float("nan")
+            r["lead"] = ""
+        out.append(r)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -264,8 +368,9 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--samples", required=True, help="BEARING sample sheet (TSV)")
     ap.add_argument("--base-dir", default=None,
-                    help="directory the sheet's relative BigWig paths are relative "
-                         "to (default: current directory, i.e. run from workflow/)")
+                    help="directory the sheet's relative BigWig paths resolve "
+                         "against: the config's data_dir, as in the Snakefile "
+                         "(default: current directory)")
     ap.add_argument("--cond-a", required=True)
     ap.add_argument("--cond-b", required=True)
     ap.add_argument("--chroms", default="chr6", help="comma-separated")
@@ -282,8 +387,24 @@ def build_parser():
     ap.add_argument("--top-fracs", default="0.01,0.001")
     ap.add_argument("--gap", type=int, default=1000)
     ap.add_argument("--variants", default=",".join(VARIANTS))
+    ap.add_argument("--check-regions", default=DEFAULT_REGIONS,
+                    help="name=chr:start-end,... known regions to track across "
+                         "variants (default: Tcrb DJ_RC, Vbeta cluster, Trbv1, Cd4)")
     ap.add_argument("--out", required=True, help="output prefix")
     return ap
+
+
+def _write_tsv(path, rows):
+    cols = []
+    for r in rows:
+        for k in r:
+            if k not in cols:
+                cols.append(k)
+    with open(path, "w") as fh:
+        fh.write("\t".join(cols) + "\n")
+        for r in rows:
+            fh.write("\t".join(("%.4f" % r[k]) if isinstance(r.get(k), float)
+                               else str(r.get(k, "")) for k in cols) + "\n")
 
 
 def main(argv=None):
@@ -307,7 +428,9 @@ def main(argv=None):
     bad = [v for v in variants if v not in VARIANTS]
     if bad or "production" not in variants:
         sys.exit("ERROR: --variants must include production and only %s" % (VARIANTS,))
+    variants = ["production"] + [v for v in variants if v != "production"]
     fracs = [float(x) for x in args.top_fracs.split(",") if x]
+    regions = parse_regions(args.check_regions)
 
     print("reading %s (%d reps) and %s (%d reps) on %s"
           % (args.cond_a, len(sheet[args.cond_a]), args.cond_b,
@@ -316,6 +439,7 @@ def main(argv=None):
     for cond in (args.cond_a, args.cond_b):
         for sample, paths in sheet[cond]:
             data[sample] = (cond, read_sample(paths, chroms, sizes, neg, blacklist))
+    cof = track_cofactors(data)
 
     # bin coordinates (identical for every sample)
     any_sample = next(iter(data.values()))[1]
@@ -329,7 +453,10 @@ def main(argv=None):
     start_of = np.concatenate(start_of)
     end_of = np.concatenate(end_of)
 
-    rows, qrows, text = [], [], []
+    rows, qrows, rrows, text = [], [], [], []
+    text.append("cofactors c_i (median nonzero raw value, pooled): "
+                + "  ".join("%s %.4g" % (names[i], cof[i]) for i in range(len(names))))
+    text.append("")
     prod_top = {}
     for variant in variants:
         vn = variant_names(names, variant, ip, im)
@@ -337,7 +464,7 @@ def main(argv=None):
         sc = {args.cond_a: [], args.cond_b: []}
         for sample, (cond, sd) in data.items():
             s, Q = score_sample(sd, variant, ip, im, args.min_signal,
-                                args.prior_strength)
+                                args.prior_strength, cof)
             sc[cond].append(s)
             qrows.append(dict(variant=variant, sample=sample, condition=cond,
                               **{vn[i]: float(Q[i]) for i in range(nt)}))
@@ -346,11 +473,14 @@ def main(argv=None):
         tested = np.where(l1 >= args.floor)[0]
         order = tested[np.argsort(-l1[tested], kind="stable")]
         sets = [("tested", tested)]
+        top_sets = []
         for f in fracs:
             k = max(1, int(round(f * tested.size))) if tested.size else 0
-            sets.append(("top%g" % f, np.sort(order[:k])))
+            top = np.sort(order[:k])
+            sets.append(("top%g" % f, top))
+            top_sets.append(("top%g" % f, top))
             if variant == "production":
-                prod_top[f] = np.sort(order[:k])
+                prod_top[f] = top
             else:
                 sets.append(("prod_top%g" % f, prod_top[f]))
         text.append("== %s  (%d tracks: %s)  tested bins (l1 >= %g): %d"
@@ -367,48 +497,45 @@ def main(argv=None):
                 rna_share = (c[rna].sum() / tot) if tot else float("nan")
                 r = dict(variant=variant, set=set_name, unit=unit, n=tot,
                          rna_share=rna_share)
+                if unit == "bins":
+                    r["median_lead_share"] = median_lead_share(d, idx)
                 for i in range(nt):
                     r["n_" + vn[i]] = int(c[i])
                 rows.append(r)
-                text.append("  %-14s %-7s n=%-7d RNA %5.1f%%  | %s"
+                extra = ("  lead share %.2f" % r["median_lead_share"]) if unit == "bins" else ""
+                text.append("  %-14s %-7s n=%-7d RNA %5.1f%%%s  | %s"
                             % (set_name, unit, tot, 100 * rna_share if tot else float("nan"),
+                               extra,
                                "  ".join("%s %d" % (vn[i], c[i]) for i in range(nt))))
+        for r in region_check(d, l1, tested, order, top_sets, regions, chroms,
+                              chrom_of, start_of, end_of, vn):
+            r = dict(variant=variant, **r)
+            rrows.append(r)
+            text.append("  region %-14s tested %-5d %s best rank %.2f%%  lead %s"
+                        % (r["region"], r["tested"],
+                           "  ".join("%s %d" % (k, v) for k, v in r.items() if k.startswith("in_")),
+                           r["best_rank_pct"], r["lead"]))
         text.append("")
 
-    # write outputs (union of track columns; blank where a variant lacks one)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
-    all_cols = []
-    for r in rows:
-        for k in r:
-            if k not in all_cols:
-                all_cols.append(k)
-    with open(args.out + ".lead_tracks.tsv", "w") as fh:
-        fh.write("\t".join(all_cols) + "\n")
-        for r in rows:
-            fh.write("\t".join(("%.4f" % r[k]) if isinstance(r.get(k), float)
-                               else str(r.get(k, "")) for k in all_cols) + "\n")
-    qcols = []
-    for r in qrows:
-        for k in r:
-            if k not in qcols:
-                qcols.append(k)
-    with open(args.out + ".background_q.tsv", "w") as fh:
-        fh.write("\t".join(qcols) + "\n")
-        for r in qrows:
-            fh.write("\t".join(("%.4f" % r[k]) if isinstance(r.get(k), float)
-                               else str(r.get(k, "")) for k in qcols) + "\n")
-    head = ["rna_dominance_diagnostic.py 1.0.0  %s vs %s  chroms %s  min_signal %g  "
+    _write_tsv(args.out + ".lead_tracks.tsv", rows)
+    _write_tsv(args.out + ".background_q.tsv", qrows)
+    _write_tsv(args.out + ".regions.tsv", rrows)
+    _write_tsv(args.out + ".cofactors.tsv",
+               [dict(track=names[i], cofactor=float(cof[i])) for i in range(len(names))])
+    head = ["rna_dominance_diagnostic.py %s  %s vs %s  chroms %s  min_signal %g  "
             "prior %g  floor %g  gap %d  (scoring only; no p-values; Q from these "
-            "chromosomes)" % (args.cond_a, args.cond_b, ",".join(chroms),
+            "chromosomes)" % (VERSION, args.cond_a, args.cond_b, ",".join(chroms),
                               args.min_signal, args.prior_strength, args.floor, args.gap),
             "lead track = largest |per-track differential| (bins) or largest summed "
             "|differential| over the region (regions); prod_top<f> = the production "
-            "top-f bins scored under this variant", ""]
+            "top-f bins scored under this variant; lead share = median |d_lead|/l1 "
+            "(1 = one track carries the whole differential)", ""]
     txt = "\n".join(head + text) + "\n"
     with open(args.out + ".summary.txt", "w") as fh:
         fh.write(txt)
     sys.stdout.write(txt)
-    return rows, qrows
+    return rows, qrows, rrows
 
 
 if __name__ == "__main__":
