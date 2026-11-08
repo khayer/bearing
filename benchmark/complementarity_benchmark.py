@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : benchmark/complementarity_benchmark.py
-# Version  : 1.0.1
-# Date     : 2026-10-12 (L1 is now bearing_pvalue.py --diff-stat l1)
+# Version  : 1.2.0
+# Date     : 2026-11-08 (1.2.0: EXPERIMENTAL --transform none|nzq|log1p_rna|
+#            asinh_auto applied to the scoring signal, benchmark only, and
+#            --rna-tail-sigma for a heavy-tailed RNA background; defaults
+#            reproduce 1.0.1 exactly. 1.0.1 2026-10-12: L1 is now
+#            bearing_pvalue.py --diff-stat l1)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -70,6 +74,27 @@ Per-assay comparator (a limma-trend style moderated t, one test per track):
     all bin x track tests (sign pattern below)
   This is a replicate-based test, the way edgeR/limma/csaw are used; it does
   not need the circular-shift null.
+
+INPUT TRANSFORMS (1.2.0, EXPERIMENTAL, benchmark only; --transform)
+  The same transforms as dev/rna_dominance_diagnostic.py 1.1.0, applied to
+  each sample's signal before the composition is formed (observed samples,
+  every permutation round and the noise-free expectation alike):
+    none        production (default; identical to 1.0.1)
+    nzq         per-track nonzero-quantile normalisation
+                (bigwig_to_qcat --normalize-method nonzero-quantile)
+    log1p_rna   RNA+ and RNA- only: x -> log1p(x / c_i)
+    asinh_auto  every track: x -> asinh(x / c_i)
+  c_i = median of the nonzero raw values of track i, pooled over all observed
+  samples (one cofactor per track shared by both conditions). As in the
+  diagnostic, the low-signal mask uses the UNtransformed signal; P and the
+  composition prior use the transformed signal. The per-assay comparator is
+  never transformed.
+  --rna-tail-sigma S (default 0 = off) multiplies the expected RNA+ and RNA-
+  signal of every bin by a factor ~ log-normal(-S^2/2, S) shared by all
+  samples (genomic structure, mean 1), so RNA gets the heavy-tailed dynamic
+  range seen in real data; the A-vs-B truth of every block is unchanged.
+  Without it the simulated tracks share one coverage factor and differ only
+  in Q, so the default simulation does NOT reproduce real RNA dominance.
 
 OUTPUTS (--outdir)
   per_config.tsv   one row per block configuration: interior bins, fraction
@@ -211,6 +236,11 @@ def simulate(args, rng):
         pbg = rng.dirichlet(args.bg_kappa * q, size=n)
     else:
         pbg = np.tile(q, (n, 1))
+    # 1.2.0: optional heavy-tailed RNA dynamic range (drawn only when on, so
+    # the default random stream is unchanged)
+    sig = float(getattr(args, "rna_tail_sigma", 0.0) or 0.0)
+    rna_tail = (rng.lognormal(-0.5 * sig * sig, sig, size=n) if sig > 0
+                else np.ones(n))
     PA = pbg.copy()
     PB = pbg.copy()
     mA = np.ones(n)
@@ -241,6 +271,10 @@ def simulate(args, rng):
 
     expA = (args.depth * cov * mA)[:, None] * PA       # expected, BigWig units
     expB = (args.depth * cov * mB)[:, None] * PB
+    if sig > 0:
+        for t in RNA_COLS:
+            expA[:, t] *= rna_tail
+            expB[:, t] *= rna_tail
     samples = {}
     for cond, ex in (("A", expA), ("B", expB)):
         for r in range(args.reps):
@@ -263,23 +297,109 @@ def simulate(args, rng):
 # BEARING (production functions)
 # ---------------------------------------------------------------------------
 
-def bearing_scores(x, min_signal, alpha, q=None):
+RNA_COLS = (1, 2)          # RNA+ and RNA- in the production track order
+TRANSFORMS = ("none", "nzq", "log1p_rna", "asinh_auto")
+
+
+def track_cofactors(sample_mats):
+    """c_i = median of the nonzero raw values of track i, pooled over all
+    samples (as in dev/rna_dominance_diagnostic.py). Track with no nonzero
+    value -> 1."""
+    mats = [np.clip(np.asarray(x, dtype=np.float64), 0.0, None)
+            for x in sample_mats.values()]
+    cof = []
+    for i in range(mats[0].shape[1]):
+        v = np.concatenate([m[:, i][m[:, i] > 0] for m in mats])
+        cof.append(float(np.median(v)) if v.size else 1.0)
+    return np.array(cof, dtype=np.float64)
+
+
+def _sorted_quantiles(col_sorted, probs):
+    """np.quantile(col, probs) (default 'linear' method) for a sorted column,
+    via interpolation on the order statistics: same values, O(n) instead of
+    one selection per probability."""
+    n = col_sorted.size
+    return np.interp(probs * (n - 1), np.arange(n, dtype=np.float64), col_sorted)
+
+
+def fast_nonzero_quantile(signal_matrix):
+    """Same result as bigwig_to_qcat.nonzero_quantile_normalize_columns
+    (checked in tests), but builds the reference with _sorted_quantiles; the
+    production function calls np.quantile with ~n probabilities, which takes
+    ~30 s per 100k-bin sample and makes 100-permutation benchmark cells take
+    hours."""
+    from scipy.stats import rankdata
+    mat = np.clip(signal_matrix, 0.0, None).astype(np.float64)
+    n_bins, n_states = mat.shape
+    out = np.zeros_like(mat)
+    cols = [np.sort(mat[mat[:, j] > 0, j]) for j in range(n_states)]
+    cols = [c for c in cols if c.size > 0]
+    if not cols:
+        return out
+    ref_len = max(c.size for c in cols)
+    probs = np.linspace(0.0, 1.0, ref_len)
+    ref = np.mean([_sorted_quantiles(c, probs) for c in cols], axis=0)
+    for j in range(n_states):
+        col = mat[:, j]
+        m = col > 0
+        k = int(m.sum())
+        if k == 0:
+            continue
+        if k == 1:
+            out[m, j] = ref[0]
+            continue
+        ranks = rankdata(col[m], method="average")
+        idx = np.clip(((ranks - 1) / (k - 1) * (ref_len - 1)).astype(int), 0, ref_len - 1)
+        out[m, j] = ref[idx]
+    return out
+
+
+def transform_signal(x, transform="none", cof=None):
+    """Signal used for P and the prior under an input transform. 0 maps to 0
+    for every transform. 'none' returns x itself (production)."""
+    if transform in (None, "none"):
+        return x
+    y = np.clip(np.asarray(x, dtype=np.float64), 0.0, None)
+    if transform == "nzq":
+        return fast_nonzero_quantile(y)
+    if transform == "log1p_rna":
+        y = y.copy()
+        for j in RNA_COLS:
+            y[:, j] = np.log1p(y[:, j] / cof[j])
+        return y
+    if transform == "asinh_auto":
+        return np.arcsinh(y / np.asarray(cof)[np.newaxis, :])
+    raise ValueError("unknown transform %r" % (transform,))
+
+
+def bearing_scores(x, min_signal, alpha, q=None, transform="none", cof=None):
     """Score one sample exactly as bigwig_to_qcat does for an un-normalised
     run: P = signals_to_prob(raw), Q = mean of P over all bins (unless q is
-    given), clamped KL with the low-signal mask and the composition prior."""
-    P = b2q.signals_to_prob(x)
+    given), clamped KL with the low-signal mask and the composition prior.
+    1.2.0: with a transform, P and the prior use the transformed signal and
+    the low-signal mask the raw signal (transform 'none' = unchanged)."""
+    xt = transform_signal(x, transform, cof)
+    P = b2q.signals_to_prob(xt)
     Q = P.mean(axis=0) if q is None else q
     s, _ = b2q.kl_scores_per_bin(P, Q, raw_signal_matrix=x, min_signal=min_signal,
-                                 prior_strength=alpha, prior_source=x)
+                                 prior_strength=alpha, prior_source=xt)
     return s, Q
 
 
-def bearing_diff(sample_mats, reps, min_signal, alpha, qs=None):
+def bearing_diff(sample_mats, reps, min_signal, alpha, qs=None, transform="none",
+                 cof=None):
     a = [bearing_scores(sample_mats["A_rep%d" % (r + 1)], min_signal, alpha,
-                        None if qs is None else qs[0])[0] for r in range(reps)]
+                        None if qs is None else qs[0], transform, cof)[0]
+         for r in range(reps)]
     b = [bearing_scores(sample_mats["B_rep%d" % (r + 1)], min_signal, alpha,
-                        None if qs is None else qs[1])[0] for r in range(reps)]
+                        None if qs is None else qs[1], transform, cof)[0]
+         for r in range(reps)]
     return np.mean(a, axis=0) - np.mean(b, axis=0)
+
+
+def _tf(args):
+    """(transform, cofactors) from args; production when not set."""
+    return getattr(args, "transform", "none") or "none", getattr(args, "cofactors", None)
 
 
 def shifted(x, rng, min_shift_bins):
@@ -305,14 +425,18 @@ BEARING_STATS = {
 def run_bearing(samples, args, rng, stat_names=("sum", "l1")):
     """Return {stat_name: result dict}. One set of permutations serves every
     statistic (same shifted samples), so the arms differ only in the
-    statistic."""
-    d = bearing_diff(samples, args.reps, args.min_signal, args.prior_strength)
+    statistic. 1.2.0: the input transform (args.transform, args.cofactors)
+    is applied to the observed and to every permuted sample."""
+    tf, cof = _tf(args)
+    d = bearing_diff(samples, args.reps, args.min_signal, args.prior_strength,
+                     transform=tf, cof=cof)
     obs = {k: BEARING_STATS[k](d) for k in stat_names}
     msb = args.min_shift // args.bin_size
     null = {k: [] for k in stat_names}
     for _ in range(args.n_perms):
         sh = {nm: shifted(x, rng, msb) for nm, x in samples.items()}
-        dn = bearing_diff(sh, args.reps, args.min_signal, args.prior_strength)
+        dn = bearing_diff(sh, args.reps, args.min_signal, args.prior_strength,
+                          transform=tf, cof=cof)
         for k in stat_names:
             v = BEARING_STATS[k](dn)
             null[k].append(v[v >= args.pvalue_min_signal])
@@ -343,7 +467,9 @@ def expected_bearing(truth, args):
     for r in range(args.reps):
         exp["A_rep%d" % (r + 1)] = truth["expA"]
         exp["B_rep%d" % (r + 1)] = truth["expB"]
-    return bearing_diff(exp, args.reps, args.min_signal, args.prior_strength)
+    tf, cof = _tf(args)
+    return bearing_diff(exp, args.reps, args.min_signal, args.prior_strength,
+                        transform=tf, cof=cof)
 
 
 # ---------------------------------------------------------------------------
@@ -582,11 +708,27 @@ def write_per_bin(path, truth, bea, pa, expd, args):
 
 def summary_text(args, bea, trows, rows, fdr):
     out = []
-    out.append("complementarity_benchmark.py 1.0.0  (SIMULATED data)")
+    out.append("complementarity_benchmark.py 1.2.0  (SIMULATED data)")
     out.append("depth %g  feature_mult %g  reps %d  prior_strength %g  min_signal %g  "
                "pvalue_min_signal %g  n_perms %d  seed %d"
                % (args.depth, args.feature_mult, args.reps, args.prior_strength,
                   args.min_signal, args.pvalue_min_signal, args.n_perms, args.seed))
+    tf, cof = _tf(args)
+    out.append("transform %s  rna_tail_sigma %g%s"
+               % (tf, float(getattr(args, "rna_tail_sigma", 0.0) or 0.0),
+                  ("  cofactors " + "  ".join("%s %.4g" % (TRACK_NAMES[i], cof[i])
+                                              for i in range(len(cof))))
+                  if cof is not None else ""))
+    res = bea["l1"]
+    c = res["called"]
+    if c.any():
+        lead = np.bincount(np.argmax(np.abs(res["diff"][c]), axis=1),
+                           minlength=N_TRACKS)
+        out.append("lead track of l1 calls (largest |d_i|): " + "  ".join(
+            "%s %d" % (TRACK_NAMES[i], lead[i]) for i in range(N_TRACKS))
+            + "  (RNA %.1f%%)" % (100.0 * lead[list(RNA_COLS)].sum() / lead.sum()))
+    else:
+        out.append("lead track of l1 calls: no calls")
     for st, lab in (("sum", "BEARING production |sum d|"),
                     ("l1", "BEARING --diff-stat l1 sum|d|")):
         res = bea[st]
@@ -665,6 +807,13 @@ def build_parser():
     ap.add_argument("--assay-pseudo", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--per-bin", action="store_true")
+    # 1.2.0, EXPERIMENTAL, benchmark only
+    ap.add_argument("--transform", choices=TRANSFORMS, default="none",
+                    help="input transform before scoring (default none = "
+                         "production); see INPUT TRANSFORMS")
+    ap.add_argument("--rna-tail-sigma", type=float, default=0.0,
+                    help="log-normal sigma of a shared per-bin RNA factor "
+                         "(heavy-tailed RNA; default 0 = off)")
     return ap
 
 
@@ -677,6 +826,8 @@ def main(argv=None):
     os.makedirs(args.outdir, exist_ok=True)
     rng = np.random.default_rng(args.seed)
     samples, truth = simulate(args, rng)
+    args.cofactors = (track_cofactors(samples) if args.transform != "none"
+                      else None)
     bea = run_bearing(samples, args, np.random.default_rng(args.seed + 1))
     pa = run_per_assay(samples, args)
     expd = expected_bearing(truth, args)

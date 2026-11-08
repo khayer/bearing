@@ -1,7 +1,7 @@
 # ----------------------------------------------------------------------
 # File     : tests/test_rna_dominance_transforms.py
-# Version  : 1.0.0
-# Date     : 2026-11-07
+# Version  : 1.1.0
+# Date     : 2026-11-08 (tail statistics test; 1.0.0 2026-11-07)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -75,3 +75,20 @@ def test_lead_share_and_region_check():
                            ["t%d" % i for i in range(6)])
     assert out[0]["tested"] == 2 and out[0]["in_top0.5"] == 1
     assert out[0]["best_rank_pct"] == 0.0 and out[0]["lead"] == "t1"
+
+
+def test_tail_stats_per_condition_and_pooled():
+    rows = rdd.tail_stats(_data(), ["ATAC", "RNA+", "RNA-", "CTCF", "Cohesin",
+                                    "H3K27ac"], "A", "B")
+    r = {(x["track"], x["group"]): x for x in rows}
+    # RNA+: A has one nonzero value (50), B one (2); 3 bins per sample
+    assert r[("RNA+", "A")]["frac_nonzero"] == np.float64(1 / 3)
+    assert r[("RNA+", "A")]["q50"] == 50.0
+    assert r[("RNA+", "pooled")]["max"] == 50.0
+    assert r[("RNA+", "pooled")]["bins"] == 6
+    # an all-zero track gives NaN quantiles, not an error
+    assert np.isnan(r[("RNA-", "pooled")]["q50"])
+    # q99/q50 is the dynamic-range ratio
+    c = r[("CTCF", "pooled")]
+    assert c["q99_over_q50"] == c["q99"] / c["q50"]
+    assert len(rdd.tail_text(rows)) == 2 + len(rows)

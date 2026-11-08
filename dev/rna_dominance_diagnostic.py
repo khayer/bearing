@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # ----------------------------------------------------------------------
 # File     : dev/rna_dominance_diagnostic.py
-# Version  : 1.1.0
-# Date     : 2026-11-07 (1.1.0: data-dependent transform variants log1p_rna
+# Version  : 1.2.0
+# Date     : 2026-11-08 (1.2.0: per-track tail statistics of the raw signal,
+#            PREFIX.tail_stats.tsv, and --tail-only; scoring unchanged.
+#            1.1.0 2026-11-07: data-dependent transform variants log1p_rna
 #            and asinh_auto, known-region check, lead-share of top bins;
 #            1.0.0 2026-11-05)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
@@ -63,6 +65,15 @@ OUTPUT (--out PREFIX)
                           bins, bins in the top fractions, best l1 rank
                           percentile among tested bins, lead track
   PREFIX.cofactors.tsv    (1.1.0) c_i per track
+  PREFIX.tail_stats.tsv   (1.2.0) per track x group (each condition and
+                          both pooled; all replicates of a group together):
+                          bins read, fraction of bins > 0, quantiles q50 /
+                          q90 / q99 / q99.9 and max of the nonzero raw values
+                          (after abs of negative-strand tracks and blacklist
+                          zeroing, before any transform), q99/q50 and
+                          q99.9/q50 (the dynamic range of the track). With
+                          --tail-only only this file and the summary are
+                          written (no scoring).
   PREFIX.background_q.tsv background composition Q per variant and sample
   PREFIX.summary.txt      human-readable
 
@@ -98,7 +109,7 @@ sys.path.insert(0, REPO)
 
 import bigwig_to_qcat as b2q  # noqa: E402  production scorer
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 VARIANTS = ("production", "merge_strands", "nzq", "merge_strands_nzq",
             "log1p_rna", "asinh_auto")
 DEFAULT_REGIONS = ("DJ_RC=chr6:41500000-41551500,"
@@ -228,6 +239,56 @@ def track_cofactors(data):
         v = np.concatenate(parts) if parts else np.array([])
         cof.append(float(np.median(v)) if v.size else 1.0)
     return np.array(cof, dtype=np.float64)
+
+
+TAIL_QS = (0.5, 0.9, 0.99, 0.999)
+
+
+def tail_stats(data, names, cond_a, cond_b):
+    """Per track and group (cond_a, cond_b, pooled): distribution of the
+    nonzero raw values (data = {sample: (cond, {chrom: (bins, m)})}).
+    Returns a list of row dicts."""
+    groups = ((cond_a, (cond_a,)), (cond_b, (cond_b,)), ("pooled", (cond_a, cond_b)))
+    rows = []
+    for i, name in enumerate(names):
+        for gname, conds in groups:
+            parts, n_all = [], 0
+            for _, (cond, sd) in data.items():
+                if cond not in conds:
+                    continue
+                for chrom in sd:
+                    v = np.clip(sd[chrom][1][:, i].astype(np.float64), 0.0, None)
+                    n_all += v.size
+                    parts.append(v[v > 0])
+            v = np.concatenate(parts) if parts else np.array([])
+            r = dict(track=name, group=gname, bins=int(n_all),
+                     frac_nonzero=(v.size / n_all) if n_all else float("nan"))
+            if v.size:
+                qs = np.quantile(v, TAIL_QS)
+                for q, x in zip(TAIL_QS, qs):
+                    r["q%g" % (100 * q)] = float(x)
+                r["max"] = float(v.max())
+                r["q99_over_q50"] = float(qs[2] / qs[0]) if qs[0] > 0 else float("nan")
+                r["q99.9_over_q50"] = float(qs[3] / qs[0]) if qs[0] > 0 else float("nan")
+            else:
+                for q in TAIL_QS:
+                    r["q%g" % (100 * q)] = float("nan")
+                r["max"] = r["q99_over_q50"] = r["q99.9_over_q50"] = float("nan")
+            rows.append(r)
+    return rows
+
+
+def tail_text(rows):
+    out = ["raw-signal tails (nonzero values; before any transform):",
+           "  %-12s %-8s %8s %10s %10s %10s %10s %8s %9s"
+           % ("track", "group", "nonzero", "q50", "q90", "q99", "q99.9",
+              "q99/q50", "q999/q50")]
+    for r in rows:
+        out.append("  %-12s %-8s %7.1f%% %10.4g %10.4g %10.4g %10.4g %8.3g %9.3g"
+                   % (r["track"], r["group"], 100 * r["frac_nonzero"], r["q50"],
+                      r["q90"], r["q99"], r["q99.9"], r["q99_over_q50"],
+                      r["q99.9_over_q50"]))
+    return out
 
 
 def merge_strands(x, ip, im):
@@ -391,6 +452,9 @@ def build_parser():
                     help="name=chr:start-end,... known regions to track across "
                          "variants (default: Tcrb DJ_RC, Vbeta cluster, Trbv1, Cd4)")
     ap.add_argument("--out", required=True, help="output prefix")
+    ap.add_argument("--tail-only", action="store_true",
+                    help="(1.2.0) write only the raw-signal tail statistics "
+                         "(PREFIX.tail_stats.tsv + summary); no scoring")
     return ap
 
 
@@ -440,6 +504,18 @@ def main(argv=None):
         for sample, paths in sheet[cond]:
             data[sample] = (cond, read_sample(paths, chroms, sizes, neg, blacklist))
     cof = track_cofactors(data)
+    trows = tail_stats(data, names, args.cond_a, args.cond_b)
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
+    _write_tsv(args.out + ".tail_stats.tsv", trows)
+    if args.tail_only:
+        txt = "\n".join(["rna_dominance_diagnostic.py %s  %s vs %s  chroms %s  "
+                         "(--tail-only: raw-signal tails, no scoring)"
+                         % (VERSION, args.cond_a, args.cond_b, ",".join(chroms)), ""]
+                        + tail_text(trows)) + "\n"
+        with open(args.out + ".summary.txt", "w") as fh:
+            fh.write(txt)
+        sys.stdout.write(txt)
+        return [], [], []
 
     # bin coordinates (identical for every sample)
     any_sample = next(iter(data.values()))[1]
@@ -456,6 +532,8 @@ def main(argv=None):
     rows, qrows, rrows, text = [], [], [], []
     text.append("cofactors c_i (median nonzero raw value, pooled): "
                 + "  ".join("%s %.4g" % (names[i], cof[i]) for i in range(len(names))))
+    text.append("")
+    text.extend(tail_text(trows))
     text.append("")
     prod_top = {}
     for variant in variants:
