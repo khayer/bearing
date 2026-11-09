@@ -1595,8 +1595,16 @@ def nonzero_quantile_normalize_columns(signal_matrix):
 
     ref_len = max(len(col) for col in nonzero_cols)
     ref_probs = np.linspace(0.0, 1.0, ref_len)
+    # 2026-11-08 (K. Hayer + Claude): the columns are already sorted, so the
+    # 'linear' quantiles are an interpolation on the order statistics. Same
+    # values as np.quantile(col, ref_probs) (tests/test_bigwig_to_qcat.py::
+    # test_nonzero_quantile_reference_fast_path), but O(n) instead of one
+    # selection per probability: np.quantile took ~34 s per 100k-bin sample,
+    # which made normalized genome-wide runs with permutations infeasible.
     ref_distrib = np.mean(
-        [np.quantile(col, ref_probs) for col in nonzero_cols],
+        [np.interp(ref_probs * (col.size - 1),
+                   np.arange(col.size, dtype=np.float64), col)
+         for col in nonzero_cols],
         axis=0,
     )
 

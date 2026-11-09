@@ -124,3 +124,45 @@ class DetectUnmappableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# 2026-11-08 (K. Hayer + Claude): fast reference in
+# nonzero_quantile_normalize_columns must equal the np.quantile version.
+def _nzq_reference_old(signal_matrix):
+    from scipy.stats import rankdata
+    mat = np.clip(signal_matrix, 0.0, None).astype(np.float64)
+    n_bins, n_states = mat.shape
+    out = np.zeros_like(mat)
+    cols = [np.sort(mat[mat[:, j] > 0, j]) for j in range(n_states)]
+    cols = [c for c in cols if c.size > 0]
+    if not cols:
+        return out
+    ref_len = max(len(c) for c in cols)
+    ref = np.mean([np.quantile(c, np.linspace(0.0, 1.0, ref_len)) for c in cols], axis=0)
+    for j in range(n_states):
+        col = mat[:, j]
+        m = col > 0
+        k = int(m.sum())
+        if k == 0:
+            continue
+        if k == 1:
+            out[m, j] = ref[0]
+            continue
+        r = rankdata(col[m], method="average")
+        idx = np.clip(((r - 1) / (k - 1) * (ref_len - 1)).astype(int), 0, ref_len - 1)
+        out[m, j] = ref[idx]
+    return out
+
+
+class NonzeroQuantileFastPathTests(unittest.TestCase):
+    def test_nonzero_quantile_reference_fast_path(self):
+        rng = np.random.default_rng(3)
+        for n, zero_frac in ((50, 0.0), (2000, 0.3), (5000, 0.8)):
+            x = rng.lognormal(-3.0, 2.0, size=(n, 6))
+            x[rng.random(x.shape) < zero_frac] = 0.0
+            x[:, 4] = np.round(x[:, 4], 2)   # ties
+            x[:, 5] = 0.0
+            x[0, 5] = 0.7                    # a column with one nonzero value
+            new = bq.nonzero_quantile_normalize_columns(x)
+            old = _nzq_reference_old(x)
+            np.testing.assert_allclose(new, old, rtol=1e-12, atol=1e-15)
