@@ -3,7 +3,12 @@
 bearing_hic_kl_track_plot_v10.py
 
 Authors: Katharina E. Hayer and Claude (Anthropic), co-created.
-Version: v11, 2026-11-13.
+Version: v12, 2026-11-13.
+
+v12 changes from v11 (2026-11-13):
+  - Regions row: all labels above their boxes on leader lines, height
+    tier chosen from the text width so labels do not overprint;
+    underscores shown as spaces; row slightly taller.
 
 v11 changes from v10 (2026-11-13):
   - Hi-C inset colourbars use Axes.inset_axes; fixes the empty colourbar
@@ -792,7 +797,7 @@ def main():
     # are visually close to the chromatin maps. They previously sat at the
     # very top of the figure (too far from the per-track panels below).
     if anno_regions:
-        panels.append(("anno", 0.4 * PER_UNIT_IN, None))
+        panels.append(("anno", 0.55 * PER_UNIT_IN, None))
     if gtf_canon is not None and len(gtf_canon) > 0:
         # Gene panel height scales with number of stack rows. Cap at
         # --gtf-max-rows (default 3). Overflow genes are dropped so the
@@ -876,34 +881,41 @@ def main():
             # regions cluster (e.g. the Trbv/Trbc series).
             anno_sorted = sorted(anno_regions, key=lambda r: (r[1] + r[2]) / 2)
             region_w_anno = end - start
-            last_label_x = None
-            stagger = 0
+            # v12: every label sits above its box on a leader line, and the
+            # height tier is chosen from the estimated text width so that
+            # labels never overprint (v11 wrote wide-region labels inside the
+            # box at a fixed height, where long names ran into each other).
+            ANNO_FS = 7
+            ax_w_in = fig.get_figwidth() * 0.88          # left 0.10, right 0.98
+            data_per_in = region_w_anno / ax_w_in
+            char_in = 0.62 * ANNO_FS / 72.0              # bold sans, approx.
+            tier_end = []                                # right edge per tier
             for i, (_, s2, e2, n2) in enumerate(anno_sorted):
                 ax.add_patch(plt.Rectangle((s2, 0.2), e2 - s2, 0.6,
                                              facecolor="#d0e8ff",
                                              edgecolor="navy", linewidth=1.0))
-                w_frac = (e2 - s2) / region_w_anno
                 cx = (s2 + e2) / 2
-                # Decide stagger: if this label's center is within ~6% of the
-                # previous label's center, bump it to the next height tier.
-                if last_label_x is not None and \
-                        abs(cx - last_label_x) < region_w_anno * 0.06:
-                    stagger = (stagger + 1) % 3
-                else:
-                    stagger = 0
-                last_label_x = cx
-                if w_frac < 0.05:
-                    ytext = 1.1 + 0.5 * stagger
-                    ax.annotate(n2, xy=(cx, 0.8),
-                                 xytext=(cx, ytext),
-                                 ha="center", va="bottom", fontsize=7,
-                                 fontweight="bold",
-                                 arrowprops=dict(arrowstyle="-",
-                                                  color="navy", linewidth=0.5))
-                else:
-                    ax.text(cx, 0.5, n2, ha="center", va="center",
-                              fontsize=8, fontweight="bold")
-            ax.set_ylim(0, 2.6)
+                label = n2.replace("_", " ")
+                half = 0.5 * len(label) * char_in * data_per_in
+                pad = 0.01 * region_w_anno
+                # keep the text inside the axis
+                tx = min(max(cx, start + half), end - half)
+                tier = None
+                for k, right in enumerate(tier_end):
+                    if tx - half > right + pad:
+                        tier = k
+                        break
+                if tier is None:
+                    tier = len(tier_end)
+                    tier_end.append(0.0)
+                tier_end[tier] = tx + half
+                ax.annotate(label, xy=(cx, 0.8),
+                             xytext=(tx, 1.1 + 0.55 * tier),
+                             ha="center", va="bottom", fontsize=ANNO_FS,
+                             fontweight="bold",
+                             arrowprops=dict(arrowstyle="-",
+                                              color="navy", linewidth=0.5))
+            ax.set_ylim(0, max(2.6, 1.1 + 0.55 * len(tier_end) + 0.35))
             ax.set_yticks([])
             ax.set_ylabel("Regions", fontsize=8, rotation=0,
                             ha="right", va="center")

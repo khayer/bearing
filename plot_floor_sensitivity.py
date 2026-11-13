@@ -29,7 +29,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-VERSION = "1.2"  # 2026-10-12: --diff-stat sum|l1; 2026-10-29: data-driven panel B/C titles (K. E. Hayer with Claude)
+VERSION = "1.3"  # 2026-11-13: panel A y label follows --diff-stat, panel B "max deviation" text removed; 2026-10-12: --diff-stat sum|l1; 2026-10-29: data-driven panel B/C titles (K. E. Hayer with Claude)
 
 FLOOR_COLORS = {0.1: "#9e9e9e", 0.25: "#66bb6a", 0.5: "#d32f2f",
                 1.0: "#1976d2", 1.5: "#7b1fa2"}
@@ -284,7 +284,9 @@ def main():
     for x, yv in zip(xs, ys):
         src_rows.append(("A", "detection_curve", float(x), float(yv), ""))
     axA.set_xlabel("fraction x moved to a second track")
-    axA.set_ylabel("|delta BES|  (bits)")
+    # 1.3: under l1 the floor is applied to the l1 statistic, not to |BES|
+    axA.set_ylabel("summed |per-track differential|, l1  (bits)"
+                   if DIFF_STAT == "l1" else "|delta BES|  (bits)")
     axA.set_title("A. What each floor can detect")
     axA.set_xlim(0, 0.5)
     axA.legend(fontsize=6.5, loc="upper left", frameon=False)
@@ -310,9 +312,9 @@ def main():
     axB.set_xlabel("differential floor (log scale)")
     axB.set_ylabel("bins significant\n(% of floor 0.5)")
     axB.set_title("B. Calls across floors (%% of floor %g)" % PROD_FLOOR)
-    axB.annotate("max deviation over 0.1-0.5:\n%.1f%%" % max_dev,
-                 xy=(0.03, 0.03), xycoords="axes fraction", fontsize=7,
-                 ha="left", va="bottom")
+    # 1.3: the "max deviation over 0.1-0.5" text is no longer drawn (it sat on
+    # the curves and read 100% whenever a floor had no call); the value is
+    # still written to the source-data table below.
     axB.legend(fontsize=6.5, loc="upper left", frameon=False)
     src_rows.append(("B", "max_dev_0.1_0.5", None, max_dev, "percent"))
 
