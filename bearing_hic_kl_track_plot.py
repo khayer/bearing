@@ -2,6 +2,15 @@
 """
 bearing_hic_kl_track_plot_v10.py
 
+Authors: Katharina E. Hayer and Claude (Anthropic), co-created.
+Version: v11, 2026-11-13.
+
+v11 changes from v10 (2026-11-13):
+  - Hi-C inset colourbars use Axes.inset_axes; fixes the empty colourbar
+    frames and the stray colour gradients in PDF output.
+  - Fixed top/bottom margins (in inches) replace tight_layout; removes
+    the blank band between the title and the first panel.
+
 v10 changes from v9:
   - Gene panel now appears BELOW the Hi-C panels (was: above), so
     gene coordinates sit close to the per-track KL panels they need
@@ -928,9 +937,12 @@ def main():
                 cbar_label = "{} - {}".format(args.label_a, args.label_b)
             # Small inset colorbar in upper-right of each Hi-C panel
             if pc_hic is not None:
-                from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-                cax = inset_axes(ax, width="10%", height="5%",
-                                   loc="upper right", borderpad=0.6)
+                # v11: Axes.inset_axes instead of inset_locator.inset_axes.
+                # With the locator-based inset and savefig(bbox_inches=
+                # "tight") the PDF backend drew the colour gradient away
+                # from its frame (empty box upper right, stray gradient
+                # inside the panel).
+                cax = ax.inset_axes([0.89, 0.90, 0.10, 0.045])
                 cb = plt.colorbar(pc_hic, cax=cax, orientation="horizontal")
                 cb.ax.tick_params(labelsize=5, length=2, pad=1)
                 cb.set_label(cbar_label, fontsize=6, labelpad=1)
@@ -1080,8 +1092,13 @@ def main():
     fig.suptitle(
         "BEARING + Hi-C  {}:{:,}-{:,}\n{} vs {}".format(
             chrom, start, end, args.label_a, args.label_b),
-        fontsize=11, y=0.995)
-    plt.tight_layout()
+        fontsize=11, y=1.0 - 0.15 / total_height_in, va="top")
+    # v11: fixed margins in inches instead of tight_layout (which is not
+    # compatible with the inset colourbar axes and left a blank band
+    # under the title on tall figures).
+    fig.subplots_adjust(top=1.0 - 0.75 / total_height_in,
+                        bottom=0.6 / total_height_in,
+                        left=0.10, right=0.98)
     plt.savefig(args.out, bbox_inches="tight", dpi=150)
     plt.close(fig)
     print("Wrote", args.out)
