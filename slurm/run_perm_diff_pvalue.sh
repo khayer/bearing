@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
 # File     : slurm/run_perm_diff_pvalue.sh
-# Version  : 2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
+# Version  : 2026-11-11 (fail when a comparison produced no stats.tsv; ALLOW_SKIP=1
+#            restores the old warn-and-continue behaviour)
+#            2026-10-12 (--diff-stat sum|l1: non-cancelling differential option)
 # Authors  : Katharina E. Hayer (katharinaehayer@gmail.com) and Claude
 #            (Anthropic), co-created
 # ----------------------------------------------------------------------
@@ -110,5 +112,36 @@ while IFS= read -r comp; do
   fi
   echo ""
 done <<< "$comparisons"
+
+# Completeness check (2026-11-11). Every per-comparison failure above only warns
+# and continues, so without this check the script exits 0 with nothing written
+# and Snakemake touches a hollow pvalue.done (seen in consensusQ/pvalue of
+# results_prior1_n100 and results_prior1_n100_l1). Count the comparisons that
+# have a non-empty stats.tsv (newly written or kept by the resume guard).
+n_expected=0
+n_ok=0
+missing=""
+while IFS= read -r comp; do
+  if [[ -z "$comp" ]]; then
+    continue
+  fi
+  n_expected=$((n_expected + 1))
+  if [[ -s "$RESULTS_DIR/diff_${comp}.stats.tsv" ]]; then
+    n_ok=$((n_ok + 1))
+  else
+    missing="$missing $comp"
+  fi
+done <<< "$comparisons"
+
+echo "stats.tsv present for $n_ok of $n_expected comparisons in $RESULTS_DIR/"
+if (( n_ok < n_expected )); then
+  if [[ "${ALLOW_SKIP:-0}" == "1" ]]; then
+    echo "WARNING: no stats.tsv for:$missing (ALLOW_SKIP=1, exiting 0)" >&2
+  else
+    echo "ERROR: no stats.tsv for:$missing" >&2
+    echo "       Check the messages above. Set ALLOW_SKIP=1 to accept missing comparisons." >&2
+    exit 1
+  fi
+fi
 
 echo "Done. All results in: $RESULTS_DIR/"

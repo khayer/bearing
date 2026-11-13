@@ -580,9 +580,12 @@ rule pvalue_diff:
 # that imply those rules ran, then globs OUT/benchmarks/*.tsv. Re-touching any
 # sentinel (perms / pvalues / hic refresh) re-runs the collation. The Hi-C
 # sentinels are included only when Hi-C is configured, so a BEARING-only run
-# still builds.
+# still builds. consensusQ/pvalue.done is NOT a gate (2026-11-11): it pulled
+# the optional consensus-Q branch into every benchmark build, and that branch
+# scores consensus-Q observed diffs against per-sample-Q nulls. Its benchmark
+# TSVs are still collated by the glob when the branch is built on purpose.
 def _benchmark_gate():
-    g = [out("pvalue.done"), out("consensusQ", "pvalue.done")]
+    g = [out("pvalue.done")]
     if HIC:
         g += [out("figures.done"),
               out("hic", "contact_isolation.done"),
